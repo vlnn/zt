@@ -60,6 +60,14 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
                        help="skip bundled stdlib/core.fs")
     build.add_argument("--no-optimize", dest="optimize", action="store_false",
                        default=True, help="disable peephole optimizer")
+    build.add_argument("--profile", dest="profile", action="store_true", default=False,
+                       help="run the built image in the simulator and write a profile report")
+    build.add_argument("--profile-output", type=Path, default=None, dest="profile_output",
+                       metavar="PATH",
+                       help="override profile report path (default: <output>.prof)")
+    build.add_argument("--profile-ticks", type=int, default=1_000_000,
+                       dest="profile_ticks", metavar="N",
+                       help="tick budget for the profile run (default: 1_000_000)")
 
 
 def _register_inspect(sub: argparse._SubParsersAction) -> None:
@@ -90,6 +98,7 @@ def _do_build(args: argparse.Namespace) -> None:
 
     _write_output(image, args, compiler, fmt)
     _write_debug_artifacts(compiler, args)
+    _write_profile(compiler, image, args)
     _emit_warnings(compiler)
     _print_summary(args.source, args.output, image, compiler, fmt)
 
@@ -106,6 +115,28 @@ def _write_debug_artifacts(compiler: Compiler, args: argparse.Namespace) -> None
         write_sld(compiler, args.sld_path)
     if args.fsym_path:
         write_fsym(compiler, args.fsym_path)
+
+
+def _write_profile(compiler: Compiler, image: bytes, args: argparse.Namespace) -> None:
+    if not args.profile:
+        return
+    from zt.profile import Profiler, build_word_ranges, format_report
+    from zt.sim import SPECTRUM_FONT_BASE, TEST_FONT, Z80
+
+    ranges = build_word_ranges(
+        {name: w.address for name, w in compiler.words.items()},
+        code_end=compiler.origin + len(image),
+    )
+    profiler = Profiler(ranges)
+
+    m = Z80()
+    m.load(compiler.origin, image)
+    m.load(SPECTRUM_FONT_BASE, TEST_FONT)
+    m.pc = compiler.words["_start"].address
+    m.run(max_ticks=args.profile_ticks, profiler=profiler)
+
+    path = args.profile_output or args.output.with_suffix(".prof")
+    path.write_text(format_report(profiler.report()) + "\n")
 
 
 def _do_inspect(args: argparse.Namespace) -> None:

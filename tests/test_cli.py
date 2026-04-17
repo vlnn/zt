@@ -217,3 +217,68 @@ class TestCliFormat:
         assert "tap" in result.stderr.lower() or "M8" in result.stderr, (
             "tap error should indicate it's not implemented yet"
         )
+
+
+class TestBuildProfileFlag:
+
+    def test_profile_flag_writes_prof_file(self, tmp_path):
+        out = tmp_path / "hello.sna"
+        result = _run_cli("build", str(HELLO_PATH), "-o", str(out),
+                          "--profile", "--profile-ticks", "20000")
+        assert result.returncode == 0, (
+            f"build --profile should succeed; stderr={result.stderr}"
+        )
+        assert out.with_suffix(".prof").exists(), \
+            "--profile should write a .prof file next to the snapshot"
+
+    def test_profile_file_contains_report_header(self, tmp_path):
+        out = tmp_path / "hello.sna"
+        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+                 "--profile", "--profile-ticks", "20000")
+        text = out.with_suffix(".prof").read_text()
+        assert "Word" in text, ".prof should contain the report header"
+        assert "Ticks" in text, ".prof should contain a Ticks column"
+
+    def test_profile_file_lists_some_primitives(self, tmp_path):
+        out = tmp_path / "hello.sna"
+        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+                 "--profile", "--profile-ticks", "50000")
+        text = out.with_suffix(".prof").read_text()
+        assert "NEXT" in text or "next" in text, \
+            "NEXT should appear in any non-trivial profile run"
+
+    def test_no_profile_flag_writes_no_prof_file(self, tmp_path):
+        out = tmp_path / "hello.sna"
+        _run_cli("build", str(HELLO_PATH), "-o", str(out))
+        assert not out.with_suffix(".prof").exists(), \
+            "without --profile, no .prof file should be created"
+
+    def test_profile_output_overrides_default_path(self, tmp_path):
+        out = tmp_path / "hello.sna"
+        custom = tmp_path / "custom-location.prof"
+        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+                 "--profile", "--profile-output", str(custom),
+                 "--profile-ticks", "20000")
+        assert custom.exists(), \
+            "--profile-output should redirect the report file"
+        assert not out.with_suffix(".prof").exists(), \
+            "when --profile-output is set, no default .prof should be written"
+
+    def test_profile_ticks_bounds_execution(self, tmp_path):
+        out = tmp_path / "hello.sna"
+        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+                 "--profile", "--profile-ticks", "500")
+        text = out.with_suffix(".prof").read_text()
+        total = _sum_ticks_from_report(text)
+        assert total <= 500, \
+            f"--profile-ticks 500 should cap samples at 500, got {total}"
+
+
+def _sum_ticks_from_report(text: str) -> int:
+    total = 0
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) < 5 or not parts[-2].isdigit():
+            continue
+        total += int(parts[2])
+    return total

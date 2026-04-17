@@ -194,9 +194,11 @@ class Z80:
         elif idx == 6: self._wb(self.hl, v)
         elif idx == 7: self.a = v
 
-    def run(self, max_ticks: int = DEFAULT_MAX_TICKS) -> None:
+    def run(self, max_ticks: int = DEFAULT_MAX_TICKS, profiler=None) -> None:
         self._ticks = 0
         while not self.halted and self._ticks < max_ticks:
+            if profiler is not None:
+                profiler.sample(self.pc)
             self._step()
             self._ticks += 1
 
