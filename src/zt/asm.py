@@ -126,6 +126,7 @@ class Asm:
     # -- exchange --
     def ex_de_hl(self):    self.code.append(0xEB)
     def ex_sp_hl(self):    self.code.append(0xE3)
+    def ex_sp_ix(self):    self.code.extend((0xDD, 0xE3))
 
     # -- 16-bit arithmetic --
     def add_hl_de(self):   self.code.append(0x19)

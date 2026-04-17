@@ -455,13 +455,13 @@ def test_lit_pushes_hl_then_loads_from_ix():
     assert out[4:7] == bytes([0xDD, 0x66, 0x01]), "LIT should LD H,(IX+1)"
 
 
-def test_docol_saves_ip_to_return_stack():
+def test_docol_swaps_return_addr_with_ix_then_saves_old_ip():
     a = Asm(0x8000)
     a.label("NEXT")
     create_docol(a)
     out = a.resolve()
-    assert out[0:2] == bytes([0xDD, 0xE5]), "DOCOL should PUSH IX"
-    assert out[2] == 0xD1, "DOCOL should POP DE"
+    assert out[0:2] == bytes([0xDD, 0xE3]), "DOCOL should EX (SP), IX to swap call-return with old IP"
+    assert out[2] == 0xD1, "DOCOL should POP DE to capture old IP"
     assert out[3:5] == bytes([0xFD, 0x2B]), "DOCOL should DEC IY"
 
 

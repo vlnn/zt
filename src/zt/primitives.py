@@ -15,13 +15,12 @@ def create_next(a: Asm) -> None:
 
 def create_docol(a: Asm) -> None:
     a.label("DOCOL")
-    a.push_ix()
+    a.ex_sp_ix()
     a.pop_de()
     a.dec_iy()
     a.dec_iy()
     a.ld_iy_e(0)
     a.ld_iy_d(1)
-    a.pop_ix()
     a.dispatch()
 
 

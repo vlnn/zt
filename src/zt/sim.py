@@ -419,6 +419,12 @@ class Z80:
         elif op == 0x74: d = self._fetch(); self._wb(r + _signed(d), self.h)
         elif op == 0x73: d = self._fetch(); self._wb(r + _signed(d), self.e)
         elif op == 0x72: d = self._fetch(); self._wb(r + _signed(d), self.d)
+        elif op == 0xE3:
+            lo = self._rb(self.sp)
+            hi = self._rb((self.sp + 1) & 0xFFFF)
+            self._wb(self.sp, r & 0xFF)
+            self._wb((self.sp + 1) & 0xFFFF, (r >> 8) & 0xFF)
+            reg_set(lo | (hi << 8))
         else:
             raise RuntimeError(
                 f"unimplemented IX/IY opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}"
