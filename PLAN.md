@@ -131,7 +131,7 @@ Implementation notes for divide:
 
 ---
 
-## M1.5 — Z80 simulator
+## M1.5 — Z80 simulator ✅
 
 ### Design
 
@@ -247,7 +247,7 @@ execution with cycle counts. Proves the simulator matches real hardware behavior
 
 ---
 
-## M2 — Tokenizer
+## M2 — Tokenizer ✅
 
 ### Design
 
@@ -312,7 +312,7 @@ def test_line_col_tracking(): ...
 
 ---
 
-## M3 — Compiler core
+## M3 — Compiler core ✅
 
 ### Design
 

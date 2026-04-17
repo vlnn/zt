@@ -289,3 +289,33 @@ def parse_number(text: str) -> int:
     if text.startswith("%"):
         return int(text[1:], 2)
     return int(text)
+
+
+def compile_and_run(source: str, origin: int = DEFAULT_ORIGIN) -> list[int]:
+    from zt.sim import Z80, _read_data_stack
+
+    c = Compiler(origin=origin)
+    c.compile_source(source)
+    c.compile_main_call()
+    image = c.build()
+
+    m = Z80()
+    m.load(origin, image)
+    m.pc = c.words["_start"].address
+    m.run()
+    if not m.halted:
+        raise TimeoutError("execution timed out")
+    return _read_data_stack(m, c.data_stack_top, False)
+
+
+def build_from_source(
+    source: str,
+    origin: int = DEFAULT_ORIGIN,
+    data_stack_top: int = DEFAULT_DATA_STACK_TOP,
+    return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
+) -> tuple[bytes, Compiler]:
+    c = Compiler(origin=origin, data_stack_top=data_stack_top,
+                 return_stack_top=return_stack_top)
+    c.compile_source(source)
+    c.compile_main_call()
+    return c.build(), c

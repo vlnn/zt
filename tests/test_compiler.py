@@ -2,10 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Compiler, CompileError, Word
-from zt.primitives import PRIMITIVES
-from zt.sim import ForthMachine
+from zt.compiler import Compiler, CompileError, Word, compile_and_run
 
 
 def make_compiler(origin: int = 0x8000) -> Compiler:
@@ -138,33 +135,6 @@ class TestColonBody:
 
 class TestCompileAndRun:
 
-    @pytest.fixture
-    def fm(self):
-        return ForthMachine()
-
-    def _compile_and_run(self, source: str) -> list[int]:
-        c = make_compiler()
-        c.compile_source(source)
-        c.compile_main_call()
-        image = c.build()
-        fm = ForthMachine.__new__(ForthMachine)
-        fm.origin = c.origin
-        fm.data_stack_top = 0xFF00
-        fm.return_stack_top = 0xFE00
-        fm._prim_asm = c.asm
-        fm._prim_code = image
-        fm._body_base = c.asm.here
-
-        from zt.sim import Z80, _read_data_stack, SPECTRUM_BORDER_PORT
-        m = Z80()
-        m.load(c.origin, image)
-        start_addr = c.words["_start"].address
-        m.pc = start_addr
-        m.run()
-        if not m.halted:
-            raise TimeoutError("execution timed out")
-        return _read_data_stack(m, 0xFF00, False)
-
     @pytest.mark.parametrize("src,expected", [
         (": main 21 dup + halt ;", [42]),
         (": double dup + ; : main 21 double halt ;", [42]),
@@ -174,14 +144,10 @@ class TestCompileAndRun:
         (": main 6 7 * halt ;", [42]),
     ], ids=["dup-plus", "double", "square", "3+4", "10-3", "6*7"])
     def test_compile_and_run(self, src, expected):
-        result = self._compile_and_run(src)
-        assert result == expected, f"'{src}' should produce {expected}"
+        assert compile_and_run(src) == expected, f"'{src}' should produce {expected}"
 
 
 class TestVariable:
-
-    def _compile_and_run(self, source: str) -> list[int]:
-        return TestCompileAndRun._compile_and_run(None, source)
 
     def test_variable_creates_word(self):
         c = make_compiler()
@@ -190,20 +156,17 @@ class TestVariable:
         assert c.words["x"].kind == "variable", "variable word should have kind 'variable'"
 
     def test_variable_store_and_fetch(self):
-        result = self._compile_and_run("variable x : main 42 x ! x @ halt ;")
-        assert result == [42], "variable should support store and fetch"
+        assert compile_and_run("variable x : main 42 x ! x @ halt ;") == [42], \
+            "variable should support store and fetch"
 
     def test_two_variables_independent(self):
-        result = self._compile_and_run(
+        result = compile_and_run(
             "variable a variable b : main 10 a ! 20 b ! a @ b @ + halt ;"
         )
         assert result == [30], "two variables should be independent"
 
 
 class TestConstant:
-
-    def _compile_and_run(self, source: str) -> list[int]:
-        return TestCompileAndRun._compile_and_run(None, source)
 
     def test_constant_creates_word(self):
         c = make_compiler()
@@ -212,31 +175,28 @@ class TestConstant:
         assert c.words["answer"].kind == "constant", "constant word should have kind 'constant'"
 
     def test_constant_pushes_value(self):
-        result = self._compile_and_run("42 constant answer : main answer halt ;")
-        assert result == [42], "constant should push its value"
+        assert compile_and_run("42 constant answer : main answer halt ;") == [42], \
+            "constant should push its value"
 
     def test_constant_used_twice(self):
-        result = self._compile_and_run("10 constant ten : main ten ten + halt ;")
-        assert result == [20], "constant should push same value each time"
+        assert compile_and_run("10 constant ten : main ten ten + halt ;") == [20], \
+            "constant should push same value each time"
 
     def test_hex_constant(self):
-        result = self._compile_and_run("$ff constant mask : main mask halt ;")
-        assert result == [255], "constant should accept hex values"
+        assert compile_and_run("$ff constant mask : main mask halt ;") == [255], \
+            "constant should accept hex values"
 
 
 class TestCreate:
 
-    def _compile_and_run(self, source: str) -> list[int]:
-        return TestCompileAndRun._compile_and_run(None, source)
-
     def test_create_with_comma(self):
-        result = self._compile_and_run(
+        result = compile_and_run(
             "create tbl 10 , 20 , 30 , : main tbl @ halt ;"
         )
         assert result == [10], "create + , should lay down accessible data"
 
     def test_create_with_c_comma(self):
-        result = self._compile_and_run(
+        result = compile_and_run(
             "create buf 65 c, 66 c, : main buf c@ halt ;"
         )
         assert result == [65], "create + c, should lay down byte data"
@@ -308,3 +268,85 @@ class TestLiteralBrackets:
         c = make_compiler()
         with pytest.raises(CompileError, match="unknown"):
             c.compile_source(": test ['] nonexistent ;")
+
+
+class TestErrorReporting:
+
+    def test_error_has_line_and_col(self):
+        c = make_compiler()
+        with pytest.raises(CompileError) as exc_info:
+            c.compile_source(": test blarg ;")
+        msg = str(exc_info.value)
+        assert "<input>:1:8:" in msg, "error should include source:line:col"
+
+    def test_error_on_second_line(self):
+        c = make_compiler()
+        with pytest.raises(CompileError) as exc_info:
+            c.compile_source(": test\n  blarg ;")
+        msg = str(exc_info.value)
+        assert ":2:" in msg, "error on second line should report line 2"
+
+    def test_error_with_custom_source(self):
+        c = make_compiler()
+        with pytest.raises(CompileError) as exc_info:
+            c.compile_source(": test blarg ;", source="demo.fs")
+        msg = str(exc_info.value)
+        assert "demo.fs:" in msg, "error should include custom source filename"
+
+    def test_unclosed_colon_reports_word_name(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="unclosed.*myword"):
+            c.compile_source(": myword dup +")
+
+    def test_missing_main_raises(self):
+        c = make_compiler()
+        c.compile_source(": notmain 42 ;")
+        with pytest.raises(CompileError, match="main"):
+            c.compile_main_call()
+
+
+class TestIntegration:
+
+    @pytest.mark.parametrize("src,expected", [
+        (": double dup + ; : quad double double ; : main 10 quad halt ;", [40]),
+        (": main 1 2 3 rot + + halt ;", [6]),
+        (": main 100 1- 1- 1- halt ;", [97]),
+        (": main 5 2* 2* halt ;", [20]),
+        ("variable x : main 7 x ! x @ dup * halt ;", [49]),
+        ("3 constant n : main n n * n + halt ;", [12]),
+        (": main 0 1 2 3 4 drop drop drop drop halt ;", [0]),
+        (": main $ff $ff00 or halt ;", [0xFFFF]),
+        ("create pair 3 , 7 , : main pair dup @ swap 2 + @ + halt ;", [10]),
+    ], ids=[
+        "quad", "rot-add", "dec-three", "shift-left-twice",
+        "var-square", "const-expr", "drop-chain", "or-hex", "create-pair",
+    ])
+    def test_programs(self, src, expected):
+        assert compile_and_run(src) == expected, f"'{src}' should produce {expected}"
+
+
+class TestCounterDemo:
+
+    def test_counter_compiles(self):
+        from zt.image import build_from_forth
+        image = build_from_forth()
+        assert len(image) > 100, "compiled counter demo should produce substantial image"
+
+    def test_counter_runs_border_writes(self):
+        from zt.compiler import Compiler
+        from zt.sim import Z80
+
+        c = Compiler()
+        c.compile_source(": main 0 begin dup border 1+ again ;")
+        c.compile_main_call()
+        image = c.build()
+
+        m = Z80()
+        m.load(c.origin, image)
+        m.pc = c.words["_start"].address
+        m.run(max_ticks=50_000)
+
+        border_writes = [v for port, v in m._outputs if (port & 0xFF) == 0xFE]
+        assert len(border_writes) > 5, "counter should produce border writes"
+        assert border_writes[:6] == [0, 1, 2, 3, 4, 5], \
+            "counter should cycle through border values 0,1,2,..."

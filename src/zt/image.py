@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from zt.asm import Asm
+from zt.compiler import build_from_source
 from zt.primitives import PRIMITIVES
 
 SPECTRUM_ATTR_BASE = 0x5800
@@ -50,3 +51,13 @@ def build_image(origin: int = 0x8000,
     create_demo_double(a)
     create_demo_main(a)
     return a.resolve()
+
+
+COUNTER_FORTH = """\
+: main  0 begin dup border 1+ again ;
+"""
+
+
+def build_from_forth(source: str = COUNTER_FORTH, **kwargs) -> bytes:
+    image, _ = build_from_source(source, **kwargs)
+    return image
