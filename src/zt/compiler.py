@@ -6,6 +6,13 @@ from typing import Any, Callable, Literal
 
 from zt.asm import Asm
 from zt.debug import SourceEntry
+from zt.peephole import (
+    DEFAULT_RULES,
+    PatternElement,
+    PeepholeRule,
+    find_match,
+    max_pattern_length,
+)
 from zt.primitives import PRIMITIVES
 from zt.tokenizer import Token, tokenize
 
@@ -44,6 +51,7 @@ class Compiler:
         data_stack_top: int = DEFAULT_DATA_STACK_TOP,
         return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
         include_dirs: list[Path] | None = None,
+        optimize: bool = True,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
@@ -64,6 +72,8 @@ class Compiler:
         self._current_body: list[int | str] | None = None
         self._body_cell_refs: dict[int, tuple[list[int | str], int]] = {}
         self.warnings: list[str] = []
+        self.optimize: bool = optimize
+        self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
@@ -162,6 +172,8 @@ class Compiler:
             return
         if tok.kind == "word" and tok.value == ":":
             raise CompileError("nested colon definition", tok)
+        if self.optimize and self._try_peephole(tok):
+            return
         if tok.kind == "word":
             word = self.words.get(tok.value)
             if word is None:
@@ -176,6 +188,43 @@ class Compiler:
             self._compile_literal(value, tok)
             return
         raise CompileError(f"unexpected token '{tok.value}'", tok)
+
+    def _try_peephole(self, tok: Token) -> bool:
+        elements = self._peephole_window(tok)
+        rule = find_match(elements, self._peephole_rules)
+        if rule is None:
+            return False
+        replacement = self.words.get(rule.replacement)
+        if replacement is None:
+            return False
+        self._token_pos += len(rule.pattern) - 1
+        self._emit_cell(replacement.address, tok)
+        return True
+
+    def _peephole_window(self, first_tok: Token) -> list[PatternElement | None]:
+        span = max_pattern_length(self._peephole_rules)
+        if span <= 0:
+            return []
+        tail = self._tokens[self._token_pos:self._token_pos + span - 1]
+        return [self._token_element(t) for t in (first_tok, *tail)]
+
+    def _token_element(self, tok: Token) -> PatternElement | None:
+        if self._is_structural_token(tok) or self._is_immediate_token(tok):
+            return None
+        if tok.kind == "number":
+            return parse_number(tok.value)
+        if tok.kind == "word":
+            return tok.value.lower()
+        return None
+
+    def _is_structural_token(self, tok: Token) -> bool:
+        return tok.kind == "word" and tok.value in (";", ":")
+
+    def _is_immediate_token(self, tok: Token) -> bool:
+        if tok.kind != "word":
+            return False
+        word = self.words.get(tok.value)
+        return word is not None and word.immediate
 
     def _start_colon(self, tok: Token) -> None:
         if self.state == "compile":
@@ -615,10 +664,14 @@ def parse_number(text: str) -> int:
     return int(text)
 
 
-def compile_and_run(source: str, origin: int = DEFAULT_ORIGIN) -> list[int]:
+def compile_and_run(
+    source: str,
+    origin: int = DEFAULT_ORIGIN,
+    optimize: bool = True,
+) -> list[int]:
     from zt.sim import Z80, _read_data_stack
 
-    c = Compiler(origin=origin)
+    c = Compiler(origin=origin, optimize=optimize)
     c.compile_source(source)
     c.compile_main_call()
     image = c.build()
@@ -638,6 +691,7 @@ def compile_and_run_with_output(
     input_buffer: bytes = b"",
     max_ticks: int = 10_000_000,
     stdlib: bool = False,
+    optimize: bool = True,
 ) -> tuple[list[int], bytes]:
     from zt.sim import (
         SPECTRUM_FONT_BASE,
@@ -647,7 +701,7 @@ def compile_and_run_with_output(
         decode_screen_text,
     )
 
-    c = Compiler(origin=origin)
+    c = Compiler(origin=origin, optimize=optimize)
     if stdlib:
         c.include_stdlib()
     c.compile_source(source)
@@ -677,9 +731,10 @@ def build_from_source(
     origin: int = DEFAULT_ORIGIN,
     data_stack_top: int = DEFAULT_DATA_STACK_TOP,
     return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
+    optimize: bool = True,
 ) -> tuple[bytes, Compiler]:
     c = Compiler(origin=origin, data_stack_top=data_stack_top,
-                 return_stack_top=return_stack_top)
+                 return_stack_top=return_stack_top, optimize=optimize)
     c.compile_source(source)
     c.compile_main_call()
     return c.build(), c

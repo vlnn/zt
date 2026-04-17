@@ -58,6 +58,8 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
                        help="include bundled stdlib/core.fs (default)")
     build.add_argument("--no-stdlib", dest="stdlib", action="store_false",
                        help="skip bundled stdlib/core.fs")
+    build.add_argument("--no-optimize", dest="optimize", action="store_false",
+                       default=True, help="disable peephole optimizer")
 
 
 def _register_inspect(sub: argparse._SubParsersAction) -> None:
@@ -130,6 +132,7 @@ def _build_compiler(args: argparse.Namespace) -> Compiler:
         data_stack_top=args.dstack,
         return_stack_top=args.rstack,
         include_dirs=args.include_dirs,
+        optimize=args.optimize,
     )
     if args.stdlib:
         c.include_stdlib()

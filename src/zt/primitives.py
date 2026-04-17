@@ -207,6 +207,22 @@ def create_two_slash(a: Asm) -> None:
     a.jp("NEXT")
 
 
+def create_zero(a: Asm) -> None:
+    a.label("ZERO")
+    a.alias("zero", "ZERO")
+    a.push_hl()
+    a.ld_hl_nn(0)
+    a.jp("NEXT")
+
+
+def create_one(a: Asm) -> None:
+    a.label("ONE")
+    a.alias("one", "ONE")
+    a.push_hl()
+    a.ld_hl_nn(1)
+    a.jp("NEXT")
+
+
 def create_negate(a: Asm) -> None:
     a.label("NEGATE")
     a.alias("negate", "NEGATE")
@@ -437,6 +453,17 @@ def create_u_less(a: Asm) -> None:
 def create_fetch(a: Asm) -> None:
     a.label("FETCH")
     a.alias("@", "FETCH")
+    a.ld_e_ind_hl()
+    a.inc_hl()
+    a.ld_d_ind_hl()
+    a.ex_de_hl()
+    a.jp("NEXT")
+
+
+def create_dup_fetch(a: Asm) -> None:
+    a.label("DUP_FETCH")
+    a.alias("dup@", "DUP_FETCH")
+    a.push_hl()
     a.ld_e_ind_hl()
     a.inc_hl()
     a.ld_d_ind_hl()
@@ -896,6 +923,7 @@ PRIMITIVES = [
     create_plus, create_minus,
     create_one_plus, create_one_minus,
     create_two_star, create_two_slash,
+    create_zero, create_one,
     create_negate, create_abs,
     create_min, create_max,
     create_and, create_or, create_xor, create_invert,
@@ -905,6 +933,7 @@ PRIMITIVES = [
     create_zero_equals, create_zero_less,
     create_u_less,
     create_fetch, create_store,
+    create_dup_fetch,
     create_c_fetch, create_c_store,
     create_plus_store,
     create_cmove, create_fill,

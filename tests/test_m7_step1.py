@@ -86,14 +86,13 @@ class TestColonBody:
             "variables should have an empty body"
 
     def test_nested_definitions_keep_separate_bodies(self, compiler):
-        compiler.compile_source(": a 1 ;\n: b 2 ;\n")
+        compiler.compile_source(": a 5 ;\n: b 7 ;\n")
         a_body = compiler.words["a"].body
         b_body = compiler.words["b"].body
-        assert 1 in a_body and 2 not in a_body, \
+        assert 5 in a_body and 7 not in a_body, \
             "a.body should contain only cells from a"
-        assert 2 in b_body and 1 not in b_body, \
+        assert 7 in b_body and 5 not in b_body, \
             "b.body should contain only cells from b"
-
 
 class TestSourceMap:
     def test_populated(self, compiler):
