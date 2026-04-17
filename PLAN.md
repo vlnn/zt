@@ -1005,13 +1005,13 @@ main = $80A2
 double = $80B0
 ```
 
-### forthc inspect
+### zt inspect
 
 Read a `.sna` + `.fsym` (serialized host dictionary) and print decompiled
 threaded code:
 
 ```
-$ forthc inspect plasma.sna --symbols plasma.fsym
+$ zt inspect plasma.sna --symbols plasma.fsym
 
 : double  ( $80B0 )
     dup + ;
@@ -1026,7 +1026,7 @@ $ forthc inspect plasma.sna --symbols plasma.fsym
 2. Compile `.fsym` file — JSON serialization of the host dictionary:
    `{ "double": {"address": "0x80B0", "kind": "colon", "body": [...]} }`.
 
-3. Implement `forthc inspect` subcommand:
+3. Implement `zt inspect` subcommand:
    - Load `.fsym`
    - Walk each colon word's body cells
    - Reverse-lookup cell addresses to word names
@@ -1052,7 +1052,7 @@ def test_inspect_output(tmp_path):
 
 ### Deliverable
 
-Debuggable images. Fuse shows word names. `forthc inspect` decompiles threaded code.
+Debuggable images. Fuse shows word names. `zt inspect` decompiles threaded code.
 
 ---
 
@@ -1329,7 +1329,7 @@ the condition is false.
 ### 10f — Live reload
 
 ```bash
-forthc watch src/main.fs -o game.sna --emulator fuse
+zt watch src/main.fs -o game.sna --emulator fuse
 ```
 
 Uses `watchdog` or `inotify` to monitor `.fs` files. On change: rebuild,
