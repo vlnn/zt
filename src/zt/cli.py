@@ -5,6 +5,10 @@ import sys
 from pathlib import Path
 
 from zt.compiler import Compiler, CompileError
+from zt.fsym import load_fsym, write_fsym
+from zt.inspect import decompile
+from zt.mapfile import FUSE, ZESARUX, write_map
+from zt.sld import write_sld
 from zt.sna import build_sna
 
 
@@ -15,7 +19,20 @@ FORMAT_BY_EXTENSION = {".sna": "sna", ".bin": "bin", ".tap": "tap"}
 def main() -> None:
     parser = argparse.ArgumentParser(prog="zt", description="Z80 Forth cross-compiler")
     sub = parser.add_subparsers(dest="command")
+    _register_build(sub)
+    _register_inspect(sub)
 
+    args = parser.parse_args()
+    if args.command == "build":
+        _do_build(args)
+        return
+    if args.command == "inspect":
+        _do_inspect(args)
+        return
+    parser.print_help()
+
+
+def _register_build(sub: argparse._SubParsersAction) -> None:
     build = sub.add_parser("build", help="compile Forth source to Spectrum snapshot")
     build.add_argument("source", type=Path, help=".fs source file")
     build.add_argument("-o", "--output", type=Path, required=True, help="output file")
@@ -30,17 +47,23 @@ def main() -> None:
                        help="additional search path for INCLUDE/REQUIRE (repeatable)")
     build.add_argument("--map", type=Path, default=None, dest="map_path",
                        metavar="PATH", help="write symbol map to PATH")
+    build.add_argument("--map-format", choices=[FUSE, ZESARUX], default=None,
+                       dest="map_format",
+                       help="force map format (default: auto from extension)")
+    build.add_argument("--sld", type=Path, default=None, dest="sld_path",
+                       metavar="PATH", help="write sjasmplus-style SLD to PATH")
+    build.add_argument("--fsym", type=Path, default=None, dest="fsym_path",
+                       metavar="PATH", help="write JSON host dictionary to PATH")
     build.add_argument("--stdlib", dest="stdlib", action="store_true", default=True,
                        help="include bundled stdlib/core.fs (default)")
     build.add_argument("--no-stdlib", dest="stdlib", action="store_false",
                        help="skip bundled stdlib/core.fs")
 
-    args = parser.parse_args()
 
-    if args.command == "build":
-        _do_build(args)
-    else:
-        parser.print_help()
+def _register_inspect(sub: argparse._SubParsersAction) -> None:
+    ins = sub.add_parser("inspect", help="decompile colon words from an fsym file")
+    ins.add_argument("--symbols", type=Path, required=True, dest="symbols",
+                     metavar="PATH", help="path to .fsym JSON file")
 
 
 def _do_build(args: argparse.Namespace) -> None:
@@ -61,9 +84,25 @@ def _do_build(args: argparse.Namespace) -> None:
         sys.exit(1)
 
     _write_output(image, args, compiler, fmt)
-    if args.map_path:
-        _write_map(compiler, args.map_path)
+    _write_debug_artifacts(compiler, args)
     _print_summary(args.source, args.output, image, compiler, fmt)
+
+
+def _write_debug_artifacts(compiler: Compiler, args: argparse.Namespace) -> None:
+    if args.map_path:
+        write_map(compiler, args.map_path, fmt=args.map_format)
+    if args.sld_path:
+        write_sld(compiler, args.sld_path)
+    if args.fsym_path:
+        write_fsym(compiler, args.fsym_path)
+
+
+def _do_inspect(args: argparse.Namespace) -> None:
+    if not args.symbols.exists():
+        print(f"error: {args.symbols} not found", file=sys.stderr)
+        sys.exit(1)
+    fsym = load_fsym(args.symbols)
+    sys.stdout.write(decompile(fsym))
 
 
 def _build_compiler(args: argparse.Namespace) -> Compiler:
@@ -105,23 +144,6 @@ def _write_output(image: bytes, args: argparse.Namespace,
         args.output.write_bytes(image)
         return
     raise AssertionError(f"unreachable: format {fmt}")
-
-
-def _write_map(compiler: Compiler, path: Path) -> None:
-    entries = _map_entries(compiler)
-    lines = (f"${addr:04X} {name}" for addr, name in entries)
-    path.write_text("\n".join(lines) + "\n")
-
-
-def _map_entries(compiler: Compiler) -> list[tuple[int, str]]:
-    by_addr: dict[int, str] = {}
-    for name, word in compiler.words.items():
-        if not word.address:
-            continue
-        by_addr.setdefault(word.address, name)
-    for label, addr in compiler.asm.labels.items():
-        by_addr.setdefault(addr, label)
-    return sorted(by_addr.items())
 
 
 def _print_summary(source: Path, output: Path, image: bytes,

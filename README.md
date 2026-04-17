@@ -1,24 +1,20 @@
-# zt — Z80 Forth cross-compiler
+M7 — Symbol map and debugging.
 
-Cross-compiles Forth to Z80 threaded code targeting the ZX Spectrum.
+Replaces in your tree:
+  src/zt/compiler.py
+  src/zt/cli.py
 
-## Quick start
+New:
+  src/zt/debug.py    SourceEntry
+  src/zt/mapfile.py  Fuse + ZEsarUX map writers
+  src/zt/sld.py      sjasmplus-style SLD writer
+  src/zt/fsym.py     JSON host-dictionary writer/loader
+  src/zt/inspect.py  raw decompiler
 
-```
-uv sync
-uv run zt build output.sna
-```
+CLI surface:
+  zt build src.fs -o out.sna [--map PATH] [--map-format fuse|zesarux]
+                             [--sld PATH] [--fsym PATH]
+  zt inspect --symbols out.fsym
 
-Load `output.sna` in Fuse, ZEsarUX, or any Spectrum emulator.
-
-## Development
-
-```
-uv run pytest
-```
-
-## Architecture
-
-- **DTC inner interpreter** — IX as IP, SP as data stack, IY as return stack, HL as cached TOS
-- **Host-side dictionary** — no dictionary in the target image
-- **Python cross-compiler** — `.fs` source files compile to raw threaded code
+Byte-identical .sna guaranteed by tests/test_m7_cli.py::TestImageUnchangedByDebugFlags
+and tests/test_m7_step1.py::TestImageUnchanged.

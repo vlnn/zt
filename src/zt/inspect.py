@@ -14,7 +14,19 @@ def decompile(fsym: dict[str, Any]) -> str:
 
 
 def _words_by_address(words: dict[str, dict]) -> dict[int, str]:
-    return {info["address"]: name for name, info in words.items()}
+    result: dict[int, str] = {}
+    for name, info in words.items():
+        addr = info["address"]
+        current = result.get(addr)
+        if current is None or _prefer(name, current):
+            result[addr] = name
+    return result
+
+
+def _prefer(candidate: str, current: str) -> bool:
+    if len(candidate) != len(current):
+        return len(candidate) < len(current)
+    return candidate < current
 
 
 def _decompile_word(name: str, info: dict, by_addr: dict[int, str]) -> str:

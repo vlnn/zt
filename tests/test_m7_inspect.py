@@ -48,6 +48,21 @@ class TestDecompileBasics:
         assert ": dup" not in out, \
             "primitive dup should not be decompiled as a colon definition"
 
+    @pytest.mark.parametrize("forth_op,spelled_out", [
+        ("+", "plus"),
+        ("-", "minus"),
+        ("*", "star"),
+        ("=", "equals"),
+    ])
+    def test_forth_alias_preferred_over_spelled_out_name(self, forth_op, spelled_out):
+        d = compile_and_dump(f": f {forth_op} ;\n")
+        out = decompile(d)
+        if spelled_out in d["words"]:
+            assert spelled_out not in out, \
+                f"decompile should prefer '{forth_op}' over its '{spelled_out}' alias"
+            assert forth_op in out, \
+                f"decompile should render {forth_op} rather than its long-form alias"
+
 
 class TestLiterals:
     @pytest.mark.parametrize("source,literal", [
