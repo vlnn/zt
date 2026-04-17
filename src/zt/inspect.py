@@ -1,13 +1,15 @@
+from dataclasses import dataclass, field
 from typing import Any
 
 
-INLINE_VALUE_WORDS = frozenset({"lit"})
-INLINE_TARGET_WORDS = frozenset({"branch", "0branch"})
+DOCOL_CALL_SIZE = 3
 
 
-def decompile(fsym: dict[str, Any]) -> str:
+def decompile(fsym: dict[str, Any], image: bytes | None = None) -> str:
     words_by_addr = _words_by_address(fsym["words"])
-    blocks = [_decompile_word(name, info, words_by_addr)
+    origin = fsym.get("origin", 0x8000)
+    reader = _ImageReader(image, origin) if image else None
+    blocks = [_decompile_word(name, info, words_by_addr, reader)
               for name, info in fsym["words"].items()
               if info["kind"] == "colon"]
     return "\n\n".join(blocks) + ("\n" if blocks else "")
@@ -29,37 +31,233 @@ def _prefer(candidate: str, current: str) -> bool:
     return candidate < current
 
 
-def _decompile_word(name: str, info: dict, by_addr: dict[int, str]) -> str:
+def _decompile_word(name: str, info: dict, by_addr: dict[int, str],
+                    reader: "_ImageReader | None") -> str:
+    body = info.get("body", [])
+    body_start = info["address"] + DOCOL_CALL_SIZE
+    instrs = _parse_body(body, by_addr, body_start)
+    tokens = _render(instrs, reader)
     header = f": {name}  ( ${info['address']:04X} )"
-    tokens = _body_tokens(info.get("body", []), by_addr)
     return f"{header}\n    {' '.join(tokens)}"
 
 
-def _body_tokens(body: list[int], by_addr: dict[int, str]) -> list[str]:
-    tokens: list[str] = []
+@dataclass
+class _Instr:
+    kind: str
+    idx: int
+    width: int = 1
+    value: int = 0
+    target: int = 0
+    name: str = ""
+
+
+def _parse_body(body: list[int], by_addr: dict[int, str],
+                body_start_addr: int) -> list[_Instr]:
+    instrs: list[_Instr] = []
     i = 0
     while i < len(body):
         cell = body[i]
         name = by_addr.get(cell)
-        consumed = _try_consume(name, body, i, tokens)
-        i += consumed
+        instr = _parse_one(body, i, name, body_start_addr)
+        instrs.append(instr)
+        i += instr.width
+    return instrs
+
+
+def _parse_one(body: list[int], i: int, name: str | None,
+               body_start_addr: int) -> _Instr:
+    if name == "lit" and i + 1 < len(body):
+        return _Instr(kind="lit", idx=i, width=2, value=body[i + 1])
+    if name in ("branch", "0branch") and i + 1 < len(body):
+        return _Instr(kind=name, idx=i, width=2,
+                      target=_addr_to_idx(body[i + 1], body_start_addr))
+    if name in ("(loop)", "(+loop)") and i + 1 < len(body):
+        kind = "loop" if name == "(loop)" else "+loop"
+        return _Instr(kind=kind, idx=i, width=2,
+                      target=_addr_to_idx(body[i + 1], body_start_addr))
+    if name == "(do)":
+        return _Instr(kind="do", idx=i)
+    if name == "unloop":
+        return _Instr(kind="unloop", idx=i)
+    if name == "exit":
+        return _Instr(kind="exit", idx=i)
+    if name is not None:
+        return _Instr(kind="call", idx=i, name=name)
+    return _Instr(kind="raw", idx=i, value=body[i])
+
+
+def _addr_to_idx(address: int, body_start_addr: int) -> int:
+    return (address - body_start_addr) // 2
+
+
+def _begin_targets(instrs: list[_Instr]) -> set[int]:
+    return {inst.target for inst in instrs
+            if inst.kind in ("branch", "0branch") and inst.target < inst.idx}
+
+
+def _render(instrs: list[_Instr], reader: "_ImageReader | None") -> list[str]:
+    begins = _begin_targets(instrs)
+    stack: list[dict] = []
+    tokens: list[str] = []
+    i = 0
+    while i < len(instrs):
+        inst = instrs[i]
+        _close_conditionals(stack, tokens, inst.idx)
+        _open_begin_if_needed(stack, tokens, begins, inst.idx)
+        i = _emit(instrs, i, stack, tokens, reader)
+    _close_conditionals(stack, tokens, float("inf"))
     return tokens
 
 
-def _try_consume(name: str | None, body: list[int], i: int,
-                 tokens: list[str]) -> int:
-    if name in INLINE_VALUE_WORDS and i + 1 < len(body):
-        tokens.append(str(_signed(body[i + 1])))
-        return 2
-    if name in INLINE_TARGET_WORDS and i + 1 < len(body):
-        tokens.append(f"{name} ${body[i + 1]:04X}")
-        return 2
-    if name == "exit" and i == len(body) - 1:
-        tokens.append(";")
-        return 1
-    tokens.append(name if name is not None else f"${body[i]:04X}")
-    return 1
+def _close_conditionals(stack: list[dict], tokens: list[str], idx: float) -> None:
+    while stack and stack[-1]["kind"] in ("if", "else") \
+            and stack[-1]["close_at"] <= idx:
+        stack.pop()
+        tokens.append("then")
+
+
+def _open_begin_if_needed(stack: list[dict], tokens: list[str],
+                          begins: set[int], idx: int) -> None:
+    if idx not in begins:
+        return
+    if any(s["kind"] == "begin" and s.get("begin_idx") == idx for s in stack):
+        return
+    stack.append({"kind": "begin", "begin_idx": idx})
+    tokens.append("begin")
+
+
+def _emit(instrs: list[_Instr], i: int, stack: list[dict],
+          tokens: list[str], reader: "_ImageReader | None") -> int:
+    inst = instrs[i]
+    if inst.kind == "lit":
+        return _emit_lit(instrs, i, tokens, reader)
+    if inst.kind == "branch":
+        return _emit_branch(inst, instrs, i, stack, tokens)
+    if inst.kind == "0branch":
+        return _emit_zbranch(inst, stack, tokens) or i + 1
+    if inst.kind == "do":
+        stack.append({"kind": "do"})
+        tokens.append("do")
+        return i + 1
+    if inst.kind in ("loop", "+loop"):
+        if stack and stack[-1]["kind"] == "do":
+            stack.pop()
+        tokens.append(inst.kind)
+        return i + 1
+    if inst.kind == "unloop":
+        return _emit_unloop(instrs, i, tokens)
+    if inst.kind == "exit":
+        tokens.append(";" if i == len(instrs) - 1 else "exit")
+        return i + 1
+    if inst.kind == "call":
+        tokens.append(inst.name)
+        return i + 1
+    tokens.append(f"${inst.value:04X}")
+    return i + 1
+
+
+def _emit_lit(instrs: list[_Instr], i: int, tokens: list[str],
+              reader: "_ImageReader | None") -> int:
+    consumed = _try_dot_quote(instrs, i, tokens, reader)
+    if consumed:
+        return i + consumed
+    tokens.append(str(_signed(instrs[i].value)))
+    return i + 1
+
+
+def _try_dot_quote(instrs: list[_Instr], i: int, tokens: list[str],
+                   reader: "_ImageReader | None") -> int:
+    if reader is None:
+        return 0
+    if i + 2 >= len(instrs):
+        return 0
+    a, b, c = instrs[i], instrs[i + 1], instrs[i + 2]
+    if a.kind != "lit" or b.kind != "lit":
+        return 0
+    if c.kind != "call" or c.name != "type":
+        return 0
+    data = reader.read(a.value, b.value)
+    if data is None:
+        return 0
+    tokens.append(f'." {data.decode("latin-1")}"')
+    return 3
+
+
+def _emit_branch(inst: _Instr, instrs: list[_Instr], i: int,
+                 stack: list[dict], tokens: list[str]) -> int:
+    if inst.target < inst.idx:
+        return _emit_backward_branch(inst, stack, tokens, i)
+    return _emit_forward_branch(inst, instrs, i, stack, tokens)
+
+
+def _emit_backward_branch(inst: _Instr, stack: list[dict],
+                          tokens: list[str], i: int) -> int:
+    if stack and stack[-1]["kind"] == "while":
+        stack.pop()
+        if stack and stack[-1]["kind"] == "begin":
+            stack.pop()
+        tokens.append("repeat")
+        return i + 1
+    if stack and stack[-1]["kind"] == "begin" \
+            and stack[-1]["begin_idx"] == inst.target:
+        stack.pop()
+        tokens.append("again")
+        return i + 1
+    tokens.append(f"branch ${inst.target:04X}")
+    return i + 1
+
+
+def _emit_forward_branch(inst: _Instr, instrs: list[_Instr], i: int,
+                         stack: list[dict], tokens: list[str]) -> int:
+    if i > 0 and instrs[i - 1].kind == "unloop":
+        return i + 1
+    if stack and stack[-1]["kind"] == "if":
+        stack.pop()
+        stack.append({"kind": "else", "close_at": inst.target})
+        tokens.append("else")
+        return i + 1
+    tokens.append(f"branch ${inst.target:04X}")
+    return i + 1
+
+
+def _emit_zbranch(inst: _Instr, stack: list[dict],
+                  tokens: list[str]) -> int | None:
+    if inst.target < inst.idx:
+        if stack and stack[-1]["kind"] == "begin":
+            stack.pop()
+            tokens.append("until")
+            return None
+        tokens.append(f"0branch ${inst.target:04X}")
+        return None
+    if stack and stack[-1]["kind"] == "begin":
+        stack.append({"kind": "while"})
+        tokens.append("while")
+        return None
+    stack.append({"kind": "if", "close_at": inst.target})
+    tokens.append("if")
+    return None
+
+
+def _emit_unloop(instrs: list[_Instr], i: int, tokens: list[str]) -> int:
+    nxt = instrs[i + 1] if i + 1 < len(instrs) else None
+    if nxt and nxt.kind == "branch" and nxt.target > nxt.idx:
+        tokens.append("leave")
+        return i + 2
+    tokens.append("unloop")
+    return i + 1
 
 
 def _signed(value: int) -> int:
     return value - 0x10000 if value >= 0x8000 else value
+
+
+class _ImageReader:
+    def __init__(self, image: bytes, origin: int) -> None:
+        self.image = image
+        self.origin = origin
+
+    def read(self, addr: int, length: int) -> bytes | None:
+        offset = addr - self.origin
+        if offset < 0 or offset + length > len(self.image):
+            return None
+        return bytes(self.image[offset:offset + length])

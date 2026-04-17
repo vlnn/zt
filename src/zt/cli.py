@@ -64,6 +64,9 @@ def _register_inspect(sub: argparse._SubParsersAction) -> None:
     ins = sub.add_parser("inspect", help="decompile colon words from an fsym file")
     ins.add_argument("--symbols", type=Path, required=True, dest="symbols",
                      metavar="PATH", help="path to .fsym JSON file")
+    ins.add_argument("--image", type=Path, default=None, dest="image",
+                     metavar="PATH", help="raw image file (e.g. .bin) for "
+                                          "reconstructing string literals")
 
 
 def _do_build(args: argparse.Namespace) -> None:
@@ -85,7 +88,13 @@ def _do_build(args: argparse.Namespace) -> None:
 
     _write_output(image, args, compiler, fmt)
     _write_debug_artifacts(compiler, args)
+    _emit_warnings(compiler)
     _print_summary(args.source, args.output, image, compiler, fmt)
+
+
+def _emit_warnings(compiler: Compiler) -> None:
+    for msg in compiler.warnings:
+        print(msg, file=sys.stderr)
 
 
 def _write_debug_artifacts(compiler: Compiler, args: argparse.Namespace) -> None:
@@ -101,8 +110,18 @@ def _do_inspect(args: argparse.Namespace) -> None:
     if not args.symbols.exists():
         print(f"error: {args.symbols} not found", file=sys.stderr)
         sys.exit(1)
+    image = _load_image(args)
     fsym = load_fsym(args.symbols)
-    sys.stdout.write(decompile(fsym))
+    sys.stdout.write(decompile(fsym, image=image))
+
+
+def _load_image(args: argparse.Namespace) -> bytes | None:
+    if args.image is None:
+        return None
+    if not args.image.exists():
+        print(f"error: {args.image} not found", file=sys.stderr)
+        sys.exit(1)
+    return args.image.read_bytes()
 
 
 def _build_compiler(args: argparse.Namespace) -> Compiler:

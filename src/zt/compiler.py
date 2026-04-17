@@ -63,6 +63,7 @@ class Compiler:
         self.source_map: list[SourceEntry] = []
         self._current_body: list[int | str] | None = None
         self._body_cell_refs: dict[int, tuple[list[int | str], int]] = {}
+        self.warnings: list[str] = []
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
@@ -181,6 +182,7 @@ class Compiler:
             raise CompileError("nested colon definition", tok)
         name_tok = self._next_token(tok)
         name = name_tok.value
+        self._warn_if_redefining(name, tok)
         self.state = "compile"
         self.current_word = name
         self._current_body = []
@@ -189,6 +191,19 @@ class Compiler:
         self.words[name] = Word(
             name=name, address=addr, kind="colon",
             source_file=tok.source, source_line=tok.line,
+        )
+
+    def _warn_if_redefining(self, name: str, tok: Token) -> None:
+        previous = self.words.get(name)
+        if previous is None or previous.kind != "colon":
+            return
+        if previous.source_file is None or previous.source_line is None:
+            return
+        here = f"{tok.source}:{tok.line}"
+        there = f"{previous.source_file}:{previous.source_line}"
+        self.warnings.append(
+            f"{here}: warning: redefining '{name}' "
+            f"(first defined at {there})"
         )
 
     def _end_colon(self, tok: Token) -> None:
