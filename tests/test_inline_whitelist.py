@@ -6,6 +6,7 @@ from zt.inline_bodies import (
     INLINABLE_PRIMITIVES,
     build_inline_registry,
     extract_inline_body,
+    has_absolute_jump_in_body,
     has_mid_body_dispatch,
     is_primitive_inlinable,
     primitive_name,
@@ -106,6 +107,27 @@ class TestHasMidBodyDispatch:
             "lit is single-dispatch; its non-inlinability comes from (IX), not mid-body JP"
 
 
+class TestHasAbsoluteJumpInBody:
+
+    def test_zbranch_is_flagged_due_to_two_dispatch_sites(self):
+        assert has_absolute_jump_in_body(create_zbranch), \
+            "zbranch has two dispatch sites; stripping the last leaves a JP NEXT in the body"
+
+    def test_branch_is_not_flagged(self):
+        assert not has_absolute_jump_in_body(create_branch), \
+            "branch has only a trailing dispatch; after stripping, no 0xC3 should remain"
+
+    def test_simple_primitive_has_no_absolute_jump(self):
+        from zt.primitives import create_dup, create_drop, create_plus
+        for creator in (create_dup, create_drop, create_plus):
+            assert not has_absolute_jump_in_body(creator), \
+                f"{creator.__name__} body should not contain any 0xC3 byte"
+
+    def test_non_extractable_primitive_is_not_flagged(self):
+        assert not has_absolute_jump_in_body(create_halt), \
+            "halt has no extractable body and cannot be flagged"
+
+
 class TestWhitelistSafetyAudit:
 
     @pytest.mark.parametrize("name", sorted(INLINABLE_PRIMITIVES))
@@ -115,6 +137,14 @@ class TestWhitelistSafetyAudit:
             f"could not find create_{name} in PRIMITIVES"
         assert not has_mid_body_dispatch(creator), \
             f"{name!r} has a mid-body JP NEXT and is unsafe to paste as a block"
+
+    @pytest.mark.parametrize("name", sorted(INLINABLE_PRIMITIVES))
+    def test_no_whitelisted_primitive_has_an_absolute_jump(self, name):
+        creator = _find_creator(name)
+        assert creator is not None, \
+            f"could not find create_{name} in PRIMITIVES"
+        assert not has_absolute_jump_in_body(creator), \
+            f"{name!r} body contains a 0xC3 byte — possibly an absolute JP, unsafe to relocate"
 
 
 class TestBodyShapeForWhitelistedPrimitives:
