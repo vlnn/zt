@@ -557,6 +557,117 @@ def create_zbranch(a: Asm) -> None:
     a.jp("NEXT")
 
 
+def create_do_rt(a: Asm) -> None:
+    a.label("DO_RT")
+    a.alias("(do)", "DO_RT")
+    a.pop_de()
+    a.dec_iy()
+    a.dec_iy()
+    a.ld_iy_e(0)
+    a.ld_iy_d(1)
+    a.dec_iy()
+    a.dec_iy()
+    a.ld_iy_l(0)
+    a.ld_iy_h(1)
+    a.pop_hl()
+    a.jp("NEXT")
+
+
+def create_loop_rt(a: Asm) -> None:
+    a.label("LOOP_RT")
+    a.alias("(loop)", "LOOP_RT")
+    a.push_hl()
+    a.ld_e_iy(0)
+    a.ld_d_iy(1)
+    a.inc_de()
+    a.ld_iy_e(0)
+    a.ld_iy_d(1)
+    a.ld_l_iy(2)
+    a.ld_h_iy(3)
+    a.or_a()
+    a.sbc_hl_de()
+    a.pop_hl()
+    a.jr_z_to("_loop_exit")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.push_de()
+    a.pop_ix()
+    a.jp("NEXT")
+    a.label("_loop_exit")
+    a.inc_ix()
+    a.inc_ix()
+    a.inc_iy()
+    a.inc_iy()
+    a.inc_iy()
+    a.inc_iy()
+    a.jp("NEXT")
+
+
+def create_ploop_rt(a: Asm) -> None:
+    a.label("PLOOP_RT")
+    a.alias("(+loop)", "PLOOP_RT")
+    a.ld_e_iy(0)
+    a.ld_d_iy(1)
+    a.add_hl_de()
+    a.ld_iy_l(0)
+    a.ld_iy_h(1)
+    a.push_hl()
+    a.ld_l_iy(2)
+    a.ld_h_iy(3)
+    a.ex_de_hl()
+    a.or_a()
+    a.sbc_hl_de()
+    a.ex_sp_hl()
+    a.or_a()
+    a.sbc_hl_de()
+    a.pop_de()
+    a.ld_a_h()
+    a.xor_d()
+    a.pop_hl()
+    a.jp_m("_ploop_exit")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.push_de()
+    a.pop_ix()
+    a.jp("NEXT")
+    a.label("_ploop_exit")
+    a.inc_ix()
+    a.inc_ix()
+    a.inc_iy()
+    a.inc_iy()
+    a.inc_iy()
+    a.inc_iy()
+    a.jp("NEXT")
+
+
+def create_i_index(a: Asm) -> None:
+    a.label("I_INDEX")
+    a.alias("i", "I_INDEX")
+    a.push_hl()
+    a.ld_l_iy(0)
+    a.ld_h_iy(1)
+    a.jp("NEXT")
+
+
+def create_j_index(a: Asm) -> None:
+    a.label("J_INDEX")
+    a.alias("j", "J_INDEX")
+    a.push_hl()
+    a.ld_l_iy(4)
+    a.ld_h_iy(5)
+    a.jp("NEXT")
+
+
+def create_unloop(a: Asm) -> None:
+    a.label("UNLOOP")
+    a.alias("unloop", "UNLOOP")
+    a.inc_iy()
+    a.inc_iy()
+    a.inc_iy()
+    a.inc_iy()
+    a.jp("NEXT")
+
+
 def create_halt(a: Asm) -> None:
     a.label("HALT")
     a.halt()
@@ -615,6 +726,8 @@ PRIMITIVES = [
     create_plus_store,
     create_cmove, create_fill,
     create_lit, create_branch, create_zbranch,
+    create_do_rt, create_loop_rt, create_ploop_rt,
+    create_i_index, create_j_index, create_unloop,
     create_halt, create_border,
     create_multiply,
 ]

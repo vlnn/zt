@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 
 from zt.asm import Asm
 from zt.primitives import PRIMITIVES
@@ -45,7 +45,7 @@ class Compiler:
         self.asm = Asm(origin)
         self.words: dict[str, Word] = {}
         self.state: Literal["interpret", "compile"] = "interpret"
-        self.control_stack: list[tuple[str, int]] = []
+        self.control_stack: list[tuple[str, Any]] = []
         self.current_word: str | None = None
         self._tokens: list[Token] = []
         self._token_pos: int = 0
@@ -88,6 +88,10 @@ class Compiler:
             ("until", self._immediate_until),
             ("while", self._immediate_while),
             ("repeat", self._immediate_repeat),
+            ("do", self._immediate_do),
+            ("loop", self._immediate_loop),
+            ("+loop", self._immediate_plus_loop),
+            ("leave", self._immediate_leave),
             ("[", self._immediate_lbracket),
             ("]", self._immediate_rbracket),
             ("[']", self._immediate_bracket_tick),
@@ -246,10 +250,10 @@ class Compiler:
 
     # --- control stack helpers ---
 
-    def _push_control(self, tag: str, value: int) -> None:
+    def _push_control(self, tag: str, value: Any) -> None:
         self.control_stack.append((tag, value))
 
-    def _pop_control(self, expected_tag: str, tok: Token) -> int:
+    def _pop_control(self, expected_tag: str, tok: Token) -> Any:
         if not self.control_stack:
             raise CompileError(
                 f"control stack underflow ({expected_tag})", tok
@@ -261,7 +265,7 @@ class Compiler:
             )
         return value
 
-    def _pop_control_any(self, expected_tags: list[str], tok: Token) -> tuple[str, int]:
+    def _pop_control_any(self, expected_tags: list[str], tok: Token) -> tuple[str, Any]:
         if not self.control_stack:
             raise CompileError(
                 f"control stack underflow ({'/'.join(expected_tags)})", tok
@@ -346,6 +350,36 @@ class Compiler:
         while_placeholder = self._pop_control("while", tok)
         self._compile_branch_to(begin_addr)
         self._patch_placeholder(while_placeholder, self.asm.here)
+
+    # --- immediate words: DO/LOOP/+LOOP/LEAVE ---
+
+    def _immediate_do(self, _compiler: Compiler, tok: Token) -> None:
+        self.asm.word(self.words["(do)"].address)
+        body_addr = self.asm.here
+        self._push_control("do", {"addr": body_addr, "leaves": []})
+
+    def _immediate_loop(self, _compiler: Compiler, tok: Token) -> None:
+        do_info = self._pop_control("do", tok)
+        self.asm.word(self.words["(loop)"].address)
+        self.asm.word(do_info["addr"])
+        for leave_offset in do_info["leaves"]:
+            self._patch_placeholder(leave_offset, self.asm.here)
+
+    def _immediate_plus_loop(self, _compiler: Compiler, tok: Token) -> None:
+        do_info = self._pop_control("do", tok)
+        self.asm.word(self.words["(+loop)"].address)
+        self.asm.word(do_info["addr"])
+        for leave_offset in do_info["leaves"]:
+            self._patch_placeholder(leave_offset, self.asm.here)
+
+    def _immediate_leave(self, _compiler: Compiler, tok: Token) -> None:
+        for i in range(len(self.control_stack) - 1, -1, -1):
+            if self.control_stack[i][0] == "do":
+                self.asm.word(self.words["unloop"].address)
+                placeholder = self._compile_branch_placeholder()
+                self.control_stack[i][1]["leaves"].append(placeholder)
+                return
+        raise CompileError("LEAVE outside DO/LOOP", tok)
 
     # --- immediate words: brackets, tick, recurse ---
 

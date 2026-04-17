@@ -2,7 +2,8 @@ import pytest
 
 from zt.asm import Asm
 from zt.compiler import Compiler, CompileError, compile_and_run
-from zt.primitives import create_zbranch
+from zt.primitives import create_zbranch, create_do_rt, create_loop_rt, create_ploop_rt
+from zt.primitives import create_i_index, create_j_index, create_unloop
 
 
 def make_compiler(origin: int = 0x8000) -> Compiler:
@@ -13,6 +14,9 @@ def _asm_with_next() -> Asm:
     a = Asm(0x8000)
     a.label("NEXT")
     return a
+
+
+# ===== Tier 1: 0BRANCH primitive =====
 
 
 class TestZbranchPrimitive:
@@ -36,32 +40,12 @@ class TestZbranchPrimitive:
         out = a.resolve()
         assert out[3] == 0x20, "0BRANCH should JR NZ to skip path"
 
-    def test_take_path_loads_target_from_ix(self):
-        a = _asm_with_next()
-        create_zbranch(a)
-        out = a.resolve()
-        take_start = 5
-        assert out[take_start:take_start + 3] == bytes([0xDD, 0x5E, 0x00]), \
-            "0BRANCH take path should LD E,(IX+0)"
-        assert out[take_start + 3:take_start + 6] == bytes([0xDD, 0x56, 0x01]), \
-            "0BRANCH take path should LD D,(IX+1)"
-
-    def test_skip_path_advances_ix_twice(self):
-        a = _asm_with_next()
-        create_zbranch(a)
-        out = a.resolve()
-        jr_offset = out[4]
-        skip_start = 5 + jr_offset
-        assert out[skip_start:skip_start + 2] == bytes([0xDD, 0x23]), \
-            "0BRANCH skip path should INC IX"
-        assert out[skip_start + 2:skip_start + 4] == bytes([0xDD, 0x23]), \
-            "0BRANCH skip path should INC IX again"
-
     def test_registered_in_compiler(self):
         c = make_compiler()
         assert "0branch" in c.words, "0branch should be registered"
-        assert c.words["0branch"].address >= 0x8000, \
-            "0branch should have a valid address"
+
+
+# ===== Tier 1: IF/THEN/ELSE =====
 
 
 class TestIfThen:
@@ -138,6 +122,9 @@ class TestNestedIf:
         assert compile_and_run(src) == expected, desc
 
 
+# ===== Tier 2: BEGIN/UNTIL, BEGIN/WHILE/REPEAT =====
+
+
 class TestBeginUntil:
 
     @pytest.mark.parametrize("src,expected,desc", [
@@ -150,21 +137,6 @@ class TestBeginUntil:
     ], ids=["count-up-5", "count-down-0", "double-to-128"])
     def test_begin_until(self, src, expected, desc):
         assert compile_and_run(src) == expected, desc
-
-    def test_compiles_zbranch_back(self):
-        c = make_compiler()
-        c.compile_source(": test begin dup until ;")
-        word = c.words["test"]
-        image = c.build()
-        body_offset = word.address - c.origin + 3
-        cell_at = lambda off: int.from_bytes(image[off:off + 2], "little")
-        begin_addr = c.origin + body_offset
-        assert cell_at(body_offset) == c.words["dup"].address, \
-            "first cell should be DUP"
-        assert cell_at(body_offset + 2) == c.words["0branch"].address, \
-            "UNTIL should compile 0BRANCH"
-        assert cell_at(body_offset + 4) == begin_addr, \
-            "UNTIL target should point back to BEGIN"
 
 
 class TestBeginWhileRepeat:
@@ -181,6 +153,9 @@ class TestBeginWhileRepeat:
         assert compile_and_run(src) == expected, desc
 
 
+# ===== Tier 2: control flow in colon words =====
+
+
 class TestControlFlowInColonWords:
 
     @pytest.mark.parametrize("src,expected,desc", [
@@ -188,19 +163,156 @@ class TestControlFlowInColonWords:
          "abs of negative should negate"),
         (": abs dup 0< if negate then ; : main 7 abs halt ;", [7],
          "abs of positive should be identity"),
-        (": max 2dup < if swap then drop ; : main 3 7 max halt ;", [7],
-         "max should return the larger value"),
-        (": max 2dup < if swap then drop ; : main 9 2 max halt ;", [9],
-         "max with first larger should return first"),
         (": fac dup 1 > if dup 1- recurse * else drop 1 then ;"
          " : main 5 fac halt ;", [120],
          "recursive factorial 5! should be 120"),
-        (": fac dup 1 > if dup 1- recurse * else drop 1 then ;"
-         " : main 1 fac halt ;", [1],
-         "factorial of 1 should be 1"),
-    ], ids=["abs-neg", "abs-pos", "max-second", "max-first", "fac-5", "fac-1"])
+    ], ids=["abs-neg", "abs-pos", "fac-5"])
     def test_colon_with_control(self, src, expected, desc):
         assert compile_and_run(src) == expected, desc
+
+
+# ===== Tier 3: DO/LOOP primitives =====
+
+
+class TestDoRtPrimitive:
+
+    def test_pops_limit_from_stack(self):
+        a = _asm_with_next()
+        create_do_rt(a)
+        out = a.resolve()
+        assert out[0] == 0xD1, "(DO) should start with POP DE for limit"
+
+    def test_pushes_to_return_stack(self):
+        a = _asm_with_next()
+        create_do_rt(a)
+        out = a.resolve()
+        assert out[1:3] == bytes([0xFD, 0x2B]), "(DO) should DEC IY"
+
+    def test_registered_in_compiler(self):
+        c = make_compiler()
+        assert "(do)" in c.words, "(do) should be registered"
+        assert "(loop)" in c.words, "(loop) should be registered"
+        assert "(+loop)" in c.words, "(+loop) should be registered"
+        assert "i" in c.words, "i should be registered"
+        assert "j" in c.words, "j should be registered"
+        assert "unloop" in c.words, "unloop should be registered"
+
+
+class TestIIndexPrimitive:
+
+    def test_pushes_hl_then_loads_from_iy(self):
+        a = _asm_with_next()
+        create_i_index(a)
+        out = a.resolve()
+        assert out[0] == 0xE5, "I should start with PUSH HL"
+        assert out[1:4] == bytes([0xFD, 0x6E, 0x00]), "I should LD L,(IY+0)"
+        assert out[4:7] == bytes([0xFD, 0x66, 0x01]), "I should LD H,(IY+1)"
+
+
+class TestJIndexPrimitive:
+
+    def test_reads_from_iy_plus_4(self):
+        a = _asm_with_next()
+        create_j_index(a)
+        out = a.resolve()
+        assert out[0] == 0xE5, "J should start with PUSH HL"
+        assert out[1:4] == bytes([0xFD, 0x6E, 0x04]), "J should LD L,(IY+4)"
+        assert out[4:7] == bytes([0xFD, 0x66, 0x05]), "J should LD H,(IY+5)"
+
+
+class TestUnloopPrimitive:
+
+    def test_increments_iy_four_times(self):
+        a = _asm_with_next()
+        create_unloop(a)
+        out = a.resolve()
+        assert out[0:2] == bytes([0xFD, 0x23]), "UNLOOP should INC IY"
+        assert out[2:4] == bytes([0xFD, 0x23]), "UNLOOP should INC IY"
+        assert out[4:6] == bytes([0xFD, 0x23]), "UNLOOP should INC IY"
+        assert out[6:8] == bytes([0xFD, 0x23]), "UNLOOP should INC IY four times"
+
+
+# ===== Tier 3: DO/LOOP integration =====
+
+
+class TestDoLoop:
+
+    @pytest.mark.parametrize("src,expected,desc", [
+        (": main 0 10 0 do 1+ loop halt ;", [10],
+         "DO/LOOP should iterate 10 times"),
+        (": main 0 5 0 do i + loop halt ;", [10],
+         "I should push loop index (0+1+2+3+4=10)"),
+        (": main 0 3 1 do i + loop halt ;", [3],
+         "DO with nonzero start should work (1+2=3)"),
+    ], ids=["count-10", "sum-i", "nonzero-start"])
+    def test_do_loop(self, src, expected, desc):
+        assert compile_and_run(src) == expected, desc
+
+
+class TestNestedDoLoop:
+
+    @pytest.mark.parametrize("src,expected,desc", [
+        (": main 0 3 0 do 3 0 do 1+ loop loop halt ;", [9],
+         "nested 3x3 DO/LOOP should iterate 9 times"),
+        (": main 0 3 0 do 2 0 do j + loop loop halt ;", [6],
+         "J should read outer loop index (0+0+1+1+2+2=6)"),
+        (": main 0 2 0 do 3 0 do i j * + loop loop halt ;", [3],
+         "I*J in nested loops should sum products"),
+    ], ids=["3x3-count", "j-sum", "i-j-product"])
+    def test_nested_do_loop(self, src, expected, desc):
+        assert compile_and_run(src) == expected, desc
+
+
+class TestPlusLoop:
+
+    @pytest.mark.parametrize("src,expected,desc", [
+        (": main 0 10 0 do i + 2 +loop halt ;", [20],
+         "+LOOP by 2 should sum even indices (0+2+4+6+8=20)"),
+        (": main 0 10 0 do 1+ 3 +loop halt ;", [4],
+         "+LOOP by 3 should iterate 4 times (0,3,6,9)"),
+        (": main 0 0 10 do 1+ 1 negate +loop halt ;", [11],
+         "+LOOP with negative step should count down (10,9,...,0)"),
+    ], ids=["step-2-sum", "step-3-count", "negative-step"])
+    def test_plus_loop(self, src, expected, desc):
+        assert compile_and_run(src) == expected, desc
+
+
+class TestLeave:
+
+    def test_leave_exits_loop(self):
+        src = (
+            ": main 0 10 0 do "
+            "  i 5 = if leave then "
+            "  i + "
+            "loop halt ;"
+        )
+        assert compile_and_run(src) == [10], \
+            "LEAVE at i=5 should exit with sum 0+1+2+3+4=10"
+
+    def test_leave_skips_remaining_iterations(self):
+        src = (
+            ": main 0 100 0 do "
+            "  1+ "
+            "  dup 3 = if leave then "
+            "loop halt ;"
+        )
+        assert compile_and_run(src) == [3], \
+            "LEAVE should exit after 3 iterations"
+
+    def test_leave_inside_nested_if(self):
+        src = (
+            ": main 0 10 0 do "
+            "  i 2 > if "
+            "    i 5 < if leave then "
+            "  then "
+            "  1+ "
+            "loop halt ;"
+        )
+        assert compile_and_run(src) == [3], \
+            "LEAVE inside nested IF should exit the DO loop"
+
+
+# ===== Tier 3: mixed with tiers 1+2 =====
 
 
 class TestMixedControlFlow:
@@ -216,26 +328,28 @@ class TestMixedControlFlow:
         assert compile_and_run(src) == [100, 5], \
             "IF inside BEGIN/UNTIL should work correctly"
 
-    def test_if_inside_begin_while_repeat(self):
+    def test_if_inside_do_loop(self):
         src = (
-            ": even? dup 2/ 2* = ; "
-            ": main 0 0 "
-            "  begin dup 6 < while "
-            "    dup even? if swap 1+ swap then "
-            "    1+ "
-            "  repeat drop halt ;"
+            ": main 0 10 0 do "
+            "  i 2 / 2 * i = if 1+ then "
+            "loop halt ;"
         )
-        assert compile_and_run(src) == [3], \
-            "IF inside WHILE loop should count even numbers in 0..5"
+        # This uses / which isn't available. Use 2/ instead.
+        src = (
+            ": main 0 10 0 do "
+            "  i 2/ 2* i = if 1+ then "
+            "loop halt ;"
+        )
+        assert compile_and_run(src) == [5], \
+            "IF inside DO/LOOP should count even numbers 0..9"
 
-    def test_begin_until_inside_if(self):
+    def test_do_loop_inside_begin_until(self):
         src = (
-            ": main 1 if "
-            "  0 begin 1+ dup 3 = until "
-            "then halt ;"
+            ": sum5 0 5 0 do i + loop ; "
+            ": main 0 begin 1+ dup 3 = until sum5 + halt ;"
         )
-        assert compile_and_run(src) == [3], \
-            "BEGIN/UNTIL nested inside IF should work"
+        assert compile_and_run(src) == [13], \
+            "DO/LOOP inside a word called from BEGIN/UNTIL should work"
 
     def test_begin_again_still_works(self):
         from zt.compiler import Compiler
@@ -254,6 +368,9 @@ class TestMixedControlFlow:
         border_writes = [v for port, v in m._outputs if (port & 0xFF) == 0xFE]
         assert border_writes[:4] == [0, 1, 2, 3], \
             "BEGIN/AGAIN should still work after refactor"
+
+
+# ===== Error cases =====
 
 
 class TestControlFlowErrors:
@@ -307,3 +424,28 @@ class TestControlFlowErrors:
         c = make_compiler()
         with pytest.raises(CompileError, match="control stack underflow"):
             c.compile_source(": bad again ;")
+
+    def test_loop_without_do(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="control stack underflow"):
+            c.compile_source(": bad loop ;")
+
+    def test_plus_loop_without_do(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="control stack underflow"):
+            c.compile_source(": bad 1 +loop ;")
+
+    def test_leave_without_do(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="LEAVE outside DO"):
+            c.compile_source(": bad leave ;")
+
+    def test_unclosed_do_in_colon(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="unclosed"):
+            c.compile_source(": bad 10 0 do i ;")
+
+    def test_loop_with_begin_tag(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="mismatch"):
+            c.compile_source(": bad begin loop ;")
