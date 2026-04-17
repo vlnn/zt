@@ -5,8 +5,6 @@ from zt.asm import Asm
 SPECTRUM_BORDER_PORT = 0xFE
 
 
-# -- inner interpreter --
-
 def create_next(a: Asm) -> None:
     a.label("NEXT")
     a.ld_e_ix(0)
@@ -40,8 +38,6 @@ def create_exit(a: Asm) -> None:
     a.pop_ix()
     a.jp("NEXT")
 
-
-# -- stack operations --
 
 def create_dup(a: Asm) -> None:
     a.label("DUP")
@@ -77,13 +73,12 @@ def create_over(a: Asm) -> None:
 def create_rot(a: Asm) -> None:
     a.label("ROT")
     a.alias("rot", "ROT")
-    # ( a b c -- b c a )  TOS=c, SP: [a, b] (b on top)
-    a.pop_de()       # DE=b
-    a.pop_bc()       # BC=a
-    a.push_de()      # push b
-    a.push_hl()      # push c
+    a.pop_de()
+    a.pop_bc()
+    a.push_de()
+    a.push_hl()
     a.ld_h_b()
-    a.ld_l_c()       # HL=a (new TOS)
+    a.ld_l_c()
     a.jp("NEXT")
 
 
@@ -97,23 +92,20 @@ def create_nip(a: Asm) -> None:
 def create_tuck(a: Asm) -> None:
     a.label("TUCK")
     a.alias("tuck", "TUCK")
-    # ( a b -- b a b )  TOS=b, SP: [a]
-    a.pop_de()       # DE=a
-    a.push_hl()      # push b
-    a.push_de()      # push a
-    a.jp("NEXT")     # TOS still b
+    a.pop_de()
+    a.push_hl()
+    a.push_de()
+    a.jp("NEXT")
 
 
 def create_2dup(a: Asm) -> None:
     a.label("2DUP")
     a.alias("2dup", "2DUP")
-    # ( a b -- a b a b )  TOS=b(HL), SP: [..., a]
-    # Want: TOS=b(HL), SP: [..., a, b, a]
-    a.pop_de()       # DE=a, SP: [...]
-    a.push_de()      # SP: [..., a]
-    a.push_hl()      # SP: [..., a, b]
-    a.push_de()      # SP: [..., a, b, a]
-    a.jp("NEXT")     # TOS=b still in HL
+    a.pop_de()
+    a.push_de()
+    a.push_hl()
+    a.push_de()
+    a.jp("NEXT")
 
 
 def create_2drop(a: Asm) -> None:
@@ -127,14 +119,14 @@ def create_2drop(a: Asm) -> None:
 def create_2swap(a: Asm) -> None:
     a.label("2SWAP")
     a.alias("2swap", "2SWAP")
-    # ( a b c d -- c d a b )  TOS=d(HL), SP: [a, b, c] (c on top)
-    # Want: TOS=b(HL), SP: [c, d, a] (a on top)
-    a.pop_de()       # DE=c, SP: [a, b]
-    a.pop_bc()       # BC=b, SP: [a]
-    a.push_de()      # push c, SP: [a, c]
-    a.push_hl()      # push d, SP: [a, c, d]
+    a.ex_de_hl()
+    a.pop_hl()
+    a.pop_bc()
+    a.ex_sp_hl()
+    a.push_de()
+    a.push_hl()
     a.ld_h_b()
-    a.ld_l_c()       # HL=b (new TOS)
+    a.ld_l_c()
     a.jp("NEXT")
 
 
@@ -168,8 +160,6 @@ def create_r_fetch(a: Asm) -> None:
     a.ld_h_iy(1)
     a.jp("NEXT")
 
-
-# -- arithmetic --
 
 def create_plus(a: Asm) -> None:
     a.label("PLUS")
@@ -244,7 +234,6 @@ def create_abs(a: Asm) -> None:
 def create_min(a: Asm) -> None:
     a.label("MIN")
     a.alias("min", "MIN")
-    # ( a b -- min )  unsigned MIN for now
     a.pop_de()
     a.or_a()
     a.sbc_hl_de()
@@ -258,7 +247,6 @@ def create_min(a: Asm) -> None:
 def create_max(a: Asm) -> None:
     a.label("MAX")
     a.alias("max", "MAX")
-    # ( a b -- max )  unsigned MAX for now
     a.pop_de()
     a.or_a()
     a.sbc_hl_de()
@@ -268,8 +256,6 @@ def create_max(a: Asm) -> None:
     a.label("_max_done")
     a.jp("NEXT")
 
-
-# -- logic and comparison --
 
 def create_and(a: Asm) -> None:
     a.label("AND")
@@ -325,10 +311,9 @@ def create_invert(a: Asm) -> None:
 def create_lshift(a: Asm) -> None:
     a.label("LSHIFT")
     a.alias("lshift", "LSHIFT")
-    # ( a n -- a<<n )  TOS=n, stack has a
-    a.pop_de()        # DE=a
-    a.ld_a_l()        # A=n (shift count)
-    a.ex_de_hl()      # HL=a
+    a.pop_de()
+    a.ld_a_l()
+    a.ex_de_hl()
     a.or_a()
     a.jr_z_to("_lshift_done")
     a.label("_lshift_loop")
@@ -342,10 +327,9 @@ def create_lshift(a: Asm) -> None:
 def create_rshift(a: Asm) -> None:
     a.label("RSHIFT")
     a.alias("rshift", "RSHIFT")
-    # ( a n -- a>>n )  TOS=n, stack has a
-    a.pop_de()        # DE=a
-    a.ld_a_l()        # A=n (shift count)
-    a.ex_de_hl()      # HL=a
+    a.pop_de()
+    a.ld_a_l()
+    a.ex_de_hl()
     a.or_a()
     a.jr_z_to("_rshift_done")
     a.label("_rshift_loop")
@@ -386,12 +370,10 @@ def create_not_equals(a: Asm) -> None:
 def create_less_than(a: Asm) -> None:
     a.label("LESS_THAN")
     a.alias("<", "LESS_THAN")
-    # ( a b -- flag )  true if a < b (signed)
-    # TOS=b(HL), SP has a
-    a.pop_de()       # DE=a
-    a.ex_de_hl()     # HL=a, DE=b
+    a.pop_de()
+    a.ex_de_hl()
     a.or_a()
-    a.sbc_hl_de()    # HL=a-b, sign flag set if a<b (no overflow)
+    a.sbc_hl_de()
     a.ld_hl_nn(0)
     a.jp_p("_lt_done")
     a.dec_hl()
@@ -402,11 +384,9 @@ def create_less_than(a: Asm) -> None:
 def create_greater_than(a: Asm) -> None:
     a.label("GREATER_THAN")
     a.alias(">", "GREATER_THAN")
-    # ( a b -- flag )  true if a > b (signed)
-    # TOS=b(HL), SP has a -> compute b-a
-    a.pop_de()       # DE=a
+    a.pop_de()
     a.or_a()
-    a.sbc_hl_de()    # HL=b-a
+    a.sbc_hl_de()
     a.ld_hl_nn(0)
     a.jp_p("_gt_done")
     a.dec_hl()
@@ -440,19 +420,16 @@ def create_zero_less(a: Asm) -> None:
 def create_u_less(a: Asm) -> None:
     a.label("U_LESS")
     a.alias("u<", "U_LESS")
-    # ( a b -- flag )  true if a < b (unsigned)
-    a.pop_de()       # DE=a
-    a.ex_de_hl()     # HL=a, DE=b
+    a.pop_de()
+    a.ex_de_hl()
     a.or_a()
-    a.sbc_hl_de()    # carry set if a < b
+    a.sbc_hl_de()
     a.ld_hl_nn(0)
     a.jr_nc_to("_ult_done")
     a.dec_hl()
     a.label("_ult_done")
     a.jp("NEXT")
 
-
-# -- memory --
 
 def create_fetch(a: Asm) -> None:
     a.label("FETCH")
@@ -495,8 +472,7 @@ def create_c_store(a: Asm) -> None:
 def create_plus_store(a: Asm) -> None:
     a.label("PLUS_STORE")
     a.alias("+!", "PLUS_STORE")
-    # ( n addr -- )  TOS=addr, stack has n
-    a.pop_de()        # DE=n
+    a.pop_de()
     a.ld_a_ind_hl()
     a.add_a_e()
     a.ld_ind_hl_a()
@@ -511,11 +487,10 @@ def create_plus_store(a: Asm) -> None:
 def create_cmove(a: Asm) -> None:
     a.label("CMOVE")
     a.alias("cmove", "CMOVE")
-    # ( src dst count -- )  TOS=count, stack: dst, src
     a.ld_b_h()
-    a.ld_c_l()       # BC=count
-    a.pop_de()        # DE=dst
-    a.pop_hl()        # HL=src
+    a.ld_c_l()
+    a.pop_de()
+    a.pop_hl()
     a.ld_a_b()
     a.or_c()
     a.jr_z_to("_cmove_skip")
@@ -528,15 +503,14 @@ def create_cmove(a: Asm) -> None:
 def create_fill(a: Asm) -> None:
     a.label("FILL")
     a.alias("fill", "FILL")
-    # ( addr count byte -- )  TOS=byte, stack: count, addr
-    a.ld_a_l()        # A=byte
-    a.pop_bc()         # BC=count
-    a.pop_hl()         # HL=addr
+    a.ld_a_l()
+    a.pop_bc()
+    a.pop_hl()
     a.ld_ind_hl_a()
     a.ld_d_h()
     a.ld_e_l()
-    a.inc_de()         # DE=addr+1
-    a.dec_bc()         # BC=count-1
+    a.inc_de()
+    a.dec_bc()
     a.ld_a_b()
     a.or_c()
     a.jr_z_to("_fill_skip")
@@ -545,8 +519,6 @@ def create_fill(a: Asm) -> None:
     a.pop_hl()
     a.jp("NEXT")
 
-
-# -- threading and literals --
 
 def create_lit(a: Asm) -> None:
     a.label("LIT")

@@ -39,8 +39,6 @@ def _compile_primitive(creator) -> bytes:
     return a.resolve()
 
 
-# -- existing primitive tests (kept from original) --
-
 def test_next_byte_sequence():
     a = Asm(0x8000)
     create_next(a)
@@ -82,18 +80,16 @@ def test_branch_layout():
     assert out[7:9] == bytes([0xDD, 0xE1]), "then POP IX"
 
 
-# -- simple primitives: opcode(s) + JP NEXT --
-
 @pytest.mark.parametrize("creator,expected_prefix", [
-    (create_drop,      [0xE1]),                          # POP HL
-    (create_swap,      [0xE3]),                          # EX (SP),HL
-    (create_nip,       [0xD1]),                          # POP DE
-    (create_2drop,     [0xE1, 0xE1]),                    # POP HL; POP HL
-    (create_one_plus,  [0x23]),                          # INC HL
-    (create_one_minus, [0x2B]),                          # DEC HL
-    (create_two_star,  [0x29]),                          # ADD HL,HL
-    (create_two_slash, [0xCB, 0x2C, 0xCB, 0x1D]),       # SRA H; RR L
-    (create_halt,      [0x76]),                          # HALT (no JP NEXT)
+    (create_drop,      [0xE1]),
+    (create_swap,      [0xE3]),
+    (create_nip,       [0xD1]),
+    (create_2drop,     [0xE1, 0xE1]),
+    (create_one_plus,  [0x23]),
+    (create_one_minus, [0x2B]),
+    (create_two_star,  [0x29]),
+    (create_two_slash, [0xCB, 0x2C, 0xCB, 0x1D]),
+    (create_halt,      [0x76]),
 ], ids=[
     "drop", "swap", "nip", "2drop",
     "1+", "1-", "2*", "2/", "halt",
@@ -120,67 +116,48 @@ def test_simple_primitive_ends_with_jp_next(creator):
     assert out[-2:] == bytes([0x00, 0x80]), f"{creator.__name__} should JP to NEXT at 0x8000"
 
 
-# -- stack operations --
-
 def test_over_byte_sequence():
     out = _compile_primitive(create_over)
-    assert out[:5] == bytes([
-        0xD1,       # POP DE
-        0xD5,       # PUSH DE
-        0xE5,       # PUSH HL
-        0xEB,       # EX DE,HL
-        0xC3,       # JP NEXT
-    ]), "OVER should be POP DE; PUSH DE; PUSH HL; EX DE,HL; JP NEXT"
+    assert out[:5] == bytes([0xD1, 0xD5, 0xE5, 0xEB, 0xC3]), (
+        "OVER should be POP DE; PUSH DE; PUSH HL; EX DE,HL; JP NEXT"
+    )
 
 
 def test_rot_byte_sequence():
     out = _compile_primitive(create_rot)
-    assert out[:7] == bytes([
-        0xD1,       # POP DE
-        0xC1,       # POP BC
-        0xD5,       # PUSH DE
-        0xE5,       # PUSH HL
-        0x60,       # LD H,B
-        0x69,       # LD L,C
-        0xC3,       # JP NEXT
-    ]), "ROT should be POP DE; POP BC; PUSH DE; PUSH HL; LD H,B; LD L,C; JP NEXT"
+    assert out[:7] == bytes([0xD1, 0xC1, 0xD5, 0xE5, 0x60, 0x69, 0xC3]), (
+        "ROT should be POP DE; POP BC; PUSH DE; PUSH HL; LD H,B; LD L,C; JP NEXT"
+    )
 
 
 def test_tuck_byte_sequence():
     out = _compile_primitive(create_tuck)
-    assert out[:4] == bytes([
-        0xD1,       # POP DE
-        0xE5,       # PUSH HL
-        0xD5,       # PUSH DE
-        0xC3,       # JP NEXT
-    ]), "TUCK should be POP DE; PUSH HL; PUSH DE; JP NEXT"
+    assert out[:4] == bytes([0xD1, 0xE5, 0xD5, 0xC3]), (
+        "TUCK should be POP DE; PUSH HL; PUSH DE; JP NEXT"
+    )
 
 
 def test_2dup_byte_sequence():
     out = _compile_primitive(create_2dup)
-    assert out[:5] == bytes([
-        0xD1,       # POP DE
-        0xD5,       # PUSH DE
-        0xE5,       # PUSH HL
-        0xD5,       # PUSH DE
-        0xC3,       # JP NEXT
-    ]), "2DUP should be POP DE; PUSH DE; PUSH HL; PUSH DE; JP NEXT"
+    assert out[:5] == bytes([0xD1, 0xD5, 0xE5, 0xD5, 0xC3]), (
+        "2DUP should be POP DE; PUSH DE; PUSH HL; PUSH DE; JP NEXT"
+    )
 
 
 def test_2swap_byte_sequence():
     out = _compile_primitive(create_2swap)
-    assert out[:7] == bytes([
-        0xD1,       # POP DE
+    assert out[:9] == bytes([
+        0xEB,       # EX DE,HL
+        0xE1,       # POP HL
         0xC1,       # POP BC
+        0xE3,       # EX (SP),HL
         0xD5,       # PUSH DE
         0xE5,       # PUSH HL
         0x60,       # LD H,B
         0x69,       # LD L,C
         0xC3,       # JP NEXT
-    ]), "2SWAP should be POP DE; POP BC; PUSH DE; PUSH HL; LD H,B; LD L,C; JP NEXT"
+    ]), "2SWAP should be EX DE,HL; POP HL; POP BC; EX (SP),HL; PUSH DE; PUSH HL; LD H,B; LD L,C; JP NEXT"
 
-
-# -- return stack --
 
 def test_to_r_byte_sequence():
     out = _compile_primitive(create_to_r)
@@ -208,28 +185,18 @@ def test_r_fetch_byte_sequence():
     assert out[7] == 0xC3, "R@ should end with JP NEXT"
 
 
-# -- arithmetic --
-
 def test_minus_byte_sequence():
     out = _compile_primitive(create_minus)
-    assert out[:5] == bytes([
-        0xD1,             # POP DE
-        0xEB,             # EX DE,HL
-        0xB7,             # OR A
-        0xED, 0x52,       # SBC HL,DE
-    ]), "MINUS should be POP DE; EX DE,HL; OR A; SBC HL,DE"
+    assert out[:5] == bytes([0xD1, 0xEB, 0xB7, 0xED, 0x52]), (
+        "MINUS should be POP DE; EX DE,HL; OR A; SBC HL,DE"
+    )
 
 
 def test_negate_byte_sequence():
     out = _compile_primitive(create_negate)
-    assert out[:6] == bytes([
-        0xAF,       # XOR A
-        0x95,       # SUB L
-        0x6F,       # LD L,A
-        0x9F,       # SBC A,A
-        0x94,       # SUB H
-        0x67,       # LD H,A
-    ]), "NEGATE should be XOR A; SUB L; LD L,A; SBC A,A; SUB H; LD H,A"
+    assert out[:6] == bytes([0xAF, 0x95, 0x6F, 0x9F, 0x94, 0x67]), (
+        "NEGATE should be XOR A; SUB L; LD L,A; SBC A,A; SUB H; LD H,A"
+    )
 
 
 def test_abs_starts_with_bit_test():
@@ -243,8 +210,6 @@ def test_abs_contains_negate_body():
     negate_seq = bytes([0xAF, 0x95, 0x6F, 0x9F, 0x94, 0x67])
     assert negate_seq in out, "ABS should contain the NEGATE sequence"
 
-
-# -- min/max use relative jumps --
 
 def test_min_uses_jr_c():
     out = _compile_primitive(create_min)
@@ -261,60 +226,33 @@ def test_max_uses_jr_nc():
     assert out[5] == 0x30, "MAX should use JR NC to skip EX DE,HL"
 
 
-# -- logic --
-
 def test_and_byte_sequence():
     out = _compile_primitive(create_and)
-    assert out[:7] == bytes([
-        0xD1,       # POP DE
-        0x7C,       # LD A,H
-        0xA2,       # AND D
-        0x67,       # LD H,A
-        0x7D,       # LD A,L
-        0xA3,       # AND E
-        0x6F,       # LD L,A
-    ]), "AND should be POP DE; LD A,H; AND D; LD H,A; LD A,L; AND E; LD L,A"
+    assert out[:7] == bytes([0xD1, 0x7C, 0xA2, 0x67, 0x7D, 0xA3, 0x6F]), (
+        "AND should be POP DE; LD A,H; AND D; LD H,A; LD A,L; AND E; LD L,A"
+    )
 
 
 def test_or_byte_sequence():
     out = _compile_primitive(create_or)
-    assert out[:7] == bytes([
-        0xD1,       # POP DE
-        0x7C,       # LD A,H
-        0xB2,       # OR D
-        0x67,       # LD H,A
-        0x7D,       # LD A,L
-        0xB3,       # OR E
-        0x6F,       # LD L,A
-    ]), "OR should be POP DE; LD A,H; OR D; LD H,A; LD A,L; OR E; LD L,A"
+    assert out[:7] == bytes([0xD1, 0x7C, 0xB2, 0x67, 0x7D, 0xB3, 0x6F]), (
+        "OR should be POP DE; LD A,H; OR D; LD H,A; LD A,L; OR E; LD L,A"
+    )
 
 
 def test_xor_byte_sequence():
     out = _compile_primitive(create_xor)
-    assert out[:7] == bytes([
-        0xD1,       # POP DE
-        0x7C,       # LD A,H
-        0xAA,       # XOR D
-        0x67,       # LD H,A
-        0x7D,       # LD A,L
-        0xAB,       # XOR E
-        0x6F,       # LD L,A
-    ]), "XOR should be POP DE; LD A,H; XOR D; LD H,A; LD A,L; XOR E; LD L,A"
+    assert out[:7] == bytes([0xD1, 0x7C, 0xAA, 0x67, 0x7D, 0xAB, 0x6F]), (
+        "XOR should be POP DE; LD A,H; XOR D; LD H,A; LD A,L; XOR E; LD L,A"
+    )
 
 
 def test_invert_byte_sequence():
     out = _compile_primitive(create_invert)
-    assert out[:6] == bytes([
-        0x7C,       # LD A,H
-        0x2F,       # CPL
-        0x67,       # LD H,A
-        0x7D,       # LD A,L
-        0x2F,       # CPL
-        0x6F,       # LD L,A
-    ]), "INVERT should be LD A,H; CPL; LD H,A; LD A,L; CPL; LD L,A"
+    assert out[:6] == bytes([0x7C, 0x2F, 0x67, 0x7D, 0x2F, 0x6F]), (
+        "INVERT should be LD A,H; CPL; LD H,A; LD A,L; CPL; LD L,A"
+    )
 
-
-# -- shifts --
 
 def test_lshift_structure():
     out = _compile_primitive(create_lshift)
@@ -323,25 +261,17 @@ def test_lshift_structure():
     assert out[2] == 0xEB, "LSHIFT should EX DE,HL"
     assert out[3] == 0xB7, "LSHIFT should OR A to test zero"
     assert out[4] == 0x28, "LSHIFT should JR Z to skip loop"
-    loop_body_start = 6
-    assert out[loop_body_start] == 0x29, "LSHIFT loop should ADD HL,HL"
-    assert out[loop_body_start + 1] == 0x3D, "LSHIFT loop should DEC A"
-    assert out[loop_body_start + 2] == 0x20, "LSHIFT loop should JR NZ back"
+    assert out[6] == 0x29, "LSHIFT loop should ADD HL,HL"
+    assert out[7] == 0x3D, "LSHIFT loop should DEC A"
+    assert out[8] == 0x20, "LSHIFT loop should JR NZ back"
 
 
 def test_rshift_structure():
     out = _compile_primitive(create_rshift)
     assert out[0] == 0xD1, "RSHIFT should start with POP DE"
-    loop_body_start = 6
-    assert out[loop_body_start:loop_body_start + 2] == bytes([0xCB, 0x3C]), (
-        "RSHIFT loop should SRL H"
-    )
-    assert out[loop_body_start + 2:loop_body_start + 4] == bytes([0xCB, 0x1D]), (
-        "RSHIFT loop should RR L"
-    )
+    assert out[6:8] == bytes([0xCB, 0x3C]), "RSHIFT loop should SRL H"
+    assert out[8:10] == bytes([0xCB, 0x1D]), "RSHIFT loop should RR L"
 
-
-# -- comparison --
 
 def test_equals_byte_sequence():
     out = _compile_primitive(create_equals)
@@ -399,59 +329,39 @@ def test_u_less_uses_carry():
     assert out[8] == 0x30, "U< should JR NC (no borrow = not less)"
 
 
-# -- memory --
-
 def test_fetch_byte_sequence():
     out = _compile_primitive(create_fetch)
-    assert out[:4] == bytes([
-        0x5E,       # LD E,(HL)
-        0x23,       # INC HL
-        0x56,       # LD D,(HL)
-        0xEB,       # EX DE,HL
-    ]), "@ should be LD E,(HL); INC HL; LD D,(HL); EX DE,HL"
+    assert out[:4] == bytes([0x5E, 0x23, 0x56, 0xEB]), (
+        "@ should be LD E,(HL); INC HL; LD D,(HL); EX DE,HL"
+    )
 
 
 def test_store_byte_sequence():
     out = _compile_primitive(create_store)
-    assert out[:5] == bytes([
-        0xD1,       # POP DE
-        0x73,       # LD (HL),E
-        0x23,       # INC HL
-        0x72,       # LD (HL),D
-        0xE1,       # POP HL
-    ]), "! should be POP DE; LD (HL),E; INC HL; LD (HL),D; POP HL"
+    assert out[:5] == bytes([0xD1, 0x73, 0x23, 0x72, 0xE1]), (
+        "! should be POP DE; LD (HL),E; INC HL; LD (HL),D; POP HL"
+    )
 
 
 def test_c_fetch_byte_sequence():
     out = _compile_primitive(create_c_fetch)
-    assert out[:3] == bytes([
-        0x6E,             # LD L,(HL)
-        0x26, 0x00,       # LD H,0
-    ]), "C@ should be LD L,(HL); LD H,0"
+    assert out[:3] == bytes([0x6E, 0x26, 0x00]), (
+        "C@ should be LD L,(HL); LD H,0"
+    )
 
 
 def test_c_store_byte_sequence():
     out = _compile_primitive(create_c_store)
-    assert out[:3] == bytes([
-        0xD1,       # POP DE
-        0x73,       # LD (HL),E
-        0xE1,       # POP HL
-    ]), "C! should be POP DE; LD (HL),E; POP HL"
+    assert out[:3] == bytes([0xD1, 0x73, 0xE1]), (
+        "C! should be POP DE; LD (HL),E; POP HL"
+    )
 
 
 def test_plus_store_byte_sequence():
     out = _compile_primitive(create_plus_store)
-    assert out[:9] == bytes([
-        0xD1,       # POP DE
-        0x7E,       # LD A,(HL)
-        0x83,       # ADD A,E
-        0x77,       # LD (HL),A
-        0x23,       # INC HL
-        0x7E,       # LD A,(HL)
-        0x8A,       # ADC A,D
-        0x77,       # LD (HL),A
-        0xE1,       # POP HL
-    ]), "+! should add 16-bit value at address"
+    assert out[:9] == bytes([0xD1, 0x7E, 0x83, 0x77, 0x23, 0x7E, 0x8A, 0x77, 0xE1]), (
+        "+! should add 16-bit value at address"
+    )
 
 
 def test_cmove_uses_ldir():
@@ -471,8 +381,6 @@ def test_fill_uses_ldir():
     assert out[3] == 0x77, "FILL should LD (HL),A"
     assert bytes([0xED, 0xB0]) in out, "FILL should contain LDIR"
 
-
-# -- aliases --
 
 @pytest.mark.parametrize("creator,primary,alias", [
     (create_dup,           "DUP",          "dup"),
@@ -525,8 +433,6 @@ def test_alias_points_to_primary(creator, primary, alias):
     )
 
 
-# -- all primitives build together --
-
 def test_all_primitives_resolve_together():
     a = Asm(0x8000)
     for creator in PRIMITIVES:
@@ -540,8 +446,6 @@ def test_primitives_list_has_expected_count():
         f"PRIMITIVES should have at least 45 entries, got {len(PRIMITIVES)}"
     )
 
-
-# -- lit and docol --
 
 def test_lit_pushes_hl_then_loads_from_ix():
     out = _compile_primitive(create_lit)
