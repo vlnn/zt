@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal
 
 from zt.asm import Asm
+from zt.debug import SourceEntry
 from zt.primitives import PRIMITIVES
 from zt.tokenizer import Token, tokenize
 
@@ -16,6 +17,9 @@ class Word:
     kind: Literal["prim", "colon", "variable", "constant"]
     immediate: bool = False
     compile_action: Callable | None = None
+    body: list[int] = field(default_factory=list)
+    source_file: str | None = None
+    source_line: int | None = None
 
 
 class CompileError(Exception):
@@ -56,6 +60,9 @@ class Compiler:
         self._host_stack: list[int] = []
         self._pending_strings: list[tuple[str, bytes]] = []
         self._string_counter: int = 0
+        self.source_map: list[SourceEntry] = []
+        self._current_body: list[int | str] | None = None
+        self._body_cell_refs: dict[int, tuple[list[int | str], int]] = {}
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
@@ -161,11 +168,11 @@ class Compiler:
             if word.immediate and word.compile_action:
                 word.compile_action(self, tok)
                 return
-            self.asm.word(word.address)
+            self._emit_cell(word.address, tok)
             return
         if tok.kind == "number":
             value = parse_number(tok.value)
-            self._compile_literal(value)
+            self._compile_literal(value, tok)
             return
         raise CompileError(f"unexpected token '{tok.value}'", tok)
 
@@ -176,9 +183,13 @@ class Compiler:
         name = name_tok.value
         self.state = "compile"
         self.current_word = name
+        self._current_body = []
         addr = self.asm.here
         self.asm.call("DOCOL")
-        self.words[name] = Word(name=name, address=addr, kind="colon")
+        self.words[name] = Word(
+            name=name, address=addr, kind="colon",
+            source_file=tok.source, source_line=tok.line,
+        )
 
     def _end_colon(self, tok: Token) -> None:
         if self.state != "compile":
@@ -190,14 +201,27 @@ class Compiler:
                 f"unclosed {tag} in '{self.current_word}'", tok
             )
         exit_addr = self.words["exit"].address
-        self.asm.word(exit_addr)
+        self._emit_cell(exit_addr, tok)
+        word = self.words[self.current_word]
+        word.body = self._current_body or []
+        self._current_body = None
         self.state = "interpret"
         self.current_word = None
 
-    def _compile_literal(self, value: int) -> None:
+    def _compile_literal(self, value: int, tok: Token) -> None:
         lit_addr = self.words["lit"].address
-        self.asm.word(lit_addr)
-        self.asm.word(value & 0xFFFF)
+        self._emit_cell(lit_addr, tok)
+        self._emit_cell(value & 0xFFFF, tok)
+
+    def _emit_cell(self, value: int | str, tok: Token) -> None:
+        offset = len(self.asm.code)
+        self.source_map.append(
+            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
+        )
+        if self._current_body is not None:
+            self._body_cell_refs[offset] = (self._current_body, len(self._current_body))
+            self._current_body.append(value)
+        self.asm.word(value)
 
     def _next_token(self, context_tok: Token) -> Token:
         if self._token_pos >= len(self._tokens):
@@ -211,25 +235,28 @@ class Compiler:
             raise CompileError("host stack underflow", tok)
         return self._host_stack.pop()
 
-    def _compile_push_value(self, name: str, value: int, kind: str) -> None:
+    def _compile_push_value(self, name: str, value: int, kind: str, tok: Token) -> None:
         addr = self.asm.here
         self.asm.push_hl()
         self.asm.ld_hl_nn(value & 0xFFFF)
         self.asm.jp("NEXT")
-        self.words[name] = Word(name=name, address=addr, kind=kind)
+        self.words[name] = Word(
+            name=name, address=addr, kind=kind,
+            source_file=tok.source, source_line=tok.line,
+        )
 
     # --- directives ---
 
     def _directive_variable(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
         data_addr = self.asm.here + 4 + 3
-        self._compile_push_value(name_tok.value, data_addr, "variable")
+        self._compile_push_value(name_tok.value, data_addr, "variable", name_tok)
         self.asm.word(0)
 
     def _directive_constant(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
         name_tok = self._next_token(tok)
-        self._compile_push_value(name_tok.value, value, "constant")
+        self._compile_push_value(name_tok.value, value, "constant", name_tok)
 
     def _directive_create(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
@@ -242,12 +269,13 @@ class Compiler:
         self.asm.code[fixup_offset] = data_start & 0xFF
         self.asm.code[fixup_offset + 1] = (data_start >> 8) & 0xFF
         self.words[name_tok.value] = Word(
-            name=name_tok.value, address=data_addr_placeholder, kind="variable"
+            name=name_tok.value, address=data_addr_placeholder, kind="variable",
+            source_file=name_tok.source, source_line=name_tok.line,
         )
 
     def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
-        self.asm.word(value & 0xFFFF)
+        self._emit_cell(value & 0xFFFF, tok)
 
     def _directive_c_comma(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
@@ -288,25 +316,29 @@ class Compiler:
             )
         return tag, value
 
-    def _compile_zbranch_placeholder(self) -> int:
-        self.asm.word(self.words["0branch"].address)
+    def _compile_zbranch_placeholder(self, tok: Token) -> int:
+        self._emit_cell(self.words["0branch"].address, tok)
         offset = len(self.asm.code)
-        self.asm.word(0)
+        self._emit_cell(0, tok)
         return offset
 
-    def _compile_branch_placeholder(self) -> int:
-        self.asm.word(self.words["branch"].address)
+    def _compile_branch_placeholder(self, tok: Token) -> int:
+        self._emit_cell(self.words["branch"].address, tok)
         offset = len(self.asm.code)
-        self.asm.word(0)
+        self._emit_cell(0, tok)
         return offset
 
     def _patch_placeholder(self, offset: int, target: int) -> None:
         self.asm.code[offset] = target & 0xFF
         self.asm.code[offset + 1] = (target >> 8) & 0xFF
+        ref = self._body_cell_refs.get(offset)
+        if ref is not None:
+            body_list, body_idx = ref
+            body_list[body_idx] = target
 
-    def _compile_branch_to(self, target: int) -> None:
-        self.asm.word(self.words["branch"].address)
-        self.asm.word(target)
+    def _compile_branch_to(self, target: int, tok: Token) -> None:
+        self._emit_cell(self.words["branch"].address, tok)
+        self._emit_cell(target, tok)
 
     # --- immediate words: BEGIN/AGAIN ---
 
@@ -315,12 +347,12 @@ class Compiler:
 
     def _immediate_again(self, _compiler: Compiler, tok: Token) -> None:
         target = self._pop_control("begin", tok)
-        self._compile_branch_to(target)
+        self._compile_branch_to(target, tok)
 
     # --- immediate words: IF/THEN/ELSE ---
 
     def _immediate_if(self, _compiler: Compiler, tok: Token) -> None:
-        placeholder = self._compile_zbranch_placeholder()
+        placeholder = self._compile_zbranch_placeholder(tok)
         self._push_control("if", placeholder)
 
     def _immediate_then(self, _compiler: Compiler, tok: Token) -> None:
@@ -329,7 +361,7 @@ class Compiler:
 
     def _immediate_else(self, _compiler: Compiler, tok: Token) -> None:
         if_placeholder = self._pop_control("if", tok)
-        else_placeholder = self._compile_branch_placeholder()
+        else_placeholder = self._compile_branch_placeholder(tok)
         self._patch_placeholder(if_placeholder, self.asm.here)
         self._push_control("else", else_placeholder)
 
@@ -337,15 +369,15 @@ class Compiler:
 
     def _immediate_until(self, _compiler: Compiler, tok: Token) -> None:
         target = self._pop_control("begin", tok)
-        self.asm.word(self.words["0branch"].address)
-        self.asm.word(target)
+        self._emit_cell(self.words["0branch"].address, tok)
+        self._emit_cell(target, tok)
 
     def _immediate_while(self, _compiler: Compiler, tok: Token) -> None:
         if not self.control_stack:
             raise CompileError(
                 "control stack underflow (while)", tok
             )
-        placeholder = self._compile_zbranch_placeholder()
+        placeholder = self._compile_zbranch_placeholder(tok)
         begin_entry = self.control_stack.pop()
         if begin_entry[0] != "begin":
             raise CompileError(
@@ -358,35 +390,35 @@ class Compiler:
     def _immediate_repeat(self, _compiler: Compiler, tok: Token) -> None:
         begin_addr = self._pop_control("begin", tok)
         while_placeholder = self._pop_control("while", tok)
-        self._compile_branch_to(begin_addr)
+        self._compile_branch_to(begin_addr, tok)
         self._patch_placeholder(while_placeholder, self.asm.here)
 
     # --- immediate words: DO/LOOP/+LOOP/LEAVE ---
 
     def _immediate_do(self, _compiler: Compiler, tok: Token) -> None:
-        self.asm.word(self.words["(do)"].address)
+        self._emit_cell(self.words["(do)"].address, tok)
         body_addr = self.asm.here
         self._push_control("do", {"addr": body_addr, "leaves": []})
 
     def _immediate_loop(self, _compiler: Compiler, tok: Token) -> None:
         do_info = self._pop_control("do", tok)
-        self.asm.word(self.words["(loop)"].address)
-        self.asm.word(do_info["addr"])
+        self._emit_cell(self.words["(loop)"].address, tok)
+        self._emit_cell(do_info["addr"], tok)
         for leave_offset in do_info["leaves"]:
             self._patch_placeholder(leave_offset, self.asm.here)
 
     def _immediate_plus_loop(self, _compiler: Compiler, tok: Token) -> None:
         do_info = self._pop_control("do", tok)
-        self.asm.word(self.words["(+loop)"].address)
-        self.asm.word(do_info["addr"])
+        self._emit_cell(self.words["(+loop)"].address, tok)
+        self._emit_cell(do_info["addr"], tok)
         for leave_offset in do_info["leaves"]:
             self._patch_placeholder(leave_offset, self.asm.here)
 
     def _immediate_leave(self, _compiler: Compiler, tok: Token) -> None:
         for i in range(len(self.control_stack) - 1, -1, -1):
             if self.control_stack[i][0] == "do":
-                self.asm.word(self.words["unloop"].address)
-                placeholder = self._compile_branch_placeholder()
+                self._emit_cell(self.words["unloop"].address, tok)
+                placeholder = self._compile_branch_placeholder(tok)
                 self.control_stack[i][1]["leaves"].append(placeholder)
                 return
         raise CompileError("LEAVE outside DO/LOOP", tok)
@@ -404,13 +436,13 @@ class Compiler:
         word = self.words.get(name_tok.value)
         if word is None:
             raise CompileError(f"unknown word '{name_tok.value}'", name_tok)
-        self._compile_literal(word.address)
+        self._compile_literal(word.address, tok)
 
     def _immediate_recurse(self, _compiler: Compiler, tok: Token) -> None:
         if self.current_word is None:
             raise CompileError("RECURSE outside colon definition", tok)
         word = self.words[self.current_word]
-        self.asm.word(word.address)
+        self._emit_cell(word.address, tok)
 
     # --- immediate words: string literals ---
 
@@ -434,27 +466,27 @@ class Compiler:
         self._pending_strings.append((label, data))
         return label
 
-    def _compile_string_literal(self, data: bytes) -> tuple[str, int]:
+    def _compile_string_literal(self, data: bytes, tok: Token) -> tuple[str, int]:
         label = self._allocate_string(data)
         lit_addr = self.words["lit"].address
-        self.asm.word(lit_addr)
-        self.asm.word(label)
-        self.asm.word(lit_addr)
-        self.asm.word(len(data))
+        self._emit_cell(lit_addr, tok)
+        self._emit_cell(label, tok)
+        self._emit_cell(lit_addr, tok)
+        self._emit_cell(len(data), tok)
         return label, len(data)
 
     def _immediate_dot_quote(self, _compiler: Compiler, tok: Token) -> None:
         if self.state != "compile":
             raise CompileError('." outside colon definition', tok)
         body = self._next_string_token(tok)
-        self._compile_string_literal(body.value.encode("latin-1"))
-        self.asm.word(self.words["type"].address)
+        self._compile_string_literal(body.value.encode("latin-1"), tok)
+        self._emit_cell(self.words["type"].address, tok)
 
     def _immediate_s_quote(self, _compiler: Compiler, tok: Token) -> None:
         if self.state != "compile":
             raise CompileError('s" outside colon definition', tok)
         body = self._next_string_token(tok)
-        self._compile_string_literal(body.value.encode("latin-1"))
+        self._compile_string_literal(body.value.encode("latin-1"), tok)
 
     def _flush_pending_strings(self) -> None:
         for label, data in self._pending_strings:
@@ -549,7 +581,15 @@ class Compiler:
         )
 
     def build(self) -> bytes:
-        return self.asm.resolve()
+        image = self.asm.resolve()
+        self._resolve_body_cells(image)
+        return image
+
+    def _resolve_body_cells(self, image: bytes) -> None:
+        for offset, (body_list, body_idx) in self._body_cell_refs.items():
+            low = image[offset]
+            high = image[offset + 1]
+            body_list[body_idx] = low | (high << 8)
 
 
 def parse_number(text: str) -> int:
