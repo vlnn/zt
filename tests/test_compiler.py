@@ -350,3 +350,59 @@ class TestCounterDemo:
         assert len(border_writes) > 5, "counter should produce border writes"
         assert border_writes[:6] == [0, 1, 2, 3, 4, 5], \
             "counter should cycle through border values 0,1,2,..."
+
+    def test_counter_from_fs_file(self):
+        from pathlib import Path
+        from zt.compiler import Compiler
+        from zt.sim import Z80
+
+        fs_path = Path(__file__).parent.parent / "examples" / "counter.fs"
+        source = fs_path.read_text()
+
+        c = Compiler()
+        c.compile_source(source, source=str(fs_path))
+        c.compile_main_call()
+        image = c.build()
+
+        m = Z80()
+        m.load(c.origin, image)
+        m.pc = c.words["_start"].address
+        m.run(max_ticks=50_000)
+
+        border_writes = [v for port, v in m._outputs if (port & 0xFF) == 0xFE]
+        assert border_writes[:6] == [0, 1, 2, 3, 4, 5], \
+            "counter.fs should produce sequential border writes"
+
+    def test_cli_build_produces_sna(self, tmp_path):
+        from pathlib import Path
+        from zt.sna import SNA_TOTAL_SIZE, SNA_HEADER_SIZE, SNA_RAM_BASE
+        from zt.sim import Z80
+
+        fs_path = Path(__file__).parent.parent / "examples" / "counter.fs"
+        sna_path = tmp_path / "counter.sna"
+
+        from zt.cli import main
+        import sys
+        old_argv = sys.argv
+        sys.argv = ["zt", "build", str(fs_path), "-o", str(sna_path)]
+        try:
+            main()
+        finally:
+            sys.argv = old_argv
+
+        sna = sna_path.read_bytes()
+        assert len(sna) == SNA_TOTAL_SIZE, "CLI should produce valid 48K SNA"
+
+        sp = sna[0x17] | (sna[0x18] << 8)
+        pc = sna[SNA_HEADER_SIZE + sp - SNA_RAM_BASE] | \
+             (sna[SNA_HEADER_SIZE + sp - SNA_RAM_BASE + 1] << 8)
+
+        m = Z80()
+        m.mem[SNA_RAM_BASE:] = sna[SNA_HEADER_SIZE:]
+        m.sp = sp + 2
+        m.pc = pc
+        m.run(max_ticks=50_000)
+
+        border_writes = [v for port, v in m._outputs if (port & 0xFF) == 0xFE]
+        assert border_writes[:6] == [0, 1, 2, 3, 4, 5], \
+            "SNA built by CLI should run correctly"
