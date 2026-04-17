@@ -148,6 +148,7 @@ class Asm:
     def dec_e(self):       self.code.append(0x1D)
     def cp_d(self):        self.code.append(0xBA)
     def cp_e(self):        self.code.append(0xBB)
+    def add_a_a(self):     self.code.append(0x87)
 
     # -- 8-bit logic --
     def and_d(self):       self.code.append(0xA2)
@@ -180,6 +181,9 @@ class Asm:
     def ld_b_n(self, n):   self.code.extend((0x06, n & 0xFF))
     def ld_h_n(self, n):   self.code.extend((0x26, n & 0xFF))
     def ld_l_n(self, n):   self.code.extend((0x2E, n & 0xFF))
+    def ld_a_n(self, n):   self.code.extend((0x3E, n & 0xFF))
+    def ld_e_n(self, n):   self.code.extend((0x1E, n & 0xFF))
+    def ld_d_n(self, n):   self.code.extend((0x16, n & 0xFF))
 
     # -- indirect HL --
     def ld_e_ind_hl(self): self.code.append(0x5E)
@@ -240,6 +244,10 @@ class Asm:
     def sra_h(self):       self.code.extend((0xCB, 0x2C))
     def rr_l(self):        self.code.extend((0xCB, 0x1D))
     def srl_h(self):       self.code.extend((0xCB, 0x3C))
+    def rl_b(self):        self.code.extend((0xCB, 0x10))
+    def rl_l(self):        self.code.extend((0xCB, 0x15))
+    def rl_h(self):        self.code.extend((0xCB, 0x14))
+    def sla_c(self):       self.code.extend((0xCB, 0x21))
 
     # -- bit test --
     def bit_7_h(self):     self.code.extend((0xCB, 0x7C))
@@ -253,6 +261,7 @@ class Asm:
     def nop(self):         self.code.append(0x00)
     def di(self):          self.code.append(0xF3)
     def ei(self):          self.code.append(0xFB)
+    def scf(self):         self.code.append(0x37)
 
     # -- I/O --
     def out_n_a(self, port): self.code.extend((0xD3, port & 0xFF))

@@ -167,16 +167,14 @@ class Z80:
             self._exec_main(op)
 
     def _exec_main(self, op: int) -> None:
-        if op == 0x00: pass  # NOP
-        elif op == 0x76: self.halted = True  # HALT
+        if op == 0x00: pass
+        elif op == 0x76: self.halted = True
 
-        # 16-bit loads
         elif op == 0x01: self.bc = self._fetch_word()
         elif op == 0x11: self.de = self._fetch_word()
         elif op == 0x21: self.hl = self._fetch_word()
         elif op == 0x31: self.sp = self._fetch_word()
 
-        # 8-bit immediate loads
         elif op == 0x06: self.b = self._fetch()
         elif op == 0x0E: self.c = self._fetch()
         elif op == 0x16: self.d = self._fetch()
@@ -186,12 +184,10 @@ class Z80:
         elif op == 0x36: self._wb(self.hl, self._fetch())
         elif op == 0x3E: self.a = self._fetch()
 
-        # LD r,r block (0x40-0x7F minus HALT at 0x76)
         elif 0x40 <= op <= 0x7F:
             dst, src = (op >> 3) & 7, op & 7
             self._set_reg(dst, self._get_reg(src))
 
-        # Stack
         elif op == 0xC5: self._push(self.bc)
         elif op == 0xD5: self._push(self.de)
         elif op == 0xE5: self._push(self.hl)
@@ -201,14 +197,12 @@ class Z80:
         elif op == 0xE1: self.hl = self._pop()
         elif op == 0xF1: self.af = self._pop()
 
-        # Exchange
         elif op == 0xEB: self.hl, self.de = self.de, self.hl
         elif op == 0xE3:
             tmp = self._rw(self.sp)
             self._ww(self.sp, self.hl)
             self.hl = tmp
 
-        # 16-bit arithmetic
         elif op == 0x09: self._add_hl(self.bc)
         elif op == 0x19: self._add_hl(self.de)
         elif op == 0x29: self._add_hl(self.hl)
@@ -219,12 +213,10 @@ class Z80:
         elif op == 0x23: self.hl = (self.hl + 1) & 0xFFFF
         elif op == 0x2B: self.hl = (self.hl - 1) & 0xFFFF
 
-        # 8-bit INC/DEC
         elif op == 0x3C: self.a = self._inc8(self.a)
         elif op == 0x3D: self.a = self._dec8(self.a)
         elif op == 0x1D: self.e = self._dec8(self.e)
 
-        # ALU A,r (0x80-0xBF)
         elif 0x80 <= op <= 0xBF:
             src = self._get_reg(op & 7)
             grp = (op >> 3) & 7
@@ -235,41 +227,36 @@ class Z80:
             elif grp == 4: self.a &= src; self.f = self._flag_sz(self.a) | FLAG_H
             elif grp == 5: self.a ^= src; self.f = self._flag_sz(self.a)
             elif grp == 6: self.a |= src; self.f = self._flag_sz(self.a)
-            elif grp == 7: self._sub8(self.a, src)  # CP: discard result
+            elif grp == 7: self._sub8(self.a, src)
 
-        # CPL
         elif op == 0x2F: self.a ^= 0xFF; self.f |= FLAG_H | FLAG_N
+        elif op == 0x37: self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | FLAG_C
 
-        # Jumps
         elif op == 0xC3: self.pc = self._fetch_word()
         elif op == 0xCA: addr = self._fetch_word(); (self.f & FLAG_Z) and self._jp(addr)
         elif op == 0xC2: addr = self._fetch_word(); (not (self.f & FLAG_Z)) and self._jp(addr)
         elif op == 0xF2: addr = self._fetch_word(); (not (self.f & FLAG_S)) and self._jp(addr)
         elif op == 0xFA: addr = self._fetch_word(); (self.f & FLAG_S) and self._jp(addr)
 
-        # JR
         elif op == 0x18: self._jr_cond(True)
         elif op == 0x20: self._jr_cond(not (self.f & FLAG_Z))
         elif op == 0x28: self._jr_cond(bool(self.f & FLAG_Z))
         elif op == 0x30: self._jr_cond(not (self.f & FLAG_C))
         elif op == 0x38: self._jr_cond(bool(self.f & FLAG_C))
-        elif op == 0x10:  # DJNZ
+        elif op == 0x10:
             self.b = (self.b - 1) & 0xFF
             self._jr_cond(self.b != 0)
 
-        # CALL / RET
         elif op == 0xCD:
             addr = self._fetch_word()
             self._push(self.pc)
             self.pc = addr
         elif op == 0xC9: self.pc = self._pop()
 
-        # I/O
         elif op == 0xD3:
             port = self._fetch()
             self._outputs.append((port | (self.a << 8), self.a))
 
-        # Misc
         elif op == 0xF3: self.iff = False
         elif op == 0xFB: self.iff = True
 
@@ -347,8 +334,7 @@ class Z80:
         elif op == 0x72: d = self._fetch(); self._wb(r + _signed(d), self.d)
         else:
             raise RuntimeError(
-                f"unimplemented {'IX' if reg_get == (lambda: self.ix) else 'IY'} "
-                f"opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}"
+                f"unimplemented IX/IY opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}"
             )
 
     def _exec_dd(self) -> None:
@@ -362,7 +348,7 @@ class Z80:
 
     def _exec_ed(self) -> None:
         op = self._fetch()
-        if op == 0x52:  # SBC HL,DE
+        if op == 0x52:
             c = 1 if (self.f & FLAG_C) else 0
             r = self.hl - self.de - c
             self.f = FLAG_N
@@ -374,7 +360,7 @@ class Z80:
             ov = ((self.hl ^ self.de) & 0x8000) and ((self.hl ^ r) & 0x8000)
             if ov: self.f |= FLAG_PV
             self.hl = r & 0xFFFF
-        elif op == 0xB0:  # LDIR
+        elif op == 0xB0:
             while self.bc:
                 self._wb(self.de, self._rb(self.hl))
                 self.hl = (self.hl + 1) & 0xFFFF

@@ -553,6 +553,28 @@ def create_border(a: Asm) -> None:
     a.jp("NEXT")
 
 
+def create_multiply(a: Asm) -> None:
+    a.label("MULTIPLY")
+    a.alias("*", "MULTIPLY")
+    a.pop_de()
+    a.push_bc()
+    a.ld_b_h()
+    a.ld_c_l()
+    a.ld_hl_nn(0)
+    a.ld_a_n(16)
+    a.label("_mul_loop")
+    a.add_hl_hl()
+    a.sla_c()
+    a.rl_b()
+    a.jr_nc_to("_mul_skip")
+    a.add_hl_de()
+    a.label("_mul_skip")
+    a.dec_a()
+    a.jr_nz_to("_mul_loop")
+    a.pop_bc()
+    a.jp("NEXT")
+
+
 PRIMITIVES = [
     create_next, create_docol, create_exit,
     create_dup, create_drop, create_swap, create_over,
@@ -575,4 +597,5 @@ PRIMITIVES = [
     create_plus_store,
     create_cmove, create_fill,
     create_lit, create_branch, create_halt, create_border,
+    create_multiply,
 ]
