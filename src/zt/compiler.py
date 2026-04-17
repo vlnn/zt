@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Literal
 
 from zt.asm import Asm
@@ -38,10 +39,13 @@ class Compiler:
         origin: int = DEFAULT_ORIGIN,
         data_stack_top: int = DEFAULT_DATA_STACK_TOP,
         return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
+        include_dirs: list[Path] | None = None,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
         self.return_stack_top = return_stack_top
+        self.include_dirs: list[Path] = [Path(d) for d in (include_dirs or [])]
+        self.included_files: set[Path] = set()
         self.asm = Asm(origin)
         self.words: dict[str, Word] = {}
         self.state: Literal["interpret", "compile"] = "interpret"
@@ -100,6 +104,8 @@ class Compiler:
             ("recurse", self._immediate_recurse),
             (".\"", self._immediate_dot_quote),
             ("s\"", self._immediate_s_quote),
+            ("include", self._immediate_include),
+            ("require", self._immediate_require),
         ]:
             self.words[name] = Word(
                 name=name, address=0, kind="prim",
@@ -457,14 +463,71 @@ class Compiler:
                 self.asm.byte(byte_value)
         self._pending_strings.clear()
 
+    # --- immediate words: INCLUDE / REQUIRE ---
+
+    def _immediate_include(self, _compiler: Compiler, tok: Token) -> None:
+        filename = self._read_filename_token(tok)
+        path = self._resolve_include(filename, tok)
+        self._include_file(path)
+
+    def _immediate_require(self, _compiler: Compiler, tok: Token) -> None:
+        filename = self._read_filename_token(tok)
+        path = self._resolve_include(filename, tok)
+        if path in self.included_files:
+            return
+        self._include_file(path)
+
+    def _read_filename_token(self, context_tok: Token) -> str:
+        if self._token_pos >= len(self._tokens):
+            raise CompileError(
+                f"expected filename after '{context_tok.value}'",
+                context_tok,
+            )
+        name_tok = self._next_token(context_tok)
+        if name_tok.kind != "word":
+            raise CompileError(
+                f"expected filename after '{context_tok.value}', "
+                f"got {name_tok.kind} '{name_tok.value}'",
+                name_tok,
+            )
+        return name_tok.raw or name_tok.value
+
+    def _resolve_include(self, filename: str, context_tok: Token) -> Path:
+        given = Path(filename)
+        if given.is_absolute():
+            if given.is_file():
+                return given.resolve()
+            raise CompileError(
+                f"include: cannot find '{filename}'", context_tok,
+            )
+        candidates: list[Path] = []
+        current = Path(context_tok.source)
+        if current.is_file():
+            candidates.append(current.parent / filename)
+        candidates.extend(d / filename for d in self.include_dirs)
+        for candidate in candidates:
+            if candidate.is_file():
+                return candidate.resolve()
+        searched = "\n  ".join(str(p) for p in candidates) or "(no search paths)"
+        raise CompileError(
+            f"include: cannot find '{filename}'; searched:\n  {searched}",
+            context_tok,
+        )
+
+    def _include_file(self, path: Path) -> None:
+        self.included_files.add(path)
+        text = path.read_text()
+        new_tokens = tokenize(text, source=str(path))
+        self._tokens[self._token_pos:self._token_pos] = new_tokens
+
     # --- build ---
 
     def include_stdlib(self, path: object | None = None) -> None:
-        from pathlib import Path
         if path is None:
             path = Path(__file__).resolve().parent.parent.parent / "stdlib" / "core.fs"
         else:
             path = Path(path)
+        self.included_files.add(path.resolve())
         self.compile_source(path.read_text(), source=str(path))
 
     def compile_main_call(self) -> None:

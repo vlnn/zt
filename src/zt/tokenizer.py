@@ -12,6 +12,11 @@ class Token:
     line: int
     col: int
     source: str
+    raw: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.raw is None:
+            object.__setattr__(self, "raw", self.value)
 
 
 class TokenizeError(Exception):
@@ -24,7 +29,7 @@ class TokenizeError(Exception):
 
 _NUMBER_RE = re.compile(r"^-?[0-9]+$|^\$[0-9a-f]+$|^%[01]+$")
 
-_STRING_STARTERS = {'.\"', 's\"'}
+_STRING_STARTERS = {'."', 's"'}
 
 
 def _is_number(text: str) -> bool:
@@ -93,7 +98,7 @@ def tokenize(text: str, source: str = "<input>") -> list[Token]:
         lower = raw.lower()
 
         if lower in _STRING_STARTERS:
-            tokens.append(Token(lower, "word", start_line, start_col, source))
+            tokens.append(Token(lower, "word", start_line, start_col, source, raw=raw))
             if pos >= n or text[pos] not in " \t":
                 raise TokenizeError("unclosed string", start_line, start_col, source)
             pos += 1
@@ -109,12 +114,13 @@ def tokenize(text: str, source: str = "<input>") -> list[Token]:
                 pos += 1
             if pos >= n:
                 raise TokenizeError("unclosed string", str_line, str_col, source)
-            tokens.append(Token(text[str_start:pos], "string", str_line, str_col, source))
+            body = text[str_start:pos]
+            tokens.append(Token(body, "string", str_line, str_col, source, raw=body))
             pos += 1
             col += 1
         elif _is_number(lower):
-            tokens.append(Token(lower, "number", start_line, start_col, source))
+            tokens.append(Token(lower, "number", start_line, start_col, source, raw=raw))
         else:
-            tokens.append(Token(lower, "word", start_line, start_col, source))
+            tokens.append(Token(lower, "word", start_line, start_col, source, raw=raw))
 
     return tokens
