@@ -721,9 +721,16 @@ def create_multiply(a: Asm) -> None:
     a.ld_b_h()
     a.ld_c_l()
     a.ld_hl_nn(0)
-    for i in range(16):
+    for i in range(8):
         _mul_step(a, f"_mul_s{i}")
+    a.ld_a_b()
+    a.or_c()
+    a.jr_z_to("_mul_done")
+    for i in range(8, 16):
+        _mul_step(a, f"_mul_s{i}")
+    a.label("_mul_done")
     a.dispatch()
+
 
 def _emit_glyph_source(a: Asm) -> None:
     a.ld_h_n(0)
