@@ -21,7 +21,7 @@ def main() -> None:
 
     if args.command == "build":
         code = build_image(args.origin, args.dstack, args.rstack)
-        sna = build_sna(code, args.origin, args.dstack, args.border)
+        sna = build_sna(code, args.origin, args.dstack)
         args.output.write_bytes(sna)
         print(f"wrote {len(sna)} bytes to {args.output} "
               f"(code {len(code)} bytes at {args.origin:#06x})")

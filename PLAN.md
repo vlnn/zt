@@ -7,9 +7,9 @@
 zt/
 ├── src/zt/
 │   ├── __init__.py
-│   ├── asm.py              # Asm class, opcode methods (exists, extract from forth_image.py)
-│   ├── primitives.py        # create_* functions (exists, extract from forth_image.py)
-│   ├── sna.py               # SNA builder (exists, extract from forth_image.py)
+│   ├── asm.py              # Asm class, opcode methods
+│   ├── primitives.py        # create_* functions
+│   ├── sna.py               # SNA builder
 │   ├── sim.py               # Z80 simulator (M1.5)
 │   ├── tokenizer.py         # Forth tokenizer (M2)
 │   ├── compiler.py          # cross-compiler core (M3)
@@ -47,83 +47,60 @@ zt/
 
 ---
 
-## M0 — Refactor existing code into project structure
-
-### Why
-
-Everything lives in one file. Split before adding more.
-
-### Actions
-
-1. Create `zt/` package directory and `tests/` directory.
-
-2. Extract `Asm` class and opcode methods into `z80forth/asm.py`.
-
-3. Extract `create_*` functions into `z80forth/primitives.py`.
-
-4. Extract `build_sna`, `_build_sna_header`, `_build_sna_ram` into `zt/sna.py`.
-
-5. Extract `build_image` into `zt/image.py` (temporary home until compiler replaces it).
-
-6. Move existing tests into `tests/`, split by module: `test_asm.py`, `test_primitives.py`, `test_sna.py`.
-
-7. Set up `pyproject.toml` with uv:
-   - pytest as dev dependency
-   - pytest-mock as dev dependency
-   - `[project.scripts] forthc = "zt.cli:main"` entry point
-
-8. Verify: `uv run pytest` passes all 42 existing tests.
+## M0 — Refactor existing code into project structure ✅
 
 ### Deliverable
 
 Same functionality, clean package layout, `forthc` is installable.
 
-### Tests
+---
 
-Existing tests, relocated. No new tests needed.
+## M1 — Primitive library expansion ✅
+
+### Implemented primitives
+
+#### Stack operations
+ROT, NIP, TUCK, 2DUP, 2DROP, 2SWAP, >R, R>, R@
+
+#### Arithmetic
+1+, 1-, 2*, 2/, NEGATE, ABS, MIN, MAX
+
+#### Logic and comparison
+AND, OR, XOR, INVERT, LSHIFT, RSHIFT, =, <>, <, >, 0=, 0<, U<
+
+#### Memory
+C@, C!, +!, CMOVE, FILL
+
+### Asm extensions added
+- `alias()` method for dual naming (e.g. PLUS / +)
+- Relative jumps: `jr_to`, `jr_z_to`, `jr_nz_to`, `jr_c_to`, `jr_nc_to`, `djnz_to`
+  with separate `rel_fixups` list for 1-byte signed displacement resolution
+- Conditional absolute jumps: `jp_z`, `jp_nz`, `jp_p`, `jp_m`
+- ~35 new opcode methods for shifts, bit ops, 8-bit loads, logic, block transfer
+
+All primitives have both uppercase labels (PLUS) and Forth-style aliases (+).
+
+### Deliverable
+
+~45 working primitives with byte-sequence tests for each. 219 tests passing.
 
 ---
 
-## M1 — Primitive library expansion
+## M1.25 — Multiply and divide primitives
 
-### New primitives to implement
+### Why (split from M1)
 
-Implement each as a function in `primitives.py` following the existing `create_*` pattern.
-Each function gets its own test verifying the compiled byte sequence.
+Software multiply and divide are significantly more complex (~30-40 lines each)
+than the other M1 primitives. They are deferred to keep M1 focused and testable.
+They can be implemented either before or in parallel with M1.5 (simulator), but
+behavioral correctness is best validated with the simulator.
 
-#### Stack operations
-
-| Word | Stack effect | Z80 implementation |
-|------|-------------|-------------------|
-| `ROT` | ( a b c -- b c a ) | pop de; ex (sp),hl; push de; wrangle |
-| `NIP` | ( a b -- b ) | pop de; jp NEXT |
-| `TUCK` | ( a b -- b a b ) | pop de; push hl; push de; jp NEXT |
-| `2DUP` | ( a b -- a b a b ) | pop de; push de; push hl; push de; ex de,hl; ... |
-| `2DROP` | ( a b -- ) | pop hl; pop hl; jp NEXT |
-| `2SWAP` | ( a b c d -- c d a b ) | four pops, four pushes in new order |
-| `>R` | ( x -- ) R:( -- x ) | ld (iy-2),l; ld (iy-1),h; dec iy; dec iy; pop hl; jp NEXT |
-| `R>` | ( -- x ) R:( x -- ) | push hl; ld l,(iy+0); ld h,(iy+1); inc iy; inc iy; jp NEXT |
-| `R@` | ( -- x ) R:( x -- x ) | push hl; ld l,(iy+0); ld h,(iy+1); jp NEXT |
-
-#### Arithmetic
-
-| Word | Stack effect | Z80 |
-|------|-------------|-----|
-| `1+` | ( n -- n+1 ) | inc hl |
-| `1-` | ( n -- n-1 ) | dec hl |
-| `2*` | ( n -- n*2 ) | add hl,hl |
-| `2/` | ( n -- n/2 ) | sra h; rr l |
-| `NEGATE` | ( n -- -n ) | xor a; sub l; ld l,a; sbc a,a; sub h; ld h,a |
-| `ABS` | ( n -- |n| ) | bit 7,h; jr z,+; negate |
-| `MIN` | ( a b -- min ) | pop de; compare; keep smaller |
-| `MAX` | ( a b -- max ) | pop de; compare; keep larger |
-
-#### Multiply and divide
+### Primitives to implement
 
 | Word | Stack effect | Notes |
 |------|-------------|-------|
-| `*` | ( a b -- a*b ) | Software multiply, ~30 lines. Shift-and-add. |
-| `/MOD` | ( a b -- rem quot ) | Software divide, ~40 lines. |
+| `*` | ( a b -- a*b ) | Software multiply, shift-and-add, 16 iterations |
+| `/MOD` | ( a b -- rem quot ) | Software divide, restoring division, 16 iterations |
 | `/` | ( a b -- quot ) | /MOD then NIP |
 | `MOD` | ( a b -- rem ) | /MOD then DROP |
 | `U*` | ( a b -- ud ) | Unsigned 16×16→32 if needed |
@@ -144,84 +121,13 @@ Implementation notes for divide:
 ; Must handle divide-by-zero (return 0 or -1, pick one)
 ```
 
-#### Logic and comparison
-
-| Word | Stack effect | Z80 |
-|------|-------------|-----|
-| `AND` | ( a b -- a&b ) | pop de; ld a,h; and d; ld h,a; ld a,l; and e; ld l,a |
-| `OR` | ( a b -- a\|b ) | pop de; ld a,h; or d; ... |
-| `XOR` | ( a b -- a^b ) | pop de; ld a,h; xor d; ... |
-| `INVERT` | ( a -- ~a ) | ld a,h; cpl; ld h,a; ld a,l; cpl; ld l,a |
-| `LSHIFT` | ( a n -- a<<n ) | pop de; loop: add hl,hl; dec e; jr nz |
-| `RSHIFT` | ( a n -- a>>n ) | pop de; loop: srl h; rr l; dec e; jr nz |
-| `=` | ( a b -- flag ) | pop de; or a; sbc hl,de; ld hl,0; jr nz,+; dec hl |
-| `<>` | ( a b -- flag ) | = then INVERT |
-| `<` | ( a b -- flag ) | signed compare |
-| `>` | ( a b -- flag ) | swap then < |
-| `0=` | ( a -- flag ) | ld a,h; or l; ld hl,0; jr nz,+; dec hl |
-| `0<` | ( a -- flag ) | bit 7,h; ld hl,0; jr z,+; dec hl |
-| `U<` | ( a b -- flag ) | unsigned compare |
-
-All flag words push 0 (false) or -1/0xFFFF (true).
-
-#### Memory
-
-| Word | Stack effect | Z80 |
-|------|-------------|-----|
-| `C@` | ( addr -- byte ) | ld l,(hl); ld h,0 |
-| `C!` | ( byte addr -- ) | pop de; ld (hl),e; pop hl |
-| `+!` | ( n addr -- ) | pop de; ld a,(hl); add a,e; ld (hl),a; inc hl; ld a,(hl); adc a,d; ld (hl),a; pop hl |
-| `CMOVE` | ( src dst count -- ) | pop bc; pop de; ldir; pop hl |
-| `FILL` | ( addr count byte -- ) | setup and loop or use ld+ldir trick |
-
-#### New Asm methods needed
-
-Add these opcode methods to `Asm`:
-- `di`, `ei`
-- `ld_ind_nn_sp`, `ld_sp_ind_nn` (for SP-blast primitives later)
-- `sra_h`, `rr_l`, `srl_h` (for shifts)
-- `bit_n_r` (for sign checks)
-- `and_r`, `or_r`, `xor_r`, `cpl` (for logic)
-- `jr_nz`, `jr_z`, `jr_c`, `jr_nc`, `jr` with relative offset calculation
-- `djnz` (for counted loops in multiply/divide)
-- `ldir` (for CMOVE)
-- `sub_r`, `sbc_a_r`, `cp_r`
-
-Relative jump methods need offset calculation from current position.
-Add `jr_to(label)` that records a fixup for 1-byte relative offset.
-
 ### Actions
 
-1. Add new opcode methods to `Asm`, with byte-sequence tests for each.
-
-2. Implement stack primitives. Test each compiled byte sequence.
-
-3. Implement arithmetic primitives. Test byte sequences.
-
-4. Implement multiply/divide. These are the longest primitives — write them
-   carefully, following a known algorithm (e.g., Rodríguez's CamelForth `UM*`).
-
-5. Implement logic and comparison primitives. Test byte sequences.
-
-6. Implement memory primitives. Test byte sequences.
-
-7. Update `PRIMITIVES` list to include all new words.
-
-8. Build a test image that exercises every new primitive (Python-driven, not .fs yet).
-
-### Tests
-
-- One byte-sequence test per primitive (parametrized where groups share structure).
-- Behavioral tests deferred to M1.5 (need the simulator).
-
-### Deliverable
-
-~50 working primitives. Still driven by Python, but the instruction set is complete.
-
-### Demo
-
-Border plasma using `AND`, `XOR`, `LSHIFT` on the loop counter.
-Memory fill writing patterns to screen and attribute RAM.
+1. Implement multiply primitive. Test byte sequence.
+2. Implement /MOD primitive. Test byte sequence.
+3. Implement / and MOD as thin wrappers.
+4. Add to PRIMITIVES list.
+5. Behavioral tests added once M1.5 (simulator) is available.
 
 ---
 
@@ -808,7 +714,7 @@ LITSTR: push hl
         ; add length to IX
         ; (need a loop or add-to-ix sequence)
         ex   de,hl     ; DE = addr, HL = length
-        add  hl,de     ; HL = past-end of string... 
+        add  hl,de     ; HL = past-end of string...
         ; this is getting complicated. simpler approach:
 ```
 
@@ -1342,7 +1248,7 @@ The first 48K of RAM in the standard part is: bank 5 (0x4000–0x7FFF), bank 2
 2. Add `--128k` flag to CLI.
 
 3. Implement bank management: `Compiler.bank(n)` directive that switches
-   the current compiles target to a specific bank. Code in bank N lives at
+   the current compile target to a specific bank. Code in bank N lives at
    0xC000–0xFFFF in the target address space.
 
 4. Add bank-switch helper primitive: writes to port $7FFD.
@@ -1454,8 +1360,8 @@ Implement as `CODE` words once 10c is available, or as Python-level primitives.
 ## Dependency graph
 
 ```
-M0 (refactor)
-└── M1 (primitives) + M1.5 (simulator) — parallel
+M0 (refactor) ✅
+└── M1 (primitives) ✅ + M1.25 (mul/div) + M1.5 (simulator) — parallel
     └── M2 (tokenizer)
         └── M3 (compiler core)
             └── M4 (control flow)
@@ -1471,6 +1377,9 @@ M0 (refactor)
 M1 and M1.5 can proceed in parallel — you can write primitives (testing only
 byte sequences) while building the simulator, then add behavioral tests once
 the simulator is ready.
+
+M1.25 (multiply/divide) can be done before or during M1.5 — byte-sequence tests
+only until the simulator is available for behavioral validation.
 
 M8 and M9 are independent of each other and of M7/M7.5.
 
