@@ -3,6 +3,7 @@ from __future__ import annotations
 from zt.asm import Asm
 
 SPECTRUM_BORDER_PORT = 0xFE
+EMIT_FONT_BASE_MINUS_0X100 = 0x3C00
 
 
 def create_next(a: Asm) -> None:
@@ -704,6 +705,96 @@ def create_multiply(a: Asm) -> None:
     a.jp("NEXT")
 
 
+def _emit_glyph_source(a: Asm) -> None:
+    a.ld_h_n(0)
+    a.add_hl_hl()
+    a.add_hl_hl()
+    a.add_hl_hl()
+    a.ld_bc_nn(EMIT_FONT_BASE_MINUS_0X100)
+    a.add_hl_bc()
+    a.ex_de_hl()
+
+
+def _emit_screen_dest(a: Asm) -> None:
+    a.ld_a_ind_nn("_emit_cursor_row")
+    a.and_n(0x18)
+    a.or_n(0x40)
+    a.ld_h_a()
+    a.ld_a_ind_nn("_emit_cursor_row")
+    a.and_n(0x07)
+    a.rrca()
+    a.rrca()
+    a.rrca()
+    a.ld_b_a()
+    a.ld_a_ind_nn("_emit_cursor_col")
+    a.or_b()
+    a.ld_l_a()
+
+
+def _emit_copy_glyph(a: Asm) -> None:
+    a.ld_b_n(8)
+    a.label("_emit_copy")
+    a.ld_a_ind_de()
+    a.ld_ind_hl_a()
+    a.inc_de()
+    a.inc_h()
+    a.djnz_to("_emit_copy")
+
+
+def _emit_advance_cursor(a: Asm) -> None:
+    a.ld_a_ind_nn("_emit_cursor_col")
+    a.inc_a()
+    a.cp_n(32)
+    a.jr_c_to("_emit_store_col")
+    a.xor_a()
+    a.ld_ind_nn_a("_emit_cursor_col")
+    a.ld_a_ind_nn("_emit_cursor_row")
+    a.inc_a()
+    a.cp_n(24)
+    a.jr_c_to("_emit_store_row")
+    a.xor_a()
+    a.label("_emit_store_row")
+    a.ld_ind_nn_a("_emit_cursor_row")
+    a.jr_to("_emit_done")
+    a.label("_emit_store_col")
+    a.ld_ind_nn_a("_emit_cursor_col")
+
+
+def _emit_cr_path(a: Asm) -> None:
+    a.label("_emit_cr_entry")
+    a.xor_a()
+    a.ld_ind_nn_a("_emit_cursor_col")
+    a.ld_a_ind_nn("_emit_cursor_row")
+    a.inc_a()
+    a.cp_n(24)
+    a.jr_c_to("_emit_cr_store")
+    a.xor_a()
+    a.label("_emit_cr_store")
+    a.ld_ind_nn_a("_emit_cursor_row")
+    a.pop_hl()
+    a.jp("NEXT")
+
+
+def create_emit(a: Asm) -> None:
+    a.label("EMIT")
+    a.alias("emit", "EMIT")
+    a.ld_a_l()
+    a.cp_n(13)
+    a.jp_z("_emit_cr_entry")
+    _emit_glyph_source(a)
+    _emit_screen_dest(a)
+    _emit_copy_glyph(a)
+    _emit_advance_cursor(a)
+    a.label("_emit_done")
+    a.pop_hl()
+    a.jp("NEXT")
+    _emit_cr_path(a)
+    a.label("_emit_cursor_row")
+    a.byte(0)
+    a.label("_emit_cursor_col")
+    a.byte(0)
+
+
 PRIMITIVES = [
     create_next, create_docol, create_exit,
     create_dup, create_drop, create_swap, create_over,
@@ -730,4 +821,5 @@ PRIMITIVES = [
     create_i_index, create_j_index, create_unloop,
     create_halt, create_border,
     create_multiply,
+    create_emit,
 ]

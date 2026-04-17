@@ -6,6 +6,10 @@ from zt.asm import Asm
 from zt.primitives import PRIMITIVES
 
 SPECTRUM_BORDER_PORT = 0xFE
+SPECTRUM_FONT_BASE = 0x3D00
+SPECTRUM_SCREEN_BASE = 0x4000
+SPECTRUM_ATTR_BASE = 0x5800
+
 DEFAULT_ORIGIN = 0x8000
 DEFAULT_DATA_STACK_TOP = 0xFF00
 DEFAULT_RETURN_STACK_TOP = 0xFE00
@@ -18,11 +22,49 @@ FLAG_H = 0x10
 FLAG_Z = 0x40
 FLAG_S = 0x80
 
+TEST_FONT = bytes(n for n in range(32, 128) for _ in range(8))
+
+
+def screen_addr(row: int, col: int, line: int = 0) -> int:
+    band = row >> 3
+    text_row_in_band = row & 7
+    return (SPECTRUM_SCREEN_BASE
+            | (band << 11)
+            | (line << 8)
+            | (text_row_in_band << 5)
+            | col)
+
+
+def decode_screen_cell(mem: bytearray, row: int, col: int) -> int:
+    lines = {mem[screen_addr(row, col, line)] for line in range(8)}
+    if len(lines) != 1:
+        raise ValueError(
+            f"inconsistent screen cell at row={row} col={col}: {sorted(lines)}"
+        )
+    return lines.pop()
+
+
+def _decode_row(mem: bytearray, row: int, last_col: int) -> bytes:
+    line = bytearray()
+    for col in range(last_col):
+        ch = decode_screen_cell(mem, row, col)
+        if ch == 0:
+            break
+        line.append(ch)
+    return bytes(line)
+
+
+def decode_screen_text(mem: bytearray, cursor_row: int, cursor_col: int) -> bytes:
+    complete_rows = [_decode_row(mem, r, 32) for r in range(cursor_row)]
+    partial = _decode_row(mem, cursor_row, cursor_col)
+    return b"\r".join(complete_rows + [partial])
+
 
 @dataclass
 class ForthResult:
     data_stack: list[int]
     border_writes: list[int] = field(default_factory=list)
+    chars_out: bytes = b""
 
 
 class Z80:
@@ -184,6 +226,14 @@ class Z80:
         elif op == 0x36: self._wb(self.hl, self._fetch())
         elif op == 0x3E: self.a = self._fetch()
 
+        elif op == 0x1A: self.a = self._rb(self.de)
+        elif op == 0x3A:
+            addr = self._fetch_word()
+            self.a = self._rb(addr)
+        elif op == 0x32:
+            addr = self._fetch_word()
+            self._wb(addr, self.a)
+
         elif 0x40 <= op <= 0x7F:
             dst, src = (op >> 3) & 7, op & 7
             self._set_reg(dst, self._get_reg(src))
@@ -213,6 +263,7 @@ class Z80:
         elif op == 0x23: self.hl = (self.hl + 1) & 0xFFFF
         elif op == 0x2B: self.hl = (self.hl - 1) & 0xFFFF
 
+        elif op == 0x24: self.h = self._inc8(self.h)
         elif op == 0x3C: self.a = self._inc8(self.a)
         elif op == 0x3D: self.a = self._dec8(self.a)
         elif op == 0x1D: self.e = self._dec8(self.e)
@@ -228,6 +279,20 @@ class Z80:
             elif grp == 5: self.a ^= src; self.f = self._flag_sz(self.a)
             elif grp == 6: self.a |= src; self.f = self._flag_sz(self.a)
             elif grp == 7: self._sub8(self.a, src)
+
+        elif op == 0xE6:
+            self.a &= self._fetch()
+            self.f = self._flag_sz(self.a) | FLAG_H
+        elif op == 0xF6:
+            self.a |= self._fetch()
+            self.f = self._flag_sz(self.a)
+        elif op == 0xFE:
+            self._sub8(self.a, self._fetch())
+
+        elif op == 0x0F:
+            c = self.a & 1
+            self.a = ((self.a >> 1) | (c << 7)) & 0xFF
+            self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if c else 0)
 
         elif op == 0x2F: self.a ^= 0xFF; self.f |= FLAG_H | FLAG_N
         elif op == 0x37: self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | FLAG_C
@@ -391,6 +456,7 @@ class ForthMachine:
             creator(self._prim_asm)
         self._prim_code = self._prim_asm.resolve()
         self._body_base = self._prim_asm.here
+        self._last_m: Z80 | None = None
 
     def label(self, name: str) -> int:
         return self._prim_asm.labels[name]
@@ -466,6 +532,7 @@ class ForthMachine:
     ) -> ForthResult:
         m = Z80()
         m.load(self.origin, self._prim_code)
+        m.load(SPECTRUM_FONT_BASE, TEST_FONT)
         m.load(self._body_base, body_bytes)
 
         startup_addr = self._body_base + len(body_bytes)
@@ -475,6 +542,8 @@ class ForthMachine:
         m.pc = startup_addr
         m.run(max_ticks)
 
+        self._last_m = m
+
         if not m.halted:
             raise TimeoutError(f"execution exceeded {max_ticks} ticks")
 
@@ -483,7 +552,15 @@ class ForthMachine:
         return ForthResult(
             data_stack=_read_data_stack(m, self.data_stack_top, bool(initial_stack)),
             border_writes=border_writes,
+            chars_out=self._extract_chars_out(m),
         )
+
+    def _extract_chars_out(self, m: Z80) -> bytes:
+        row_addr = self._prim_asm.labels.get("_emit_cursor_row")
+        col_addr = self._prim_asm.labels.get("_emit_cursor_col")
+        if row_addr is None or col_addr is None:
+            return b""
+        return decode_screen_text(m.mem, m.mem[row_addr], m.mem[col_addr])
 
     def _emit_startup(
         self,

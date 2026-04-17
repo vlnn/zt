@@ -69,23 +69,12 @@ class Asm:
         self.rel_fixups.append((len(self.code), target))
         self.code.append(0x00)
 
-    def jr_to(self, target: str) -> None:
-        self._emit_jr(0x18, target)
-
-    def jr_nz_to(self, target: str) -> None:
-        self._emit_jr(0x20, target)
-
-    def jr_z_to(self, target: str) -> None:
-        self._emit_jr(0x28, target)
-
-    def jr_nc_to(self, target: str) -> None:
-        self._emit_jr(0x30, target)
-
-    def jr_c_to(self, target: str) -> None:
-        self._emit_jr(0x38, target)
-
-    def djnz_to(self, target: str) -> None:
-        self._emit_jr(0x10, target)
+    def jr_to(self, target: str) -> None:       self._emit_jr(0x18, target)
+    def jr_nz_to(self, target: str) -> None:    self._emit_jr(0x20, target)
+    def jr_z_to(self, target: str) -> None:     self._emit_jr(0x28, target)
+    def jr_nc_to(self, target: str) -> None:    self._emit_jr(0x30, target)
+    def jr_c_to(self, target: str) -> None:     self._emit_jr(0x38, target)
+    def djnz_to(self, target: str) -> None:     self._emit_jr(0x10, target)
 
     def resolve(self) -> bytes:
         for offset, name in self.fixups:
@@ -146,20 +135,26 @@ class Asm:
     def inc_a(self):       self.code.append(0x3C)
     def dec_a(self):       self.code.append(0x3D)
     def dec_e(self):       self.code.append(0x1D)
+    def inc_h(self):       self.code.append(0x24)
     def cp_d(self):        self.code.append(0xBA)
     def cp_e(self):        self.code.append(0xBB)
+    def cp_n(self, n):     self.code.extend((0xFE, n & 0xFF))
     def add_a_a(self):     self.code.append(0x87)
 
     # -- 8-bit logic --
     def and_d(self):       self.code.append(0xA2)
     def and_e(self):       self.code.append(0xA3)
+    def and_n(self, n):    self.code.extend((0xE6, n & 0xFF))
+    def or_b(self):        self.code.append(0xB0)
     def or_c(self):        self.code.append(0xB1)
     def or_d(self):        self.code.append(0xB2)
     def or_e(self):        self.code.append(0xB3)
     def or_l(self):        self.code.append(0xB5)
+    def or_n(self, n):     self.code.extend((0xF6, n & 0xFF))
     def xor_d(self):       self.code.append(0xAA)
     def xor_e(self):       self.code.append(0xAB)
     def cpl(self):         self.code.append(0x2F)
+    def rrca(self):        self.code.append(0x0F)
 
     # -- 8-bit loads --
     def ld_a_b(self):      self.code.append(0x78)
@@ -168,6 +163,7 @@ class Asm:
     def ld_a_e(self):      self.code.append(0x7B)
     def ld_a_h(self):      self.code.append(0x7C)
     def ld_a_l(self):      self.code.append(0x7D)
+    def ld_b_a(self):      self.code.append(0x47)
     def ld_b_h(self):      self.code.append(0x44)
     def ld_c_l(self):      self.code.append(0x4D)
     def ld_d_h(self):      self.code.append(0x54)
@@ -193,6 +189,18 @@ class Asm:
     def ld_ind_hl_d(self): self.code.append(0x72)
     def ld_ind_hl_a(self): self.code.append(0x77)
     def ld_a_ind_hl(self): self.code.append(0x7E)
+
+    # -- indirect DE --
+    def ld_a_ind_de(self): self.code.append(0x1A)
+
+    # -- absolute addressing --
+    def ld_a_ind_nn(self, addr: Operand):
+        self.code.append(0x3A)
+        self.word(addr)
+
+    def ld_ind_nn_a(self, addr: Operand):
+        self.code.append(0x32)
+        self.word(addr)
 
     # -- 16-bit loads --
     def ld_sp_nn(self, value: Operand):
