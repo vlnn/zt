@@ -539,6 +539,24 @@ def create_branch(a: Asm) -> None:
     a.jp("NEXT")
 
 
+def create_zbranch(a: Asm) -> None:
+    a.label("ZBRANCH")
+    a.alias("0branch", "ZBRANCH")
+    a.ld_a_h()
+    a.or_l()
+    a.pop_hl()
+    a.jr_nz_to("_zbranch_skip")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.push_de()
+    a.pop_ix()
+    a.jp("NEXT")
+    a.label("_zbranch_skip")
+    a.inc_ix()
+    a.inc_ix()
+    a.jp("NEXT")
+
+
 def create_halt(a: Asm) -> None:
     a.label("HALT")
     a.halt()
@@ -596,6 +614,7 @@ PRIMITIVES = [
     create_c_fetch, create_c_store,
     create_plus_store,
     create_cmove, create_fill,
-    create_lit, create_branch, create_halt, create_border,
+    create_lit, create_branch, create_zbranch,
+    create_halt, create_border,
     create_multiply,
 ]

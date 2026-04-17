@@ -45,7 +45,7 @@ class Compiler:
         self.asm = Asm(origin)
         self.words: dict[str, Word] = {}
         self.state: Literal["interpret", "compile"] = "interpret"
-        self.control_stack: list[int] = []
+        self.control_stack: list[tuple[str, int]] = []
         self.current_word: str | None = None
         self._tokens: list[Token] = []
         self._token_pos: int = 0
@@ -82,6 +82,12 @@ class Compiler:
         for name, action in [
             ("begin", self._immediate_begin),
             ("again", self._immediate_again),
+            ("if", self._immediate_if),
+            ("then", self._immediate_then),
+            ("else", self._immediate_else),
+            ("until", self._immediate_until),
+            ("while", self._immediate_while),
+            ("repeat", self._immediate_repeat),
             ("[", self._immediate_lbracket),
             ("]", self._immediate_rbracket),
             ("[']", self._immediate_bracket_tick),
@@ -154,8 +160,6 @@ class Compiler:
             raise CompileError("nested colon definition", tok)
         name_tok = self._next_token(tok)
         name = name_tok.value
-        if name in self.words:
-            pass  # allow redefinition (standard Forth behavior)
         self.state = "compile"
         self.current_word = name
         addr = self.asm.here
@@ -165,6 +169,12 @@ class Compiler:
     def _end_colon(self, tok: Token) -> None:
         if self.state != "compile":
             raise CompileError("; outside colon definition", tok)
+        if self.control_stack:
+            tag, _ = self.control_stack[-1]
+            self.control_stack.clear()
+            raise CompileError(
+                f"unclosed {tag} in '{self.current_word}'", tok
+            )
         exit_addr = self.words["exit"].address
         self.asm.word(exit_addr)
         self.state = "interpret"
@@ -193,6 +203,8 @@ class Compiler:
         self.asm.ld_hl_nn(value & 0xFFFF)
         self.asm.jp("NEXT")
         self.words[name] = Word(name=name, address=addr, kind=kind)
+
+    # --- directives ---
 
     def _directive_variable(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
@@ -232,16 +244,110 @@ class Compiler:
         for _ in range(count):
             self.asm.byte(0)
 
+    # --- control stack helpers ---
+
+    def _push_control(self, tag: str, value: int) -> None:
+        self.control_stack.append((tag, value))
+
+    def _pop_control(self, expected_tag: str, tok: Token) -> int:
+        if not self.control_stack:
+            raise CompileError(
+                f"control stack underflow ({expected_tag})", tok
+            )
+        tag, value = self.control_stack.pop()
+        if tag != expected_tag:
+            raise CompileError(
+                f"control flow mismatch: expected {expected_tag}, got {tag}", tok
+            )
+        return value
+
+    def _pop_control_any(self, expected_tags: list[str], tok: Token) -> tuple[str, int]:
+        if not self.control_stack:
+            raise CompileError(
+                f"control stack underflow ({'/'.join(expected_tags)})", tok
+            )
+        tag, value = self.control_stack.pop()
+        if tag not in expected_tags:
+            raise CompileError(
+                f"control flow mismatch: expected {'/'.join(expected_tags)}, got {tag}",
+                tok,
+            )
+        return tag, value
+
+    def _compile_zbranch_placeholder(self) -> int:
+        self.asm.word(self.words["0branch"].address)
+        offset = len(self.asm.code)
+        self.asm.word(0)
+        return offset
+
+    def _compile_branch_placeholder(self) -> int:
+        self.asm.word(self.words["branch"].address)
+        offset = len(self.asm.code)
+        self.asm.word(0)
+        return offset
+
+    def _patch_placeholder(self, offset: int, target: int) -> None:
+        self.asm.code[offset] = target & 0xFF
+        self.asm.code[offset + 1] = (target >> 8) & 0xFF
+
+    def _compile_branch_to(self, target: int) -> None:
+        self.asm.word(self.words["branch"].address)
+        self.asm.word(target)
+
+    # --- immediate words: BEGIN/AGAIN ---
+
     def _immediate_begin(self, _compiler: Compiler, tok: Token) -> None:
-        self.control_stack.append(self.asm.here)
+        self._push_control("begin", self.asm.here)
 
     def _immediate_again(self, _compiler: Compiler, tok: Token) -> None:
-        if not self.control_stack:
-            raise CompileError("control stack underflow (AGAIN without BEGIN)", tok)
-        target = self.control_stack.pop()
-        branch_addr = self.words["branch"].address
-        self.asm.word(branch_addr)
+        target = self._pop_control("begin", tok)
+        self._compile_branch_to(target)
+
+    # --- immediate words: IF/THEN/ELSE ---
+
+    def _immediate_if(self, _compiler: Compiler, tok: Token) -> None:
+        placeholder = self._compile_zbranch_placeholder()
+        self._push_control("if", placeholder)
+
+    def _immediate_then(self, _compiler: Compiler, tok: Token) -> None:
+        _tag, value = self._pop_control_any(["if", "else"], tok)
+        self._patch_placeholder(value, self.asm.here)
+
+    def _immediate_else(self, _compiler: Compiler, tok: Token) -> None:
+        if_placeholder = self._pop_control("if", tok)
+        else_placeholder = self._compile_branch_placeholder()
+        self._patch_placeholder(if_placeholder, self.asm.here)
+        self._push_control("else", else_placeholder)
+
+    # --- immediate words: UNTIL/WHILE/REPEAT ---
+
+    def _immediate_until(self, _compiler: Compiler, tok: Token) -> None:
+        target = self._pop_control("begin", tok)
+        self.asm.word(self.words["0branch"].address)
         self.asm.word(target)
+
+    def _immediate_while(self, _compiler: Compiler, tok: Token) -> None:
+        if not self.control_stack:
+            raise CompileError(
+                "control stack underflow (while)", tok
+            )
+        placeholder = self._compile_zbranch_placeholder()
+        begin_entry = self.control_stack.pop()
+        if begin_entry[0] != "begin":
+            raise CompileError(
+                f"control flow mismatch: expected begin, got {begin_entry[0]}",
+                tok,
+            )
+        self._push_control("while", placeholder)
+        self.control_stack.append(begin_entry)
+
+    def _immediate_repeat(self, _compiler: Compiler, tok: Token) -> None:
+        begin_addr = self._pop_control("begin", tok)
+        while_placeholder = self._pop_control("while", tok)
+        self._compile_branch_to(begin_addr)
+        self._patch_placeholder(while_placeholder, self.asm.here)
+
+    # --- immediate words: brackets, tick, recurse ---
 
     def _immediate_lbracket(self, _compiler: Compiler, tok: Token) -> None:
         self.state = "interpret"
@@ -261,6 +367,8 @@ class Compiler:
             raise CompileError("RECURSE outside colon definition", tok)
         word = self.words[self.current_word]
         self.asm.word(word.address)
+
+    # --- build ---
 
     def compile_main_call(self) -> None:
         if "main" not in self.words:
