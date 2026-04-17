@@ -19,6 +19,10 @@ def main() -> None:
     build.add_argument("--dstack", type=lambda s: int(s, 0), default=0xFF00)
     build.add_argument("--rstack", type=lambda s: int(s, 0), default=0xFE00)
     build.add_argument("--border", type=int, default=7, choices=range(8))
+    build.add_argument("--stdlib", dest="stdlib", action="store_true", default=True,
+                       help="include bundled stdlib/core.fs (default)")
+    build.add_argument("--no-stdlib", dest="stdlib", action="store_false",
+                       help="skip bundled stdlib/core.fs")
 
     args = parser.parse_args()
 
@@ -42,6 +46,8 @@ def _do_build(args: argparse.Namespace) -> None:
             data_stack_top=args.dstack,
             return_stack_top=args.rstack,
         )
+        if args.stdlib:
+            c.include_stdlib()
         c.compile_source(source_text, source=str(source_path))
         c.compile_main_call()
         image = c.build()

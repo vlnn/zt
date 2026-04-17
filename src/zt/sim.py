@@ -9,6 +9,8 @@ SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_FONT_BASE = 0x3D00
 SPECTRUM_SCREEN_BASE = 0x4000
 SPECTRUM_ATTR_BASE = 0x5800
+SPECTRUM_KEY_ADDR = 0x15E6
+SPECTRUM_KEY_QUERY_ADDR = 0x15E9
 
 DEFAULT_ORIGIN = 0x8000
 DEFAULT_DATA_STACK_TOP = 0xFF00
@@ -71,6 +73,7 @@ class Z80:
     __slots__ = (
         "mem", "pc", "sp", "a", "f", "b", "c", "d", "e", "h", "l",
         "ix", "iy", "halted", "iff", "_outputs", "_ticks",
+        "input_buffer", "_input_pos",
     )
 
     def __init__(self) -> None:
@@ -83,6 +86,8 @@ class Z80:
         self.iff = False
         self._outputs: list[tuple[int, int]] = []
         self._ticks = 0
+        self.input_buffer: bytearray = bytearray()
+        self._input_pos: int = 0
 
     @property
     def hl(self) -> int: return (self.h << 8) | self.l
@@ -314,8 +319,13 @@ class Z80:
 
         elif op == 0xCD:
             addr = self._fetch_word()
-            self._push(self.pc)
-            self.pc = addr
+            if addr == SPECTRUM_KEY_ADDR:
+                self._hook_key()
+            elif addr == SPECTRUM_KEY_QUERY_ADDR:
+                self._hook_key_query()
+            else:
+                self._push(self.pc)
+                self.pc = addr
         elif op == 0xC9: self.pc = self._pop()
 
         elif op == 0xD3:
@@ -330,6 +340,16 @@ class Z80:
 
     def _jp(self, addr: int) -> None:
         self.pc = addr
+
+    def _hook_key(self) -> None:
+        if self._input_pos < len(self.input_buffer):
+            self.a = self.input_buffer[self._input_pos]
+            self._input_pos += 1
+        else:
+            self.a = 0
+
+    def _hook_key_query(self) -> None:
+        self.a = 0xFF if self._input_pos < len(self.input_buffer) else 0x00
 
     def _add_hl(self, v: int) -> None:
         r = self.hl + v
@@ -466,22 +486,26 @@ class ForthMachine:
         cells: list,
         initial_stack: list[int] | None = None,
         max_ticks: int = DEFAULT_MAX_TICKS,
+        input_buffer: bytes = b"",
     ) -> ForthResult:
         body_bytes, body_addr = self._build_body(cells)
-        return self._execute(body_bytes, body_addr, initial_stack or [], max_ticks)
+        return self._execute(
+            body_bytes, body_addr, initial_stack or [], max_ticks, input_buffer,
+        )
 
     def run_colon(
         self,
         body_cells: list[str | int],
         main_cells: list[str | int],
         max_ticks: int = DEFAULT_MAX_TICKS,
+        input_buffer: bytes = b"",
     ) -> ForthResult:
         cells: list = [("call_docol", "DOUBLE")]
         cells.extend(body_cells)
         cells.append(("main_start",))
         cells.extend(main_cells)
         body_bytes, body_addr = self._build_body(cells)
-        return self._execute(body_bytes, body_addr, [], max_ticks)
+        return self._execute(body_bytes, body_addr, [], max_ticks, input_buffer)
 
     def _build_body(self, cells: list) -> tuple[bytes, int]:
         prim_labels = self._prim_asm.labels
@@ -529,11 +553,13 @@ class ForthMachine:
         body_addr: int,
         initial_stack: list[int],
         max_ticks: int,
+        input_buffer: bytes = b"",
     ) -> ForthResult:
         m = Z80()
         m.load(self.origin, self._prim_code)
         m.load(SPECTRUM_FONT_BASE, TEST_FONT)
         m.load(self._body_base, body_bytes)
+        m.input_buffer = bytearray(input_buffer)
 
         startup_addr = self._body_base + len(body_bytes)
         startup = self._emit_startup(body_addr, initial_stack, startup_addr)

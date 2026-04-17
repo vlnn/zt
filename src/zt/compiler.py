@@ -50,6 +50,8 @@ class Compiler:
         self._tokens: list[Token] = []
         self._token_pos: int = 0
         self._host_stack: list[int] = []
+        self._pending_strings: list[tuple[str, bytes]] = []
+        self._string_counter: int = 0
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
@@ -96,6 +98,8 @@ class Compiler:
             ("]", self._immediate_rbracket),
             ("[']", self._immediate_bracket_tick),
             ("recurse", self._immediate_recurse),
+            (".\"", self._immediate_dot_quote),
+            ("s\"", self._immediate_s_quote),
         ]:
             self.words[name] = Word(
                 name=name, address=0, kind="prim",
@@ -402,11 +406,71 @@ class Compiler:
         word = self.words[self.current_word]
         self.asm.word(word.address)
 
+    # --- immediate words: string literals ---
+
+    def _next_string_token(self, starter: Token) -> Token:
+        if self._token_pos >= len(self._tokens):
+            raise CompileError(
+                f"{starter.value} without string body", starter,
+            )
+        tok = self._tokens[self._token_pos]
+        if tok.kind != "string":
+            raise CompileError(
+                f"{starter.value} must be followed by a string, got {tok.kind} '{tok.value}'",
+                starter,
+            )
+        self._token_pos += 1
+        return tok
+
+    def _allocate_string(self, data: bytes) -> str:
+        label = f"_str_{self._string_counter}"
+        self._string_counter += 1
+        self._pending_strings.append((label, data))
+        return label
+
+    def _compile_string_literal(self, data: bytes) -> tuple[str, int]:
+        label = self._allocate_string(data)
+        lit_addr = self.words["lit"].address
+        self.asm.word(lit_addr)
+        self.asm.word(label)
+        self.asm.word(lit_addr)
+        self.asm.word(len(data))
+        return label, len(data)
+
+    def _immediate_dot_quote(self, _compiler: Compiler, tok: Token) -> None:
+        if self.state != "compile":
+            raise CompileError('." outside colon definition', tok)
+        body = self._next_string_token(tok)
+        self._compile_string_literal(body.value.encode("latin-1"))
+        self.asm.word(self.words["type"].address)
+
+    def _immediate_s_quote(self, _compiler: Compiler, tok: Token) -> None:
+        if self.state != "compile":
+            raise CompileError('s" outside colon definition', tok)
+        body = self._next_string_token(tok)
+        self._compile_string_literal(body.value.encode("latin-1"))
+
+    def _flush_pending_strings(self) -> None:
+        for label, data in self._pending_strings:
+            self.asm.label(label)
+            for byte_value in data:
+                self.asm.byte(byte_value)
+        self._pending_strings.clear()
+
     # --- build ---
+
+    def include_stdlib(self, path: object | None = None) -> None:
+        from pathlib import Path
+        if path is None:
+            path = Path(__file__).resolve().parent.parent.parent / "stdlib" / "core.fs"
+        else:
+            path = Path(path)
+        self.compile_source(path.read_text(), source=str(path))
 
     def compile_main_call(self) -> None:
         if "main" not in self.words:
             raise CompileError("no 'main' word defined")
+        self._flush_pending_strings()
         main_body_addr = self.asm.here
         self.asm.word(self.words["main"].address)
         halt_addr = self.words["halt"].address
@@ -448,6 +512,46 @@ def compile_and_run(source: str, origin: int = DEFAULT_ORIGIN) -> list[int]:
     if not m.halted:
         raise TimeoutError("execution timed out")
     return _read_data_stack(m, c.data_stack_top, False)
+
+
+def compile_and_run_with_output(
+    source: str,
+    origin: int = DEFAULT_ORIGIN,
+    input_buffer: bytes = b"",
+    max_ticks: int = 10_000_000,
+    stdlib: bool = False,
+) -> tuple[list[int], bytes]:
+    from zt.sim import (
+        SPECTRUM_FONT_BASE,
+        TEST_FONT,
+        Z80,
+        _read_data_stack,
+        decode_screen_text,
+    )
+
+    c = Compiler(origin=origin)
+    if stdlib:
+        c.include_stdlib()
+    c.compile_source(source)
+    c.compile_main_call()
+    image = c.build()
+
+    m = Z80()
+    m.load(origin, image)
+    m.load(SPECTRUM_FONT_BASE, TEST_FONT)
+    m.input_buffer = bytearray(input_buffer)
+    m.pc = c.words["_start"].address
+    m.run(max_ticks=max_ticks)
+    if not m.halted:
+        raise TimeoutError("execution timed out")
+
+    stack = _read_data_stack(m, c.data_stack_top, False)
+    row_addr = c.asm.labels.get("_emit_cursor_row")
+    col_addr = c.asm.labels.get("_emit_cursor_col")
+    if row_addr is None or col_addr is None:
+        return stack, b""
+    chars = decode_screen_text(m.mem, m.mem[row_addr], m.mem[col_addr])
+    return stack, chars
 
 
 def build_from_source(

@@ -4,6 +4,8 @@ from zt.asm import Asm
 
 SPECTRUM_BORDER_PORT = 0xFE
 EMIT_FONT_BASE_MINUS_0X100 = 0x3C00
+SPECTRUM_KEY_ADDR = 0x15E6
+SPECTRUM_KEY_QUERY_ADDR = 0x15E9
 
 
 def create_next(a: Asm) -> None:
@@ -741,58 +743,148 @@ def _emit_copy_glyph(a: Asm) -> None:
     a.djnz_to("_emit_copy")
 
 
-def _emit_advance_cursor(a: Asm) -> None:
+def _emit_advance_cursor_core(a: Asm) -> None:
     a.ld_a_ind_nn("_emit_cursor_col")
     a.inc_a()
     a.cp_n(32)
-    a.jr_c_to("_emit_store_col")
+    a.jr_c_to("_emit_core_store_col")
     a.xor_a()
     a.ld_ind_nn_a("_emit_cursor_col")
     a.ld_a_ind_nn("_emit_cursor_row")
     a.inc_a()
     a.cp_n(24)
-    a.jr_c_to("_emit_store_row")
+    a.jr_c_to("_emit_core_store_row")
     a.xor_a()
-    a.label("_emit_store_row")
+    a.label("_emit_core_store_row")
     a.ld_ind_nn_a("_emit_cursor_row")
-    a.jr_to("_emit_done")
-    a.label("_emit_store_col")
+    a.ret()
+    a.label("_emit_core_store_col")
     a.ld_ind_nn_a("_emit_cursor_col")
+    a.ret()
 
 
-def _emit_cr_path(a: Asm) -> None:
-    a.label("_emit_cr_entry")
+def _emit_cr_core_path(a: Asm) -> None:
+    a.label("_emit_cr_core")
     a.xor_a()
     a.ld_ind_nn_a("_emit_cursor_col")
     a.ld_a_ind_nn("_emit_cursor_row")
     a.inc_a()
     a.cp_n(24)
-    a.jr_c_to("_emit_cr_store")
+    a.jr_c_to("_emit_cr_core_store")
     a.xor_a()
-    a.label("_emit_cr_store")
+    a.label("_emit_cr_core_store")
     a.ld_ind_nn_a("_emit_cursor_row")
-    a.pop_hl()
-    a.jp("NEXT")
+    a.ret()
 
 
 def create_emit(a: Asm) -> None:
     a.label("EMIT")
     a.alias("emit", "EMIT")
     a.ld_a_l()
+    a.call("_emit_char_core")
+    a.pop_hl()
+    a.jp("NEXT")
+
+    a.label("_emit_char_core")
+    a.ld_l_a()
     a.cp_n(13)
-    a.jp_z("_emit_cr_entry")
+    a.jp_z("_emit_cr_core")
     _emit_glyph_source(a)
     _emit_screen_dest(a)
     _emit_copy_glyph(a)
-    _emit_advance_cursor(a)
-    a.label("_emit_done")
-    a.pop_hl()
-    a.jp("NEXT")
-    _emit_cr_path(a)
+    _emit_advance_cursor_core(a)
+    _emit_cr_core_path(a)
+
     a.label("_emit_cursor_row")
     a.byte(0)
     a.label("_emit_cursor_col")
     a.byte(0)
+
+
+def create_type(a: Asm) -> None:
+    a.label("TYPE")
+    a.alias("type", "TYPE")
+    a.pop_de()
+    a.ld_a_l()
+    a.or_h()
+    a.jp_z("_type_done")
+    a.ld_b_l()
+    a.label("_type_loop")
+    a.push_bc()
+    a.push_de()
+    a.ld_a_ind_de()
+    a.call("_emit_char_core")
+    a.pop_de()
+    a.pop_bc()
+    a.inc_de()
+    a.djnz_to("_type_loop")
+    a.label("_type_done")
+    a.pop_hl()
+    a.jp("NEXT")
+
+
+def create_key(a: Asm) -> None:
+    a.label("KEY")
+    a.alias("key", "KEY")
+    a.push_hl()
+    a.call(SPECTRUM_KEY_ADDR)
+    a.ld_l_a()
+    a.ld_h_n(0)
+    a.jp("NEXT")
+
+
+def create_key_query(a: Asm) -> None:
+    a.label("KEY_QUERY")
+    a.alias("key?", "KEY_QUERY")
+    a.push_hl()
+    a.call(SPECTRUM_KEY_QUERY_ADDR)
+    a.ld_l_a()
+    a.ld_h_a()
+    a.jp("NEXT")
+
+
+def create_u_mod_div(a: Asm) -> None:
+    a.label("U_MOD_DIV")
+    a.alias("u/mod", "U_MOD_DIV")
+    a.pop_de()
+    a.ex_de_hl()
+    a.push_bc()
+    a.ld_bc_nn(0)
+    a.ld_a_n(16)
+    a.label("_umod_loop")
+    a.add_hl_hl()
+    a.rl_c()
+    a.rl_b()
+    a.push_hl()
+    a.ld_h_b()
+    a.ld_l_c()
+    a.or_a()
+    a.sbc_hl_de()
+    a.jr_c_to("_umod_no_sub")
+    a.ld_b_h()
+    a.ld_c_l()
+    a.pop_hl()
+    a.inc_hl()
+    a.jr_to("_umod_next")
+    a.label("_umod_no_sub")
+    a.pop_hl()
+    a.label("_umod_next")
+    a.dec_a()
+    a.jr_nz_to("_umod_loop")
+    a.ld_e_c()
+    a.ld_d_b()
+    a.pop_bc()
+    a.push_de()
+    a.jp("NEXT")
+
+
+def create_reset_cursor(a: Asm) -> None:
+    a.label("RESET_CURSOR")
+    a.alias("reset-cursor", "RESET_CURSOR")
+    a.xor_a()
+    a.ld_ind_nn_a("_emit_cursor_row")
+    a.ld_ind_nn_a("_emit_cursor_col")
+    a.jp("NEXT")
 
 
 PRIMITIVES = [
@@ -821,5 +913,10 @@ PRIMITIVES = [
     create_i_index, create_j_index, create_unloop,
     create_halt, create_border,
     create_multiply,
+    create_u_mod_div,
     create_emit,
+    create_type,
+    create_key,
+    create_key_query,
+    create_reset_cursor,
 ]
