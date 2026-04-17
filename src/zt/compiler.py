@@ -49,7 +49,10 @@ class Compiler:
         self.current_word: str | None = None
         self._tokens: list[Token] = []
         self._token_pos: int = 0
+        self._host_stack: list[int] = []
         self._register_primitives()
+        self._register_directives()
+        self._register_immediates()
 
     def _register_primitives(self) -> None:
         for creator in PRIMITIVES:
@@ -60,6 +63,34 @@ class Compiler:
             lower = name.lower()
             if lower not in self.words:
                 self.words[lower] = Word(name=lower, address=addr, kind="prim")
+
+    def _register_directives(self) -> None:
+        for name, action in [
+            ("variable", self._directive_variable),
+            ("constant", self._directive_constant),
+            ("create", self._directive_create),
+            (",", self._directive_comma),
+            ("c,", self._directive_c_comma),
+            ("allot", self._directive_allot),
+        ]:
+            self.words[name] = Word(
+                name=name, address=0, kind="prim",
+                immediate=True, compile_action=action,
+            )
+
+    def _register_immediates(self) -> None:
+        for name, action in [
+            ("begin", self._immediate_begin),
+            ("again", self._immediate_again),
+            ("[", self._immediate_lbracket),
+            ("]", self._immediate_rbracket),
+            ("[']", self._immediate_bracket_tick),
+            ("recurse", self._immediate_recurse),
+        ]:
+            self.words[name] = Word(
+                name=name, address=0, kind="prim",
+                immediate=True, compile_action=action,
+            )
 
     def compile_source(self, text: str, source: str = "<input>") -> None:
         self._tokens = tokenize(text, source)
@@ -93,9 +124,8 @@ class Compiler:
                 f"unexpected word '{tok.value}' in interpret state", tok
             )
         if tok.kind == "number":
-            raise CompileError(
-                f"bare number '{tok.value}' in interpret state", tok
-            )
+            self._host_stack.append(parse_number(tok.value))
+            return
         raise CompileError(f"unexpected token '{tok.value}'", tok)
 
     def _compile_state_token(self, tok: Token) -> None:
@@ -151,6 +181,86 @@ class Compiler:
         tok = self._tokens[self._token_pos]
         self._token_pos += 1
         return tok
+
+    def _host_pop(self, tok: Token) -> int:
+        if not self._host_stack:
+            raise CompileError("host stack underflow", tok)
+        return self._host_stack.pop()
+
+    def _compile_push_value(self, name: str, value: int, kind: str) -> None:
+        addr = self.asm.here
+        self.asm.push_hl()
+        self.asm.ld_hl_nn(value & 0xFFFF)
+        self.asm.jp("NEXT")
+        self.words[name] = Word(name=name, address=addr, kind=kind)
+
+    def _directive_variable(self, _compiler: Compiler, tok: Token) -> None:
+        name_tok = self._next_token(tok)
+        data_addr = self.asm.here + 4 + 3
+        self._compile_push_value(name_tok.value, data_addr, "variable")
+        self.asm.word(0)
+
+    def _directive_constant(self, _compiler: Compiler, tok: Token) -> None:
+        value = self._host_pop(tok)
+        name_tok = self._next_token(tok)
+        self._compile_push_value(name_tok.value, value, "constant")
+
+    def _directive_create(self, _compiler: Compiler, tok: Token) -> None:
+        name_tok = self._next_token(tok)
+        data_addr_placeholder = self.asm.here
+        self.asm.push_hl()
+        self.asm.ld_hl_nn(0)
+        fixup_offset = len(self.asm.code) - 2
+        self.asm.jp("NEXT")
+        data_start = self.asm.here
+        self.asm.code[fixup_offset] = data_start & 0xFF
+        self.asm.code[fixup_offset + 1] = (data_start >> 8) & 0xFF
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=data_addr_placeholder, kind="variable"
+        )
+
+    def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:
+        value = self._host_pop(tok)
+        self.asm.word(value & 0xFFFF)
+
+    def _directive_c_comma(self, _compiler: Compiler, tok: Token) -> None:
+        value = self._host_pop(tok)
+        self.asm.byte(value & 0xFF)
+
+    def _directive_allot(self, _compiler: Compiler, tok: Token) -> None:
+        count = self._host_pop(tok)
+        for _ in range(count):
+            self.asm.byte(0)
+
+    def _immediate_begin(self, _compiler: Compiler, tok: Token) -> None:
+        self.control_stack.append(self.asm.here)
+
+    def _immediate_again(self, _compiler: Compiler, tok: Token) -> None:
+        if not self.control_stack:
+            raise CompileError("control stack underflow (AGAIN without BEGIN)", tok)
+        target = self.control_stack.pop()
+        branch_addr = self.words["branch"].address
+        self.asm.word(branch_addr)
+        self.asm.word(target)
+
+    def _immediate_lbracket(self, _compiler: Compiler, tok: Token) -> None:
+        self.state = "interpret"
+
+    def _immediate_rbracket(self, _compiler: Compiler, tok: Token) -> None:
+        self.state = "compile"
+
+    def _immediate_bracket_tick(self, _compiler: Compiler, tok: Token) -> None:
+        name_tok = self._next_token(tok)
+        word = self.words.get(name_tok.value)
+        if word is None:
+            raise CompileError(f"unknown word '{name_tok.value}'", name_tok)
+        self._compile_literal(word.address)
+
+    def _immediate_recurse(self, _compiler: Compiler, tok: Token) -> None:
+        if self.current_word is None:
+            raise CompileError("RECURSE outside colon definition", tok)
+        word = self.words[self.current_word]
+        self.asm.word(word.address)
 
     def compile_main_call(self) -> None:
         if "main" not in self.words:

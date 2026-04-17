@@ -42,6 +42,8 @@ class TestRegisterPrimitives:
     def test_primitive_addresses_are_positive(self):
         c = make_compiler()
         for name, word in c.words.items():
+            if word.compile_action is not None:
+                continue
             assert word.address >= 0x8000, f"{name} address should be >= origin"
 
     def test_all_primitives_from_list_registered(self):
@@ -174,3 +176,135 @@ class TestCompileAndRun:
     def test_compile_and_run(self, src, expected):
         result = self._compile_and_run(src)
         assert result == expected, f"'{src}' should produce {expected}"
+
+
+class TestVariable:
+
+    def _compile_and_run(self, source: str) -> list[int]:
+        return TestCompileAndRun._compile_and_run(None, source)
+
+    def test_variable_creates_word(self):
+        c = make_compiler()
+        c.compile_source("variable x : main halt ;")
+        assert "x" in c.words, "variable should create a word"
+        assert c.words["x"].kind == "variable", "variable word should have kind 'variable'"
+
+    def test_variable_store_and_fetch(self):
+        result = self._compile_and_run("variable x : main 42 x ! x @ halt ;")
+        assert result == [42], "variable should support store and fetch"
+
+    def test_two_variables_independent(self):
+        result = self._compile_and_run(
+            "variable a variable b : main 10 a ! 20 b ! a @ b @ + halt ;"
+        )
+        assert result == [30], "two variables should be independent"
+
+
+class TestConstant:
+
+    def _compile_and_run(self, source: str) -> list[int]:
+        return TestCompileAndRun._compile_and_run(None, source)
+
+    def test_constant_creates_word(self):
+        c = make_compiler()
+        c.compile_source("42 constant answer : main halt ;")
+        assert "answer" in c.words, "constant should create a word"
+        assert c.words["answer"].kind == "constant", "constant word should have kind 'constant'"
+
+    def test_constant_pushes_value(self):
+        result = self._compile_and_run("42 constant answer : main answer halt ;")
+        assert result == [42], "constant should push its value"
+
+    def test_constant_used_twice(self):
+        result = self._compile_and_run("10 constant ten : main ten ten + halt ;")
+        assert result == [20], "constant should push same value each time"
+
+    def test_hex_constant(self):
+        result = self._compile_and_run("$ff constant mask : main mask halt ;")
+        assert result == [255], "constant should accept hex values"
+
+
+class TestCreate:
+
+    def _compile_and_run(self, source: str) -> list[int]:
+        return TestCompileAndRun._compile_and_run(None, source)
+
+    def test_create_with_comma(self):
+        result = self._compile_and_run(
+            "create tbl 10 , 20 , 30 , : main tbl @ halt ;"
+        )
+        assert result == [10], "create + , should lay down accessible data"
+
+    def test_create_with_c_comma(self):
+        result = self._compile_and_run(
+            "create buf 65 c, 66 c, : main buf c@ halt ;"
+        )
+        assert result == [65], "create + c, should lay down byte data"
+
+    def test_allot_reserves_space(self):
+        c = make_compiler()
+        c.compile_source("create buf 10 allot : main halt ;")
+        here_before = c.words["buf"].address
+        assert c.asm.here > here_before, "allot should advance HERE"
+
+
+class TestBeginAgain:
+
+    def test_begin_again_compiles(self):
+        c = make_compiler()
+        c.compile_source(": loop begin dup 1+ again ;")
+        assert "loop" in c.words, "begin/again should compile without error"
+
+    def test_begin_again_branch_target(self):
+        c = make_compiler()
+        c.compile_source(": loop begin dup again ;")
+        word = c.words["loop"]
+        image = c.build()
+        body_offset = word.address - c.origin + 3
+        dup_addr = c.words["dup"].address
+        branch_addr = c.words["branch"].address
+        cell_at = lambda off: int.from_bytes(image[off:off + 2], "little")
+        assert cell_at(body_offset) == dup_addr, "first cell should be DUP"
+        assert cell_at(body_offset + 2) == branch_addr, "second cell should be BRANCH"
+        target = cell_at(body_offset + 4)
+        begin_addr = c.origin + body_offset
+        assert target == begin_addr, "BRANCH target should point back to BEGIN"
+
+    def test_again_without_begin_raises(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="control stack"):
+            c.compile_source(": bad again ;")
+
+
+class TestLiteralBrackets:
+
+    def test_bracket_switches_state(self):
+        c = make_compiler()
+        c.compile_source(": test [ ] 42 ;")
+        assert "test" in c.words, "[ ] should not break compilation"
+
+    def test_tick_compiles_lit_with_address(self):
+        c = make_compiler()
+        c.compile_source(": test ['] dup ;")
+        word = c.words["test"]
+        image = c.build()
+        body_offset = word.address - c.origin + 3
+        lit_addr = c.words["lit"].address
+        dup_addr = c.words["dup"].address
+        cell_at = lambda off: int.from_bytes(image[off:off + 2], "little")
+        assert cell_at(body_offset) == lit_addr, "['] should compile LIT"
+        assert cell_at(body_offset + 2) == dup_addr, "['] should compile target address"
+
+    def test_recurse_compiles_self_reference(self):
+        c = make_compiler()
+        c.compile_source(": countdown 1- dup recurse ;")
+        word = c.words["countdown"]
+        image = c.build()
+        body_offset = word.address - c.origin + 3
+        cell_at = lambda off: int.from_bytes(image[off:off + 2], "little")
+        assert cell_at(body_offset + 4) == word.address, "RECURSE should compile own address"
+
+    def test_tick_unknown_word_raises(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="unknown"):
+            c.compile_source(": test ['] nonexistent ;")
