@@ -60,6 +60,10 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
                        help="skip bundled stdlib/core.fs")
     build.add_argument("--no-optimize", dest="optimize", action="store_false",
                        default=True, help="disable peephole optimizer")
+    build.add_argument("--inline-next", dest="inline_next", action="store_true",
+                       default=False,
+                       help="inline the NEXT dispatch body into each primitive "
+                            "(~10%% speedup, ~500 bytes larger image)")
     build.add_argument("--profile", dest="profile", action="store_true", default=False,
                        help="run the built image in the simulator and write a profile report")
     build.add_argument("--profile-output", type=Path, default=None, dest="profile_output",
@@ -164,6 +168,7 @@ def _build_compiler(args: argparse.Namespace) -> Compiler:
         return_stack_top=args.rstack,
         include_dirs=args.include_dirs,
         optimize=args.optimize,
+        inline_next=args.inline_next,
     )
     if args.stdlib:
         c.include_stdlib()

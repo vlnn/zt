@@ -52,13 +52,14 @@ class Compiler:
         return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
         include_dirs: list[Path] | None = None,
         optimize: bool = True,
+        inline_next: bool = False,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
         self.return_stack_top = return_stack_top
         self.include_dirs: list[Path] = [Path(d) for d in (include_dirs or [])]
         self.included_files: set[Path] = set()
-        self.asm = Asm(origin)
+        self.asm = Asm(origin, inline_next=inline_next)
         self.words: dict[str, Word] = {}
         self.state: Literal["interpret", "compile"] = "interpret"
         self.control_stack: list[tuple[str, Any]] = []
@@ -73,6 +74,7 @@ class Compiler:
         self._body_cell_refs: dict[int, tuple[list[int | str], int]] = {}
         self.warnings: list[str] = []
         self.optimize: bool = optimize
+        self.inline_next: bool = inline_next
         self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
         self._register_primitives()
         self._register_directives()
@@ -668,10 +670,11 @@ def compile_and_run(
     source: str,
     origin: int = DEFAULT_ORIGIN,
     optimize: bool = True,
+    inline_next: bool = False,
 ) -> list[int]:
     from zt.sim import Z80, _read_data_stack
 
-    c = Compiler(origin=origin, optimize=optimize)
+    c = Compiler(origin=origin, optimize=optimize, inline_next=inline_next)
     c.compile_source(source)
     c.compile_main_call()
     image = c.build()
@@ -692,6 +695,7 @@ def compile_and_run_with_output(
     max_ticks: int = 10_000_000,
     stdlib: bool = False,
     optimize: bool = True,
+    inline_next: bool = False,
 ) -> tuple[list[int], bytes]:
     from zt.sim import (
         SPECTRUM_FONT_BASE,
@@ -701,7 +705,7 @@ def compile_and_run_with_output(
         decode_screen_text,
     )
 
-    c = Compiler(origin=origin, optimize=optimize)
+    c = Compiler(origin=origin, optimize=optimize, inline_next=inline_next)
     if stdlib:
         c.include_stdlib()
     c.compile_source(source)
@@ -732,9 +736,11 @@ def build_from_source(
     data_stack_top: int = DEFAULT_DATA_STACK_TOP,
     return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
     optimize: bool = True,
+    inline_next: bool = False,
 ) -> tuple[bytes, Compiler]:
     c = Compiler(origin=origin, data_stack_top=data_stack_top,
-                 return_stack_top=return_stack_top, optimize=optimize)
+                 return_stack_top=return_stack_top, optimize=optimize,
+                 inline_next=inline_next)
     c.compile_source(source)
     c.compile_main_call()
     return c.build(), c

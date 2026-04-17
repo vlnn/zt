@@ -13,6 +13,7 @@ class Asm:
     labels: dict[str, int] = field(default_factory=dict)
     fixups: list[tuple[int, str]] = field(default_factory=list)
     rel_fixups: list[tuple[int, str]] = field(default_factory=list)
+    inline_next: bool = False
 
     @property
     def here(self) -> int:
@@ -95,6 +96,20 @@ class Asm:
                 )
             self.code[offset] = displacement & 0xFF
         return bytes(self.code)
+
+    def emit_next_body(self) -> None:
+        self.ld_e_ix(0)
+        self.ld_d_ix(1)
+        self.inc_ix()
+        self.inc_ix()
+        self.push_de()
+        self.ret()
+
+    def dispatch(self) -> None:
+        if self.inline_next:
+            self.emit_next_body()
+        else:
+            self.jp("NEXT")
 
     # -- stack --
     def push_hl(self):     self.code.append(0xE5)

@@ -23,6 +23,7 @@ from zt.primitives import (
     create_plus_store,
     create_cmove, create_fill,
     create_lit, create_branch, create_halt, create_border,
+    create_u_mod_div, create_multiply,
     PRIMITIVES,
 )
 
@@ -468,3 +469,14 @@ def test_exit_restores_ip_from_return_stack():
     out = _compile_primitive(create_exit)
     assert out[0:3] == bytes([0xFD, 0x5E, 0x00]), "EXIT should LD E,(IY+0)"
     assert out[3:6] == bytes([0xFD, 0x56, 0x01]), "EXIT should LD D,(IY+1)"
+
+
+def test_multiply_does_not_preserve_bc():
+    out = _compile_primitive(create_multiply)
+    assert 0xC5 not in out[:4], "MULTIPLY should not PUSH BC (BC is caller-clobber)"
+    assert out[-4:-3] != bytes([0xC1]), "MULTIPLY should not POP BC before dispatch"
+
+
+def test_u_mod_div_does_not_preserve_bc():
+    out = _compile_primitive(create_u_mod_div)
+    assert 0xC5 not in out[:6], "U_MOD_DIV should not PUSH BC (BC is caller-clobber)"
