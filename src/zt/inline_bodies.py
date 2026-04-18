@@ -25,6 +25,7 @@ INLINABLE_PRIMITIVES: frozenset[str] = frozenset({
     "fetch", "store", "c_fetch", "c_store", "plus_store", "dup_fetch",
     "border",
     "lshift",
+    "equals",
 })
 
 

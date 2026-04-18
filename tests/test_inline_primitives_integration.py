@@ -172,6 +172,10 @@ class TestSemanticsPreserved:
         (": shl3 3 lshift ; : main 1 shl3 halt ;",          [8]),
         (": main 1 0 lshift halt ;",                        [1]),
         (": main 0 5 lshift halt ;",                        [0]),
+        (": main 5 5 = halt ;",                             [0xFFFF]),
+        (": main 5 6 = halt ;",                             [0]),
+        (": eq = ; : main 7 7 eq halt ;",                   [0xFFFF]),
+        (": eq = ; : main 7 8 eq halt ;",                   [0]),
     ])
     def test_inline_primitives_preserves_stack_results(self, src, expected):
         baseline = compile_and_run(src, inline_primitives=False)
