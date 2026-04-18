@@ -38,6 +38,12 @@ from zt.primitives import PRIMITIVES
 from zt.string_pool import StringPool
 from zt.token_stream import TokenStream
 from zt.tokenizer import Token, tokenize
+from zt.word_registry import (
+    collected_directives,
+    collected_immediates,
+    directive,
+    immediate,
+)
 
 
 @dataclass
@@ -124,46 +130,18 @@ class Compiler:
             self._inline_context = InlineContext.build(PRIMITIVES)
 
     def _register_directives(self) -> None:
-        for name, action in [
-            ("variable", self._directive_variable),
-            ("constant", self._directive_constant),
-            ("create", self._directive_create),
-            (",", self._directive_comma),
-            ("c,", self._directive_c_comma),
-            ("allot", self._directive_allot),
-        ]:
-            self.words[name] = Word(
+        for name, action in collected_directives(type(self)):
+            self.words.register(Word(
                 name=name, address=0, kind="prim",
-                immediate=True, compile_action=action,
-            )
+                immediate=True, compile_action=action.__get__(self, type(self)),
+            ))
 
     def _register_immediates(self) -> None:
-        for name, action in [
-            ("begin", self._immediate_begin),
-            ("again", self._immediate_again),
-            ("if", self._immediate_if),
-            ("then", self._immediate_then),
-            ("else", self._immediate_else),
-            ("until", self._immediate_until),
-            ("while", self._immediate_while),
-            ("repeat", self._immediate_repeat),
-            ("do", self._immediate_do),
-            ("loop", self._immediate_loop),
-            ("+loop", self._immediate_plus_loop),
-            ("leave", self._immediate_leave),
-            ("[", self._immediate_lbracket),
-            ("]", self._immediate_rbracket),
-            ("[']", self._immediate_bracket_tick),
-            ("recurse", self._immediate_recurse),
-            (".\"", self._immediate_dot_quote),
-            ("s\"", self._immediate_s_quote),
-            ("include", self._immediate_include),
-            ("require", self._immediate_require),
-        ]:
-            self.words[name] = Word(
+        for name, action in collected_immediates(type(self)):
+            self.words.register(Word(
                 name=name, address=0, kind="prim",
-                immediate=True, compile_action=action,
-            )
+                immediate=True, compile_action=action.__get__(self, type(self)),
+            ))
 
     def compile_source(self, text: str, source: str = "<input>") -> None:
         self._tokens = TokenStream(tokenize(text, source))
@@ -350,17 +328,20 @@ class Compiler:
 
     # --- directives ---
 
+    @directive("variable")
     def _directive_variable(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
         data_addr = self.asm.here + 4 + 3
         self._compile_push_value(name_tok.value, data_addr, "variable", name_tok)
         self.asm.word(0)
 
+    @directive("constant")
     def _directive_constant(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
         name_tok = self._next_token(tok)
         self._compile_push_value(name_tok.value, value, "constant", name_tok)
 
+    @directive("create")
     def _directive_create(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
         data_addr_placeholder = self.asm.here
@@ -376,14 +357,17 @@ class Compiler:
             source_file=name_tok.source, source_line=name_tok.line,
         )
 
+    @directive(",")
     def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
         self._emit_cell(value & 0xFFFF, tok)
 
+    @directive("c,")
     def _directive_c_comma(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
         self.asm.byte(value & 0xFF)
 
+    @directive("allot")
     def _directive_allot(self, _compiler: Compiler, tok: Token) -> None:
         count = self._host_pop(tok)
         for _ in range(count):
@@ -421,25 +405,30 @@ class Compiler:
 
     # --- immediate words: BEGIN/AGAIN ---
 
+    @immediate("begin")
     def _immediate_begin(self, _compiler: Compiler, tok: Token) -> None:
         label_id = self._allocate_label()
         self._append_ir(Label(id=label_id))
         self._push_control("begin", (self.asm.here, label_id))
 
+    @immediate("again")
     def _immediate_again(self, _compiler: Compiler, tok: Token) -> None:
         target_addr, label_id = self._pop_control("begin", tok)
         self._compile_branch_to_label("branch", target_addr, label_id, tok)
 
     # --- immediate words: IF/THEN/ELSE ---
 
+    @immediate("if")
     def _immediate_if(self, _compiler: Compiler, tok: Token) -> None:
         placeholder = self._compile_zbranch_placeholder(tok)
         self._push_control("if", placeholder)
 
+    @immediate("then")
     def _immediate_then(self, _compiler: Compiler, tok: Token) -> None:
         _tag, value = self._pop_control_any(["if", "else"], tok)
         self._patch_placeholder(value, self.asm.here)
 
+    @immediate("else")
     def _immediate_else(self, _compiler: Compiler, tok: Token) -> None:
         if_placeholder = self._pop_control("if", tok)
         else_placeholder = self._compile_branch_placeholder(tok)
@@ -448,16 +437,19 @@ class Compiler:
 
     # --- immediate words: UNTIL/WHILE/REPEAT ---
 
+    @immediate("until")
     def _immediate_until(self, _compiler: Compiler, tok: Token) -> None:
         target_addr, label_id = self._pop_control("begin", tok)
         self._compile_branch_to_label("0branch", target_addr, label_id, tok)
 
+    @immediate("while")
     def _immediate_while(self, _compiler: Compiler, tok: Token) -> None:
         placeholder = self._compile_zbranch_placeholder(tok)
         begin_value = self._pop_control("begin", tok)
         self._push_control("while", placeholder)
         self._push_control("begin", begin_value)
 
+    @immediate("repeat")
     def _immediate_repeat(self, _compiler: Compiler, tok: Token) -> None:
         begin_addr, begin_label_id = self._pop_control("begin", tok)
         while_placeholder = self._pop_control("while", tok)
@@ -466,6 +458,7 @@ class Compiler:
 
     # --- immediate words: DO/LOOP/+LOOP/LEAVE ---
 
+    @immediate("do")
     def _immediate_do(self, _compiler: Compiler, tok: Token) -> None:
         self._emit_word_ref(self.words["(do)"], tok)
         body_addr = self.asm.here
@@ -477,6 +470,7 @@ class Compiler:
             "leaves": [],
         })
 
+    @immediate("loop")
     def _immediate_loop(self, _compiler: Compiler, tok: Token) -> None:
         do_info = self._pop_control("do", tok)
         self._compile_branch_to_label(
@@ -485,6 +479,7 @@ class Compiler:
         for leave_offset in do_info["leaves"]:
             self._patch_placeholder(leave_offset, self.asm.here)
 
+    @immediate("+loop")
     def _immediate_plus_loop(self, _compiler: Compiler, tok: Token) -> None:
         do_info = self._pop_control("do", tok)
         self._compile_branch_to_label(
@@ -493,6 +488,7 @@ class Compiler:
         for leave_offset in do_info["leaves"]:
             self._patch_placeholder(leave_offset, self.asm.here)
 
+    @immediate("leave")
     def _immediate_leave(self, _compiler: Compiler, tok: Token) -> None:
         frame = self.control_stack.find_innermost("do")
         if frame is None:
@@ -504,12 +500,15 @@ class Compiler:
 
     # --- immediate words: brackets, tick, recurse ---
 
+    @immediate("[")
     def _immediate_lbracket(self, _compiler: Compiler, tok: Token) -> None:
         self.state = "interpret"
 
+    @immediate("]")
     def _immediate_rbracket(self, _compiler: Compiler, tok: Token) -> None:
         self.state = "compile"
 
+    @immediate("[']")
     def _immediate_bracket_tick(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
         word = self.words.get(name_tok.value)
@@ -517,6 +516,7 @@ class Compiler:
             raise CompileError(f"unknown word '{name_tok.value}'", name_tok)
         self._compile_literal(word.address, tok)
 
+    @immediate("recurse")
     def _immediate_recurse(self, _compiler: Compiler, tok: Token) -> None:
         if self.current_word is None:
             raise CompileError("RECURSE outside colon definition", tok)
@@ -553,6 +553,7 @@ class Compiler:
         self._append_ir(Literal(len(data)))
         return label, len(data)
 
+    @immediate(".\"")
     def _immediate_dot_quote(self, _compiler: Compiler, tok: Token) -> None:
         if self.state != "compile":
             raise CompileError('." outside colon definition', tok)
@@ -560,6 +561,7 @@ class Compiler:
         self._compile_string_literal(body.value.encode("latin-1"), tok)
         self._emit_word_ref(self.words["type"], tok)
 
+    @immediate("s\"")
     def _immediate_s_quote(self, _compiler: Compiler, tok: Token) -> None:
         if self.state != "compile":
             raise CompileError('s" outside colon definition', tok)
@@ -568,11 +570,13 @@ class Compiler:
 
     # --- immediate words: INCLUDE / REQUIRE ---
 
+    @immediate("include")
     def _immediate_include(self, _compiler: Compiler, tok: Token) -> None:
         filename = self._read_filename_token(tok)
         path = self._resolve_include_path(filename, tok)
         self._include_file(path)
 
+    @immediate("require")
     def _immediate_require(self, _compiler: Compiler, tok: Token) -> None:
         filename = self._read_filename_token(tok)
         path = self._resolve_include_path(filename, tok)
