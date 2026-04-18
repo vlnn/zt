@@ -24,6 +24,7 @@ INLINABLE_PRIMITIVES: frozenset[str] = frozenset({
     "and", "or", "xor", "invert",
     "fetch", "store", "c_fetch", "c_store", "plus_store", "dup_fetch",
     "border",
+    "lshift",
 })
 
 
@@ -92,13 +93,17 @@ def has_mid_body_dispatch(creator: Callable) -> bool:
 def has_absolute_jump_in_body(creator: Callable) -> bool:
     if _is_dispatcher(creator):
         return False
-    raw = _try_assemble(creator)
-    if raw is None:
+    a = Asm(0x0000)
+    a.label("NEXT")
+    try:
+        creator(a)
+        raw = a.resolve()
+    except KeyError:
         return False
     if not _ends_with_jp_to_next(raw):
         return False
-    body = raw[:-DISPATCH_TAIL_LEN]
-    return JP_OPCODE in body
+    body_end = len(raw) - DISPATCH_TAIL_LEN
+    return any(offset < body_end for offset, _ in a.fixups)
 
 
 def plan_colon_inlining(

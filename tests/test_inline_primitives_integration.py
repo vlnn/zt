@@ -168,6 +168,10 @@ class TestSemanticsPreserved:
         (": double dup + ; : main 9 double halt ;",         [18]),
         (": inc 1+ ; : main 5 inc inc inc halt ;",          [8]),
         (": quad dup + dup + ; : main 3 quad halt ;",       [12]),
+        (": main 1 3 lshift halt ;",                        [8]),
+        (": shl3 3 lshift ; : main 1 shl3 halt ;",          [8]),
+        (": main 1 0 lshift halt ;",                        [1]),
+        (": main 0 5 lshift halt ;",                        [0]),
     ])
     def test_inline_primitives_preserves_stack_results(self, src, expected):
         baseline = compile_and_run(src, inline_primitives=False)
