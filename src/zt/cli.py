@@ -64,6 +64,10 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
                        default=False,
                        help="inline the NEXT dispatch body into each primitive "
                             "(~10%% speedup, ~500 bytes larger image)")
+    build.add_argument("--inline-primitives", dest="inline_primitives",
+                       action="store_true", default=False,
+                       help="inline pure-primitive colons by replacing "
+                            "the CALL DOCOL prologue with pasted primitive bytes")
     build.add_argument("--profile", dest="profile", action="store_true", default=False,
                        help="run the built image in the simulator and write a profile report")
     build.add_argument("--profile-output", type=Path, default=None, dest="profile_output",
@@ -169,6 +173,7 @@ def _build_compiler(args: argparse.Namespace) -> Compiler:
         include_dirs=args.include_dirs,
         optimize=args.optimize,
         inline_next=args.inline_next,
+        inline_primitives=args.inline_primitives,
     )
     if args.stdlib:
         c.include_stdlib()

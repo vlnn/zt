@@ -274,6 +274,70 @@ class TestBuildProfileFlag:
             f"--profile-ticks 500 should cap samples at 500, got {total}"
 
 
+class TestCliInlinePrimitivesFlag:
+
+    _SOURCE = ": double dup + ; : main 5 double halt ;"
+
+    def _write_source(self, tmp_path: Path) -> Path:
+        src = tmp_path / "bench.fs"
+        src.write_text(self._SOURCE)
+        return src
+
+    def test_flag_builds_successfully(self, tmp_path):
+        src = self._write_source(tmp_path)
+        out = tmp_path / "bench.bin"
+        result = _run_cli("build", str(src), "-o", str(out),
+                          "--no-stdlib", "--inline-primitives")
+        assert result.returncode == 0, (
+            f"--inline-primitives should produce a successful build; "
+            f"stderr={result.stderr}"
+        )
+        assert out.exists(), (
+            "CLI should produce an output file when --inline-primitives is used"
+        )
+
+    def test_flag_changes_output_bytes(self, tmp_path):
+        src = self._write_source(tmp_path)
+        plain = tmp_path / "plain.bin"
+        inlined = tmp_path / "inlined.bin"
+        _run_cli("build", str(src), "-o", str(plain), "--no-stdlib")
+        _run_cli("build", str(src), "-o", str(inlined),
+                 "--no-stdlib", "--inline-primitives")
+        assert plain.read_bytes() != inlined.read_bytes(), (
+            "--inline-primitives should alter the output bytes; "
+            "otherwise the flag is wired but has no effect"
+        )
+
+    def test_composes_with_inline_next(self, tmp_path):
+        src = self._write_source(tmp_path)
+        out = tmp_path / "bench.bin"
+        result = _run_cli("build", str(src), "-o", str(out),
+                          "--no-stdlib", "--inline-primitives", "--inline-next")
+        assert result.returncode == 0, (
+            "--inline-primitives should compose with --inline-next; "
+            f"stderr={result.stderr}"
+        )
+        assert out.exists(), (
+            "combining --inline-primitives and --inline-next should still produce output"
+        )
+
+    def test_composes_with_no_optimize(self, tmp_path):
+        src = self._write_source(tmp_path)
+        out = tmp_path / "bench.bin"
+        result = _run_cli("build", str(src), "-o", str(out),
+                          "--no-stdlib", "--inline-primitives", "--no-optimize")
+        assert result.returncode == 0, (
+            "--inline-primitives should work with peephole optimizer disabled; "
+            f"stderr={result.stderr}"
+        )
+
+    def test_flag_absent_by_default_in_help(self, tmp_path):
+        result = _run_cli("build", "--help")
+        assert "--inline-primitives" in result.stdout, (
+            "--inline-primitives should be listed in 'zt build --help' output"
+        )
+
+
 def _sum_ticks_from_report(text: str) -> int:
     total = 0
     for line in text.splitlines():
