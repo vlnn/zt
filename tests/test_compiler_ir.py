@@ -66,7 +66,7 @@ class TestBodyCellsPopulation:
 
 class TestBodyCellsControlFlow:
 
-    def test_if_then(self):
+    def test_if_then_emits_zbranch_and_label(self):
         c = _compile(": conditional dup if drop then ; : main halt ;")
         body = c.words["conditional"].body
         branches = [cell for cell in body if isinstance(cell, Branch)]
@@ -78,7 +78,7 @@ class TestBodyCellsControlFlow:
             "the 0branch target should be the Label emitted at THEN"
         )
 
-    def test_if_else_then(self):
+    def test_if_else_then_emits_zbranch_then_branch(self):
         c = _compile(": branched dup if drop else dup then ; : main halt ;")
         body = c.words["branched"].body
         branches = [cell for cell in body if isinstance(cell, Branch)]
@@ -87,7 +87,7 @@ class TestBodyCellsControlFlow:
             "IF/ELSE/THEN should emit a 0branch (skip-then) then a branch (skip-else)"
         )
 
-    def test_begin_until(self):
+    def test_begin_until_emits_zbranch_to_begin_label(self):
         c = _compile(": repeater begin 1- dup 0= until drop ; : main halt ;")
         body = c.words["repeater"].body
         branches = [cell for cell in body if isinstance(cell, Branch)]

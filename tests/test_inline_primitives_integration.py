@@ -125,7 +125,12 @@ class TestBuildIntegrity:
         c.compile_source(": double dup + ; : main 5 double halt ;")
         c.compile_main_call()
         image = c.build()
-        assert len(image) > 0, "build must succeed and return non-empty image"
+        assert c.words["double"].inlined is True, (
+            "a two-primitive colon should be inlined when inline_primitives=True"
+        )
+        assert image[c.words["main"].address - c.origin] == 0xCD, (
+            "main should start with CALL DOCOL (0xCD) even when called words are inlined"
+        )
 
     def test_build_succeeds_with_mixed_inlinable_and_not(self):
         c = Compiler(inline_primitives=True)
@@ -135,9 +140,13 @@ class TestBuildIntegrity:
             ": main 5 double halt ;"
         )
         c.compile_main_call()
-        image = c.build()
-        assert len(image) > 0, \
-            "build must succeed when some colons are inlined and others remain threaded"
+        c.build()
+        assert c.words["double"].inlined is True, (
+            "the inlinable colon 'double' should be flagged inlined"
+        )
+        assert c.words["maybe"].inlined is False, (
+            "the colon containing IF/THEN must NOT be inlined (non-trivial control flow)"
+        )
 
     def test_resolve_body_cells_does_not_fail(self):
         c = Compiler(inline_primitives=True)

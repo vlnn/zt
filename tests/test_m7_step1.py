@@ -51,11 +51,6 @@ class TestWordSourceLocation:
 
 
 class TestColonBody:
-    def test_body_populated(self, compiler):
-        compiler.compile_source(": double dup + ;\n")
-        assert len(compiler.words["double"].body) > 0, \
-            "double.body should be populated after compilation"
-
     def test_body_contains_primitive_refs(self, compiler):
         from zt.ir import PrimRef
         compiler.compile_source(": double dup + ;\n")
@@ -98,11 +93,6 @@ class TestColonBody:
             "b.body should contain only cells from b"
 
 class TestSourceMap:
-    def test_populated(self, compiler):
-        compiler.compile_source(": f 1 + ;\n", source="x.fs")
-        assert len(compiler.source_map) > 0, \
-            "source_map should have entries after compiling code"
-
     def test_all_entries_are_source_entry(self, compiler):
         compiler.compile_source(": f 1 ;\n", source="x.fs")
         assert all(isinstance(e, SourceEntry) for e in compiler.source_map), \

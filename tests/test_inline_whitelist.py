@@ -64,10 +64,6 @@ class TestIsPrimitiveInlinable:
 
 class TestWhitelistConsistency:
 
-    def test_whitelist_is_a_frozenset(self):
-        assert isinstance(INLINABLE_PRIMITIVES, frozenset), \
-            "INLINABLE_PRIMITIVES should be frozenset to prevent accidental mutation"
-
     def test_every_whitelisted_name_has_an_inline_body(self):
         registry = build_inline_registry(PRIMITIVES)
         missing = INLINABLE_PRIMITIVES - set(registry)

@@ -13,17 +13,15 @@ def context() -> InlineContext:
 
 class TestContextBuild:
 
-    def test_returns_frozen_dataclass(self, context):
-        assert isinstance(context, InlineContext), \
-            "build should return an InlineContext instance"
+    def test_registry_contains_dup_bytes(self, context):
+        assert "dup" in context.registry, \
+            "a context built from PRIMITIVES should register 'dup'"
+        assert len(context.registry["dup"]) > 0, \
+            "the registered body for 'dup' should have at least one byte"
 
-    def test_registry_is_populated(self, context):
-        assert len(context.registry) > 0, \
-            "a context built from the full PRIMITIVES list must have a non-empty registry"
-
-    def test_name_to_key_is_populated(self, context):
-        assert len(context.name_to_key) > 0, \
-            "a context built from the full PRIMITIVES list must have a non-empty name_to_key map"
+    def test_name_to_key_maps_dup_to_itself(self, context):
+        assert context.name_to_key.get("dup") == "dup", \
+            "the canonical primitive 'dup' should map to key 'dup'"
 
 
 class TestNameToKeyFromPythonName:
