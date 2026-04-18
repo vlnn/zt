@@ -1,17 +1,14 @@
 from __future__ import annotations
 
-import re
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from forth_runner import ForthTestResult, compile_and_run_word
-
-
-TEST_WORD_RE = re.compile(r"^\s*:\s+(test-\S+)", re.MULTILINE)
+from zt.testing import (
+    ForthTestResult,
+    TEST_WORD_RE,
+    compile_and_run_word,
+)
 
 
 def pytest_collect_file(parent, file_path):
@@ -34,7 +31,10 @@ class ForthItem(pytest.Item):
         self._source = source
 
     def runtest(self):
-        result = compile_and_run_word(self._source, self.name)
+        result = compile_and_run_word(
+            self._source, self.name,
+            extra_include_dirs=[self.path.parent],
+        )
         if result.failed:
             raise ForthAssertionError(self.name, result)
 

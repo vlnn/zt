@@ -21,6 +21,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command")
     _register_build(sub)
     _register_inspect(sub)
+    _register_test(sub)
 
     args = parser.parse_args()
     if args.command == "build":
@@ -28,6 +29,9 @@ def main() -> None:
         return
     if args.command == "inspect":
         _do_inspect(args)
+        return
+    if args.command == "test":
+        _do_test(args)
         return
     parser.print_help()
 
@@ -222,6 +226,85 @@ def _print_summary(source: Path, output: Path, image: bytes,
     out_size = output.stat().st_size
     print(f"{source} -> {output} [{fmt}] "
           f"({len(image)} bytes code, {word_count} words, {out_size} bytes output)")
+
+
+def _register_test(sub: argparse._SubParsersAction) -> None:
+    t = sub.add_parser("test", help="run Forth test files")
+    t.add_argument("specs", nargs="*", default=["."],
+                   help="files, directories, or FILE::WORD specs (default: cwd)")
+    t.add_argument("-k", dest="filter", default=None, metavar="PATTERN",
+                   help="only run tests whose name contains PATTERN")
+    t.add_argument("-v", "--verbose", dest="verbose", action="store_true",
+                   default=False, help="one line per test with PASS/FAIL")
+    t.add_argument("-x", "--exitfirst", dest="exitfirst", action="store_true",
+                   default=False, help="stop after the first failure")
+    t.add_argument("--max-ticks", type=int, default=1_000_000, dest="max_ticks",
+                   metavar="N", help="per-test tick budget (default: 1_000_000)")
+
+
+def _do_test(args: argparse.Namespace) -> None:
+    from zt.testing import TestDiscoveryError, TestEvent, run_tests
+
+    def on_result(event: TestEvent) -> None:
+        if event.result.failed:
+            _report_fail(event, args.verbose)
+        else:
+            _report_pass(event, args.verbose)
+
+    try:
+        summary = run_tests(
+            args.specs,
+            keyword=args.filter,
+            stop_on_first_failure=args.exitfirst,
+            on_result=on_result,
+            max_ticks=args.max_ticks,
+        )
+    except TestDiscoveryError as e:
+        print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    _print_failures(summary.failures)
+    _print_test_summary(summary.passed, summary.failures)
+    sys.exit(0 if summary.success else 1)
+
+
+def _report_pass(event, verbose: bool) -> None:
+    if verbose:
+        print(f"{event.path}::{event.word} PASSED")
+    else:
+        sys.stdout.write(".")
+        sys.stdout.flush()
+
+
+def _report_fail(event, verbose: bool) -> None:
+    if verbose:
+        print(f"{event.path}::{event.word} FAILED")
+    else:
+        sys.stdout.write("F")
+        sys.stdout.flush()
+
+
+def _print_failures(failures) -> None:
+    if not failures:
+        print()
+        return
+    print()
+    print()
+    for event in failures:
+        r = event.result
+        print(f"FAILED {event.path}::{event.word}")
+        if r.expected is not None:
+            print(f"  expected: {r.expected}")
+            print(f"  actual:   {r.actual}")
+        else:
+            print("  assertion failed")
+
+
+def _print_test_summary(passed: int, failures) -> None:
+    parts = [f"{passed} passed"]
+    if failures:
+        parts.append(f"{len(failures)} failed")
+    print(", ".join(parts))
 
 
 if __name__ == "__main__":
