@@ -30,13 +30,13 @@ class TestToDict:
         d = to_dict(compiler)
         double = d["words"]["double"]
         assert double["kind"] == "colon", "double should be kind 'colon'"
-        assert isinstance(double["body"], list) and double["body"], \
-            "double.body should be a non-empty list"
+        assert isinstance(double["cells"], list) and double["cells"], \
+            "double.cells should be a non-empty list"
 
     def test_primitive_has_no_body_key(self, compiler):
         d = to_dict(compiler)
-        assert "body" not in d["words"]["dup"], \
-            "primitive without body should omit the body key"
+        assert "cells" not in d["words"]["dup"], \
+            "primitive without body should omit the cells key"
 
     def test_source_location_on_user_word(self, compiler):
         d = to_dict(compiler)

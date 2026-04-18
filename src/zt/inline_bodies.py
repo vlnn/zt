@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from zt.asm import Asm
+from zt.ir import Cell, Literal as LiteralCell, PrimRef
 
 
 CREATE_PREFIX = "create_"
@@ -114,14 +115,10 @@ def plan_colon_inlining(
 ) -> list[InlineStep] | None:
     if getattr(word, "kind", None) != "colon":
         return None
-    exit_addr = _addr_of("exit", words)
-    lit_addr = _addr_of("lit", words)
-    if exit_addr is None or lit_addr is None:
+    cells: list[Cell] = getattr(word, "body", None) or []
+    if not cells or not _is_exit_cell(cells[-1]):
         return None
-    body = getattr(word, "body", None) or []
-    if not body or body[-1] != exit_addr:
-        return None
-    return _plan_cells(body[:-1], words, context, lit_addr)
+    return _plan_cells(cells[:-1], context)
 
 
 def is_colon_inlinable(
@@ -146,58 +143,32 @@ def emit_inline_plan(
     asm.dispatch()
 
 
+def _is_exit_cell(cell: Cell) -> bool:
+    return isinstance(cell, PrimRef) and cell.name == "exit"
+
+
 def _plan_cells(
-    cells: list,
-    words: dict[str, Any],
+    cells: list[Cell],
     context: InlineContext,
-    lit_addr: int,
 ) -> list[InlineStep] | None:
     steps: list[InlineStep] = []
-    i = 0
-    while i < len(cells):
-        cell = cells[i]
-        if not isinstance(cell, int):
+    for cell in cells:
+        step = _plan_cell(cell, context)
+        if step is None:
             return None
-        if cell == lit_addr:
-            if i + 1 >= len(cells):
-                return None
-            value = cells[i + 1]
-            if not isinstance(value, int):
-                return None
-            steps.append(InlineStep(kind="lit", value=value))
-            i += 2
-            continue
-        key = _resolve_primitive_key(cell, words, context)
-        if key is None:
-            return None
-        steps.append(InlineStep(kind="prim", key=key))
-        i += 1
+        steps.append(step)
     return steps
 
 
-def _resolve_primitive_key(
-    addr: int,
-    words: dict[str, Any],
-    context: InlineContext,
-) -> str | None:
-    for name, w in words.items():
-        if getattr(w, "address", None) != addr:
-            continue
-        if getattr(w, "kind", None) != "prim":
-            continue
-        key = context.name_to_key.get(name.lower())
-        if key is None:
-            continue
-        if is_primitive_inlinable(key):
-            return key
+def _plan_cell(cell: Cell, context: InlineContext) -> InlineStep | None:
+    if isinstance(cell, LiteralCell):
+        return InlineStep(kind="lit", value=cell.value)
+    if isinstance(cell, PrimRef):
+        key = context.name_to_key.get(cell.name.lower())
+        if key is None or not is_primitive_inlinable(key):
+            return None
+        return InlineStep(kind="prim", key=key)
     return None
-
-
-def _addr_of(name: str, words: dict[str, Any]) -> int | None:
-    word = words.get(name)
-    if word is None:
-        return None
-    return getattr(word, "address", None)
 
 
 def _build_name_to_key_map(

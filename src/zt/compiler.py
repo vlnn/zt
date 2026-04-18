@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal as TypingLiteral
 
 from zt.asm import Asm
 from zt.debug import SourceEntry
@@ -10,6 +11,17 @@ from zt.inline_bodies import (
     InlineContext,
     emit_inline_plan,
     plan_colon_inlining,
+)
+from zt.ir import (
+    Branch,
+    Cell,
+    ColonRef,
+    Label,
+    Literal,
+    PrimRef,
+    StringRef,
+    cell_size,
+    resolve,
 )
 from zt.peephole import (
     DEFAULT_RULES,
@@ -26,10 +38,11 @@ from zt.tokenizer import Token, tokenize
 class Word:
     name: str
     address: int
-    kind: Literal["prim", "colon", "variable", "constant"]
+    kind: TypingLiteral["prim", "colon", "variable", "constant"]
     immediate: bool = False
     compile_action: Callable | None = None
-    body: list[int] = field(default_factory=list)
+    body: list[Cell] = field(default_factory=list)
+    inlined: bool = False
     source_file: str | None = None
     source_line: int | None = None
 
@@ -67,7 +80,7 @@ class Compiler:
         self.included_files: set[Path] = set()
         self.asm = Asm(origin, inline_next=inline_next)
         self.words: dict[str, Word] = {}
-        self.state: Literal["interpret", "compile"] = "interpret"
+        self.state: TypingLiteral["interpret", "compile"] = "interpret"
         self.control_stack: list[tuple[str, Any]] = []
         self.current_word: str | None = None
         self._tokens: list[Token] = []
@@ -76,8 +89,9 @@ class Compiler:
         self._pending_strings: list[tuple[str, bytes]] = []
         self._string_counter: int = 0
         self.source_map: list[SourceEntry] = []
-        self._current_body: list[int | str] | None = None
-        self._body_cell_refs: dict[int, tuple[list[int | str], int]] = {}
+        self._current_body: list[Cell] | None = None
+        self._label_counter: int = 0
+        self._placeholder_labels: dict[int, int] = {}
         self.warnings: list[str] = []
         self.optimize: bool = optimize
         self.inline_next: bool = inline_next
@@ -193,7 +207,7 @@ class Compiler:
             if word.immediate and word.compile_action:
                 word.compile_action(self, tok)
                 return
-            self._emit_cell(word.address, tok)
+            self._emit_word_ref(word, tok)
             return
         if tok.kind == "number":
             value = parse_number(tok.value)
@@ -210,7 +224,7 @@ class Compiler:
         if replacement is None:
             return False
         self._token_pos += len(rule.pattern) - 1
-        self._emit_cell(replacement.address, tok)
+        self._emit_word_ref(replacement, tok)
         return True
 
     def _peephole_window(self, first_tok: Token) -> list[PatternElement | None]:
@@ -276,8 +290,7 @@ class Compiler:
             raise CompileError(
                 f"unclosed {tag} in '{self.current_word}'", tok
             )
-        exit_addr = self.words["exit"].address
-        self._emit_cell(exit_addr, tok)
+        self._emit_word_ref(self.words["exit"], tok)
         word = self.words[self.current_word]
         word.body = self._current_body or []
         self._current_body = None
@@ -293,12 +306,12 @@ class Compiler:
             return
         self._rewind_to_word_start(word)
         emit_inline_plan(self.asm, plan, self._inline_context)
+        word.inlined = True
 
     def _rewind_to_word_start(self, word: Word) -> None:
         code_offset = word.address - self.origin
         self._truncate_asm_code(code_offset)
         self._drop_fixups_after(code_offset)
-        self._drop_body_refs_after(code_offset)
         self._drop_source_entries_after(word.address)
 
     def _truncate_asm_code(self, code_offset: int) -> None:
@@ -314,11 +327,6 @@ class Compiler:
                 f for f in rel if _fixup_offset(f) < code_offset
             ]
 
-    def _drop_body_refs_after(self, code_offset: int) -> None:
-        self._body_cell_refs = {
-            o: r for o, r in self._body_cell_refs.items() if o < code_offset
-        }
-
     def _drop_source_entries_after(self, address: int) -> None:
         self.source_map = [
             e for e in self.source_map if _source_entry_addr(e) < address
@@ -328,16 +336,42 @@ class Compiler:
         lit_addr = self.words["lit"].address
         self._emit_cell(lit_addr, tok)
         self._emit_cell(value & 0xFFFF, tok)
+        self._append_ir(Literal(value & 0xFFFF))
 
     def _emit_cell(self, value: int | str, tok: Token) -> None:
-        offset = len(self.asm.code)
         self.source_map.append(
             SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
         )
-        if self._current_body is not None:
-            self._body_cell_refs[offset] = (self._current_body, len(self._current_body))
-            self._current_body.append(value)
         self.asm.word(value)
+
+    def _append_ir(self, cell: Cell) -> None:
+        if self._current_body is not None:
+            self._current_body.append(cell)
+
+    def _allocate_label(self) -> int:
+        label_id = self._label_counter
+        self._label_counter += 1
+        return label_id
+
+    def _emit_word_ref(self, word: Word, tok: Token) -> None:
+        self._emit_cell(word.address, tok)
+        if word.kind == "colon":
+            self._append_ir(ColonRef(word.name))
+        else:
+            self._append_ir(PrimRef(word.name))
+
+    def _emit_branch_cell(self, kind: str, target_label_id: int, tok: Token) -> None:
+        self._emit_cell(self.words[kind].address, tok)
+        self._append_ir(Branch(kind=kind, target=Label(id=target_label_id)))
+
+    def _emit_branch_target_placeholder(self, tok: Token, label_id: int) -> int:
+        offset = len(self.asm.code)
+        self._placeholder_labels[offset] = label_id
+        self._emit_cell(0, tok)
+        return offset
+
+    def _emit_branch_target_immediate(self, target: int, tok: Token) -> None:
+        self._emit_cell(target, tok)
 
     def _next_token(self, context_tok: Token) -> Token:
         if self._token_pos >= len(self._tokens):
@@ -433,37 +467,37 @@ class Compiler:
         return tag, value
 
     def _compile_zbranch_placeholder(self, tok: Token) -> int:
-        self._emit_cell(self.words["0branch"].address, tok)
-        offset = len(self.asm.code)
-        self._emit_cell(0, tok)
-        return offset
+        label_id = self._allocate_label()
+        self._emit_branch_cell("0branch", label_id, tok)
+        return self._emit_branch_target_placeholder(tok, label_id)
 
     def _compile_branch_placeholder(self, tok: Token) -> int:
-        self._emit_cell(self.words["branch"].address, tok)
-        offset = len(self.asm.code)
-        self._emit_cell(0, tok)
-        return offset
+        label_id = self._allocate_label()
+        self._emit_branch_cell("branch", label_id, tok)
+        return self._emit_branch_target_placeholder(tok, label_id)
 
     def _patch_placeholder(self, offset: int, target: int) -> None:
         self.asm.code[offset] = target & 0xFF
         self.asm.code[offset + 1] = (target >> 8) & 0xFF
-        ref = self._body_cell_refs.get(offset)
-        if ref is not None:
-            body_list, body_idx = ref
-            body_list[body_idx] = target
+        label_id = self._placeholder_labels.pop(offset, None)
+        if label_id is not None:
+            self._append_ir(Label(id=label_id))
 
-    def _compile_branch_to(self, target: int, tok: Token) -> None:
-        self._emit_cell(self.words["branch"].address, tok)
-        self._emit_cell(target, tok)
+    def _compile_branch_to_label(self, kind: str, target_addr: int,
+                                 target_label_id: int, tok: Token) -> None:
+        self._emit_branch_cell(kind, target_label_id, tok)
+        self._emit_branch_target_immediate(target_addr, tok)
 
     # --- immediate words: BEGIN/AGAIN ---
 
     def _immediate_begin(self, _compiler: Compiler, tok: Token) -> None:
-        self._push_control("begin", self.asm.here)
+        label_id = self._allocate_label()
+        self._append_ir(Label(id=label_id))
+        self._push_control("begin", (self.asm.here, label_id))
 
     def _immediate_again(self, _compiler: Compiler, tok: Token) -> None:
-        target = self._pop_control("begin", tok)
-        self._compile_branch_to(target, tok)
+        target_addr, label_id = self._pop_control("begin", tok)
+        self._compile_branch_to_label("branch", target_addr, label_id, tok)
 
     # --- immediate words: IF/THEN/ELSE ---
 
@@ -484,9 +518,8 @@ class Compiler:
     # --- immediate words: UNTIL/WHILE/REPEAT ---
 
     def _immediate_until(self, _compiler: Compiler, tok: Token) -> None:
-        target = self._pop_control("begin", tok)
-        self._emit_cell(self.words["0branch"].address, tok)
-        self._emit_cell(target, tok)
+        target_addr, label_id = self._pop_control("begin", tok)
+        self._compile_branch_to_label("0branch", target_addr, label_id, tok)
 
     def _immediate_while(self, _compiler: Compiler, tok: Token) -> None:
         if not self.control_stack:
@@ -504,36 +537,44 @@ class Compiler:
         self.control_stack.append(begin_entry)
 
     def _immediate_repeat(self, _compiler: Compiler, tok: Token) -> None:
-        begin_addr = self._pop_control("begin", tok)
+        begin_addr, begin_label_id = self._pop_control("begin", tok)
         while_placeholder = self._pop_control("while", tok)
-        self._compile_branch_to(begin_addr, tok)
+        self._compile_branch_to_label("branch", begin_addr, begin_label_id, tok)
         self._patch_placeholder(while_placeholder, self.asm.here)
 
     # --- immediate words: DO/LOOP/+LOOP/LEAVE ---
 
     def _immediate_do(self, _compiler: Compiler, tok: Token) -> None:
-        self._emit_cell(self.words["(do)"].address, tok)
+        self._emit_word_ref(self.words["(do)"], tok)
         body_addr = self.asm.here
-        self._push_control("do", {"addr": body_addr, "leaves": []})
+        body_label_id = self._allocate_label()
+        self._append_ir(Label(id=body_label_id))
+        self._push_control("do", {
+            "addr": body_addr,
+            "label_id": body_label_id,
+            "leaves": [],
+        })
 
     def _immediate_loop(self, _compiler: Compiler, tok: Token) -> None:
         do_info = self._pop_control("do", tok)
-        self._emit_cell(self.words["(loop)"].address, tok)
-        self._emit_cell(do_info["addr"], tok)
+        self._compile_branch_to_label(
+            "(loop)", do_info["addr"], do_info["label_id"], tok,
+        )
         for leave_offset in do_info["leaves"]:
             self._patch_placeholder(leave_offset, self.asm.here)
 
     def _immediate_plus_loop(self, _compiler: Compiler, tok: Token) -> None:
         do_info = self._pop_control("do", tok)
-        self._emit_cell(self.words["(+loop)"].address, tok)
-        self._emit_cell(do_info["addr"], tok)
+        self._compile_branch_to_label(
+            "(+loop)", do_info["addr"], do_info["label_id"], tok,
+        )
         for leave_offset in do_info["leaves"]:
             self._patch_placeholder(leave_offset, self.asm.here)
 
     def _immediate_leave(self, _compiler: Compiler, tok: Token) -> None:
         for i in range(len(self.control_stack) - 1, -1, -1):
             if self.control_stack[i][0] == "do":
-                self._emit_cell(self.words["unloop"].address, tok)
+                self._emit_word_ref(self.words["unloop"], tok)
                 placeholder = self._compile_branch_placeholder(tok)
                 self.control_stack[i][1]["leaves"].append(placeholder)
                 return
@@ -558,7 +599,7 @@ class Compiler:
         if self.current_word is None:
             raise CompileError("RECURSE outside colon definition", tok)
         word = self.words[self.current_word]
-        self._emit_cell(word.address, tok)
+        self._emit_word_ref(word, tok)
 
     # --- immediate words: string literals ---
 
@@ -586,9 +627,12 @@ class Compiler:
         label = self._allocate_string(data)
         lit_addr = self.words["lit"].address
         self._emit_cell(lit_addr, tok)
+        self._append_ir(PrimRef("lit"))
         self._emit_cell(label, tok)
+        self._append_ir(StringRef(label))
         self._emit_cell(lit_addr, tok)
         self._emit_cell(len(data), tok)
+        self._append_ir(Literal(len(data)))
         return label, len(data)
 
     def _immediate_dot_quote(self, _compiler: Compiler, tok: Token) -> None:
@@ -596,7 +640,7 @@ class Compiler:
             raise CompileError('." outside colon definition', tok)
         body = self._next_string_token(tok)
         self._compile_string_literal(body.value.encode("latin-1"), tok)
-        self._emit_cell(self.words["type"].address, tok)
+        self._emit_word_ref(self.words["type"], tok)
 
     def _immediate_s_quote(self, _compiler: Compiler, tok: Token) -> None:
         if self.state != "compile":
@@ -698,14 +742,31 @@ class Compiler:
 
     def build(self) -> bytes:
         image = self.asm.resolve()
-        self._resolve_body_cells(image)
+        if os.getenv("ZT_VERIFY_IR") == "1":
+            self._verify_ir(image)
         return image
 
-    def _resolve_body_cells(self, image: bytes) -> None:
-        for offset, (body_list, body_idx) in self._body_cell_refs.items():
-            low = image[offset]
-            high = image[offset + 1]
-            body_list[body_idx] = low | (high << 8)
+    def _verify_ir(self, image: bytes) -> None:
+        word_addrs = self._build_verify_addr_table()
+        for word in self.words.values():
+            if word.kind != "colon" or word.inlined:
+                continue
+            body_start = word.address + 3
+            expected = resolve(word.body, word_addrs, base_address=body_start)
+            start = body_start - self.origin
+            actual = bytes(image[start:start + len(expected)])
+            if expected != actual:
+                raise AssertionError(
+                    f"ZT_VERIFY_IR: IR/bytes mismatch for colon word '{word.name}' "
+                    f"at {body_start:#06x}: "
+                    f"expected {expected.hex()}, got {actual.hex()}"
+                )
+
+    def _build_verify_addr_table(self) -> dict[str, int]:
+        addrs: dict[str, int] = dict(self.asm.labels)
+        for name, word in self.words.items():
+            addrs[name] = word.address
+        return addrs
 
 
 def _fixup_offset(fixup: Any) -> int:

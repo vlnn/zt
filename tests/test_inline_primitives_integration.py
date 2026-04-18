@@ -97,13 +97,14 @@ class TestBodyPreservedForInspection:
             "Word.body must remain populated after inlining so zt inspect still works"
 
     def test_body_references_original_primitive_addresses(self):
+        from zt.ir import PrimRef
         c = Compiler(inline_primitives=True)
         c.compile_source(": double dup + ;")
         body = c.words["double"].body
-        assert c.words["dup"].address in body, \
-            "body should still reference dup's address for introspection"
-        assert c.words["+"].address in body, \
-            "body should still reference +'s address for introspection"
+        assert PrimRef("dup") in body, \
+            "body should still reference PrimRef(dup) for introspection"
+        assert PrimRef("+") in body, \
+            "body should still reference PrimRef(+) for introspection"
 
     def test_kind_remains_colon(self):
         c = Compiler(inline_primitives=True)

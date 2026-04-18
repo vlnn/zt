@@ -56,25 +56,27 @@ class TestColonBody:
         assert len(compiler.words["double"].body) > 0, \
             "double.body should be populated after compilation"
 
-    def test_body_contains_primitive_addresses(self, compiler):
+    def test_body_contains_primitive_refs(self, compiler):
+        from zt.ir import PrimRef
         compiler.compile_source(": double dup + ;\n")
         w = compiler.words["double"]
-        assert compiler.words["dup"].address in w.body, \
-            "double.body should reference dup's address"
-        assert compiler.words["+"].address in w.body, \
-            "double.body should reference +'s address"
+        assert PrimRef("dup") in w.body, \
+            "double.body should contain a PrimRef for dup"
+        assert PrimRef("+") in w.body, \
+            "double.body should contain a PrimRef for +"
 
-    def test_body_contains_literal_value(self, compiler):
+    def test_body_contains_literal_cell(self, compiler):
+        from zt.ir import Literal
         compiler.compile_source(": five 5 ;\n")
         w = compiler.words["five"]
-        assert compiler.words["lit"].address in w.body, \
-            "five.body should reference lit"
-        assert 5 in w.body, "five.body should contain the literal 5"
+        assert Literal(5) in w.body, \
+            "five.body should contain a Literal(5) cell"
 
     def test_body_ends_with_exit(self, compiler):
+        from zt.ir import PrimRef
         compiler.compile_source(": x 1 ;\n")
-        assert compiler.words["x"].body[-1] == compiler.words["exit"].address, \
-            "body of a colon word should end with the address of exit"
+        assert compiler.words["x"].body[-1] == PrimRef("exit"), \
+            "body of a colon word should end with a PrimRef(exit) cell"
 
     def test_primitive_has_empty_body(self, compiler):
         assert compiler.words["dup"].body == [], \
@@ -86,12 +88,13 @@ class TestColonBody:
             "variables should have an empty body"
 
     def test_nested_definitions_keep_separate_bodies(self, compiler):
+        from zt.ir import Literal
         compiler.compile_source(": a 5 ;\n: b 7 ;\n")
         a_body = compiler.words["a"].body
         b_body = compiler.words["b"].body
-        assert 5 in a_body and 7 not in a_body, \
+        assert Literal(5) in a_body and Literal(7) not in a_body, \
             "a.body should contain only cells from a"
-        assert 7 in b_body and 5 not in b_body, \
+        assert Literal(7) in b_body and Literal(5) not in b_body, \
             "b.body should contain only cells from b"
 
 class TestSourceMap:

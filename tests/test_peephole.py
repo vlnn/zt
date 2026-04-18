@@ -147,22 +147,28 @@ def make_compiler():
     return _make
 
 
-def _body(compiler: Compiler, name: str) -> list[int]:
+def _body(compiler: Compiler, name: str):
     return compiler.words[name].body
 
 
-def _addr(compiler: Compiler, name: str) -> int:
-    return compiler.words[name].address
+def _prim(name: str):
+    from zt.ir import PrimRef
+    return PrimRef(name)
+
+
+def _lit_in(body) -> bool:
+    from zt.ir import Literal
+    return any(isinstance(c, Literal) for c in body)
 
 
 class TestFusionApplies:
 
     @pytest.mark.parametrize("src,fused,originals", [
-        (": f 0 ;",           "zero",    ["lit"]),
-        (": f 1 ;",           "one",     ["lit"]),
-        (": f 1 + ;",         "1+",      ["lit", "+"]),
-        (": f 1 - ;",         "1-",      ["lit", "-"]),
-        (": f 2 * ;",         "2*",      ["lit", "*"]),
+        (": f 0 ;",           "zero",    []),
+        (": f 1 ;",           "one",     []),
+        (": f 1 + ;",         "1+",      ["+"]),
+        (": f 1 - ;",         "1-",      ["-"]),
+        (": f 2 * ;",         "2*",      ["*"]),
         (": f dup @ ;",       "dup@",    ["dup", "@"]),
         (": f swap drop ;",   "nip",     ["swap", "drop"]),
         (": f drop drop ;",   "2drop",   ["drop"]),
@@ -174,35 +180,36 @@ class TestFusionApplies:
         c = make_compiler(optimize=True)
         c.compile_source(src)
         body = _body(c, "f")
-        assert _addr(c, fused) in body, \
-            f"peephole should fuse {originals} into {fused!r}"
+        assert _prim(fused) in body, \
+            f"peephole should fuse into {fused!r}"
+        assert not _lit_in(body), \
+            f"fused pattern should leave no Literal cells in body of {src!r}"
         for name in originals:
-            assert _addr(c, name) not in body, \
+            assert _prim(name) not in body, \
                 f"{name!r} should not appear in body after fusion into {fused!r}"
 
     def test_longest_match_wins_at_compile_time(self, make_compiler):
         c = make_compiler(optimize=True)
         c.compile_source(": f 1 + ;")
         body = _body(c, "f")
-        assert _addr(c, "1+") in body, \
+        assert _prim("1+") in body, \
             "`1 +` should prefer the 1+ rule over the shorter ONE rule"
-        assert _addr(c, "one") not in body, \
+        assert _prim("one") not in body, \
             "shorter [1] rule must not fire when [1, +] matches"
 
     def test_literal_1_alone_still_fuses_to_one(self, make_compiler):
         c = make_compiler(optimize=True)
         c.compile_source(": f 1 ;")
         body = _body(c, "f")
-        assert _addr(c, "one") in body, \
+        assert _prim("one") in body, \
             "literal 1 with no following + should fuse to ONE"
 
 
 class TestNoOptimizeSkipsFusion:
 
     @pytest.mark.parametrize("src,originals,fused", [
-        (": f 1 + ;",     ["lit", "+"],    "1+"),
+        (": f 1 + ;",     ["+"],           "1+"),
         (": f dup @ ;",   ["dup", "@"],    "dup@"),
-        (": f 0 ;",       ["lit"],         "zero"),
     ])
     def test_optimize_off_preserves_originals(
         self, make_compiler, src, originals, fused,
@@ -211,10 +218,19 @@ class TestNoOptimizeSkipsFusion:
         c.compile_source(src)
         body = _body(c, "f")
         for name in originals:
-            assert _addr(c, name) in body, \
+            assert _prim(name) in body, \
                 f"with optimize=False, {name!r} should remain in body"
-        assert _addr(c, fused) not in body, \
+        assert _prim(fused) not in body, \
             f"with optimize=False, fused {fused!r} must not replace originals"
+
+    def test_optimize_off_leaves_literal_cell(self, make_compiler):
+        c = make_compiler(optimize=False)
+        c.compile_source(": f 0 ;")
+        body = _body(c, "f")
+        assert _lit_in(body), \
+            "with optimize=False, literal 0 should remain as a Literal cell"
+        assert _prim("zero") not in body, \
+            "with optimize=False, the ZERO fusion must not fire"
 
 
 class TestDoesNotOverMatch:
@@ -223,18 +239,18 @@ class TestDoesNotOverMatch:
         c = make_compiler(optimize=True)
         c.compile_source(": f ['] dup @ ;")
         body = _body(c, "f")
-        assert _addr(c, "dup@") not in body, \
-            "['] dup compiles to LIT <addr>; a following @ must not fuse into dup@"
-        assert _addr(c, "@") in body, \
-            "@ must survive when preceded by a data cell rather than DUP"
+        assert _prim("dup@") not in body, \
+            "['] dup compiles to a Literal(addr); a following @ must not fuse into dup@"
+        assert _prim("@") in body, \
+            "@ must survive when preceded by a Literal cell rather than DUP"
 
     def test_non_matching_literal_left_alone(self, make_compiler):
         c = make_compiler(optimize=True)
         c.compile_source(": f 3 + ;")
         body = _body(c, "f")
-        assert _addr(c, "1+") not in body, \
+        assert _prim("1+") not in body, \
             "`3 +` must not fuse because literal does not match pattern value 1"
-        assert _addr(c, "+") in body, \
+        assert _prim("+") in body, \
             "+ must remain when literal does not match"
 
 
@@ -243,18 +259,19 @@ class TestBoundaries:
     def test_pattern_does_not_cross_semicolon(self, make_compiler):
         c = make_compiler(optimize=True)
         c.compile_source(": a 1 ; : b + ;")
-        assert _addr(c, "1+") not in _body(c, "a"), \
+        assert _prim("1+") not in _body(c, "a"), \
             "literal 1 in word `a` must not fuse with + from word `b`"
-        assert _addr(c, "one") in _body(c, "a"), \
+        assert _prim("one") in _body(c, "a"), \
             "literal 1 in word `a` should fuse to ONE via the short rule"
 
     def test_pattern_does_not_eat_immediate_word(self, make_compiler):
+        from zt.ir import Branch
         c = make_compiler(optimize=True)
         c.compile_source(": f 0 if drop then ;")
         body = _body(c, "f")
-        assert _addr(c, "0branch") in body, \
+        assert any(isinstance(cell, Branch) and cell.kind == "0branch" for cell in body), \
             "IF must still compile a 0branch; peephole must not consume the `if` token"
-        assert _addr(c, "zero") in body, \
+        assert _prim("zero") in body, \
             "the literal 0 before IF should still fuse to ZERO"
 
 
