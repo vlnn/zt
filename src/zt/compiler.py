@@ -83,7 +83,7 @@ class Compiler:
         self.data_stack_top = data_stack_top
         self.return_stack_top = return_stack_top
         self.include_resolver: IncludeResolver = IncludeResolver(include_dirs or [])
-        self.asm = Asm(origin, inline_next=inline_next)
+        outer_asm = Asm(origin, inline_next=inline_next)
         self.words: Dictionary = Dictionary()
         self.state: TypingLiteral["interpret", "compile"] = "interpret"
         self.control_stack: ControlStack = ControlStack()
@@ -92,7 +92,7 @@ class Compiler:
         self._host_stack: list[int] = []
         self.string_pool: StringPool = StringPool()
         self.emitter: CodeEmitter = CodeEmitter(
-            asm=self.asm, words=self.words, origin=origin,
+            asm=outer_asm, words=self.words, origin=origin,
         )
         self.warnings: list[str] = []
         self.optimize: bool = optimize
@@ -107,6 +107,14 @@ class Compiler:
     @property
     def source_map(self) -> list[SourceEntry]:
         return self.emitter.source_map
+
+    @property
+    def asm(self) -> Asm:
+        return self.emitter.asm
+
+    @asm.setter
+    def asm(self, value: Asm) -> None:
+        self.emitter.asm = value
 
     def _register_primitives(self) -> None:
         for creator in PRIMITIVES:
@@ -260,6 +268,7 @@ class Compiler:
         self.state = "compile"
         self.current_word = name
         self.emitter.begin_body()
+        self.emitter.begin_buffered()
         addr = self.asm.here
         self.asm.call("DOCOL")
         self.words[name] = Word(
@@ -291,17 +300,18 @@ class Compiler:
         self._try_inline_colon(word)
 
     def _try_inline_colon(self, word: Word) -> None:
-        if self._inline_context is None:
-            return
-        plan = plan_colon_inlining(word, self.words, self._inline_context)
+        plan = self._inline_plan_for(word)
         if plan is None:
+            self.emitter.commit_buffered()
             return
-        self._rewind_to_word_start(word)
+        self.emitter.discard_buffered()
         emit_inline_plan(self.asm, plan, self._inline_context)
         word.inlined = True
 
-    def _rewind_to_word_start(self, word: Word) -> None:
-        self.emitter.rewind_to(word.address)
+    def _inline_plan_for(self, word: Word):
+        if self._inline_context is None:
+            return None
+        return plan_colon_inlining(word, self.words, self._inline_context)
 
     def _compile_literal(self, value: int, tok: Token) -> None:
         self.emitter.compile_literal(value, tok)

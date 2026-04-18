@@ -18,6 +18,7 @@ class CodeEmitter:
         self._current_body: list[Cell] | None = None
         self._label_counter: int = 0
         self._placeholder_labels: dict[int, int] = {}
+        self._outer_asm: Asm | None = None
 
     # --- body lifecycle ---
 
@@ -90,13 +91,29 @@ class CodeEmitter:
         if label_id is not None:
             self.append_ir(Label(id=label_id))
 
-    # --- rewind (for inlining) ---
+    # --- buffered emission for colon bodies ---
 
-    def rewind_to(self, address: int) -> None:
-        code_offset = address - self.origin
-        del self.asm.code[code_offset:]
-        self._drop_fixups_after(code_offset)
-        self._drop_source_entries_after(address)
+    def begin_buffered(self) -> None:
+        outer = self.asm
+        buffered = Asm(origin=outer.here, inline_next=outer.inline_next)
+        self._outer_asm = outer
+        self.asm = buffered
+
+    def commit_buffered(self) -> None:
+        buffered = self.asm
+        outer = self._outer_asm
+        base_offset = len(outer.code)
+        outer.code.extend(buffered.code)
+        for offset, name in buffered.fixups:
+            outer.fixups.append((base_offset + offset, name))
+        for offset, name in buffered.rel_fixups:
+            outer.rel_fixups.append((base_offset + offset, name))
+        self.asm = outer
+        self._outer_asm = None
+
+    def discard_buffered(self) -> None:
+        self.asm = self._outer_asm
+        self._outer_asm = None
 
     # --- internals ---
 
@@ -111,30 +128,3 @@ class CodeEmitter:
     def _emit_branch_cell(self, kind: str, target_label_id: int, tok: Token) -> None:
         self.emit_cell(self.words[kind].address, tok)
         self.append_ir(Branch(kind=kind, target=Label(id=target_label_id)))
-
-    def _drop_fixups_after(self, code_offset: int) -> None:
-        self.asm.fixups = [
-            f for f in self.asm.fixups if _fixup_offset(f) < code_offset
-        ]
-        rel = getattr(self.asm, "rel_fixups", None)
-        if rel is not None:
-            self.asm.rel_fixups = [
-                f for f in rel if _fixup_offset(f) < code_offset
-            ]
-
-    def _drop_source_entries_after(self, address: int) -> None:
-        self.source_map = [
-            e for e in self.source_map if _source_entry_addr(e) < address
-        ]
-
-
-def _fixup_offset(fixup: Any) -> int:
-    if hasattr(fixup, "offset"):
-        return fixup.offset
-    return fixup[0]
-
-
-def _source_entry_addr(entry: Any) -> int:
-    if hasattr(entry, "address"):
-        return entry.address
-    return entry[0]

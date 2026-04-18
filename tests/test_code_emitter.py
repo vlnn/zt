@@ -164,20 +164,41 @@ class TestPatchPlaceholder:
         )
 
 
-class TestRewind:
+class TestBufferedEmission:
 
-    def test_truncate_drops_trailing_bytes(self, emitter, asm):
-        asm.word(0x1234)
-        asm.word(0x5678)
-        emitter.rewind_to(0x8000 + 2)
-        assert len(asm.code) == 2, (
-            "rewind should drop asm.code past the given address"
+    def test_begin_buffered_does_not_write_to_outer(self, emitter, asm):
+        asm.word(0xABCD)
+        emitter.begin_buffered()
+        emitter.emit_cell(0x1234, _tok())
+        emitter.emit_cell(0x5678, _tok())
+        assert bytes(asm.code) == bytes([0xCD, 0xAB]), (
+            "begin_buffered should redirect writes away from the outer asm"
         )
 
-    def test_rewind_drops_source_entries_past_address(self, emitter):
-        emitter.emit_cell(0x1234, _tok(line=1))
-        emitter.emit_cell(0x5678, _tok(line=2))
-        emitter.rewind_to(0x8000 + 2)
-        assert all(e.address < 0x8002 for e in emitter.source_map), (
-            "rewind should drop source_map entries at or past the given address"
+    def test_commit_appends_buffered_bytes_to_outer(self, emitter, asm):
+        asm.word(0xABCD)
+        emitter.begin_buffered()
+        emitter.emit_cell(0x1234, _tok())
+        emitter.commit_buffered()
+        assert bytes(asm.code) == bytes([0xCD, 0xAB, 0x34, 0x12]), (
+            "commit_buffered should append buffered bytes to the outer asm"
+        )
+
+    def test_discard_drops_buffered_bytes(self, emitter, asm):
+        asm.word(0xABCD)
+        emitter.begin_buffered()
+        emitter.emit_cell(0x1234, _tok())
+        emitter.discard_buffered()
+        assert bytes(asm.code) == bytes([0xCD, 0xAB]), (
+            "discard_buffered should leave the outer asm unchanged"
+        )
+
+    def test_commit_translates_fixups_to_outer_offsets(self, emitter, asm):
+        asm.word(0xABCD)
+        emitter.begin_buffered()
+        emitter.emit_cell("some_label", _tok())
+        emitter.commit_buffered()
+        fixup_offsets = [off for off, _ in asm.fixups]
+        assert 2 in fixup_offsets, (
+            "commit_buffered should translate buffered fixup offsets into outer-asm offsets"
         )
