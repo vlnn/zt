@@ -73,7 +73,7 @@ class Z80:
     __slots__ = (
         "mem", "pc", "sp", "a", "f", "b", "c", "d", "e", "h", "l",
         "ix", "iy", "halted", "iff", "_outputs", "_ticks",
-        "input_buffer", "_input_pos",
+        "input_buffer", "_input_pos", "_ops",
     )
 
     def __init__(self) -> None:
@@ -88,6 +88,7 @@ class Z80:
         self._ticks = 0
         self.input_buffer: bytearray = bytearray()
         self._input_pos: int = 0
+        self._ops = self._build_ops_table()
 
     @property
     def hl(self) -> int: return (self.h << 8) | self.l
@@ -204,144 +205,317 @@ class Z80:
 
     def _step(self) -> None:
         op = self._fetch()
-        if op == 0xCB:
-            self._exec_cb()
-        elif op == 0xDD:
-            self._exec_dd()
-        elif op == 0xFD:
-            self._exec_fd()
-        elif op == 0xED:
-            self._exec_ed()
+        self._ops[op](op)
+
+    def _build_ops_table(self) -> list:
+        t = [self._op_unimplemented] * 256
+
+        t[0x00] = self._op_nop
+        t[0x76] = self._op_halt
+
+        t[0x01] = self._op_ld_bc_nn
+        t[0x11] = self._op_ld_de_nn
+        t[0x21] = self._op_ld_hl_nn
+        t[0x31] = self._op_ld_sp_nn
+
+        for op in (0x06, 0x0E, 0x16, 0x1E, 0x26, 0x2E, 0x36, 0x3E):
+            t[op] = self._op_ld_r_n
+
+        t[0x1A] = self._op_ld_a_ind_de
+        t[0x3A] = self._op_ld_a_ind_nn
+        t[0x32] = self._op_ld_ind_nn_a
+
+        for op in range(0x40, 0x80):
+            if op != 0x76:
+                t[op] = self._op_ld_r_r
+
+        t[0xC5] = self._op_push_bc
+        t[0xD5] = self._op_push_de
+        t[0xE5] = self._op_push_hl
+        t[0xF5] = self._op_push_af
+        t[0xC1] = self._op_pop_bc
+        t[0xD1] = self._op_pop_de
+        t[0xE1] = self._op_pop_hl
+        t[0xF1] = self._op_pop_af
+
+        t[0xEB] = self._op_ex_de_hl
+        t[0xE3] = self._op_ex_sp_hl
+
+        t[0x09] = self._op_add_hl_bc
+        t[0x19] = self._op_add_hl_de
+        t[0x29] = self._op_add_hl_hl
+
+        t[0x03] = self._op_inc_bc
+        t[0x0B] = self._op_dec_bc
+        t[0x13] = self._op_inc_de
+        t[0x1B] = self._op_dec_de
+        t[0x23] = self._op_inc_hl
+        t[0x2B] = self._op_dec_hl
+
+        t[0x24] = self._op_inc_h
+        t[0x3C] = self._op_inc_a
+        t[0x3D] = self._op_dec_a
+        t[0x1D] = self._op_dec_e
+
+        for op in range(0x80, 0xC0):
+            t[op] = self._op_alu_a_r
+
+        t[0xE6] = self._op_and_n
+        t[0xF6] = self._op_or_n
+        t[0xFE] = self._op_cp_n
+
+        t[0x0F] = self._op_rrca
+        t[0x2F] = self._op_cpl
+        t[0x37] = self._op_scf
+
+        t[0xC3] = self._op_jp_nn
+        t[0xCA] = self._op_jp_z
+        t[0xC2] = self._op_jp_nz
+        t[0xF2] = self._op_jp_p
+        t[0xFA] = self._op_jp_m
+
+        t[0x18] = self._op_jr
+        t[0x20] = self._op_jr_nz
+        t[0x28] = self._op_jr_z
+        t[0x30] = self._op_jr_nc
+        t[0x38] = self._op_jr_c
+        t[0x10] = self._op_djnz
+
+        t[0xCD] = self._op_call_nn
+        t[0xC9] = self._op_ret
+
+        t[0xD3] = self._op_out_n_a
+        t[0xF3] = self._op_di
+        t[0xFB] = self._op_ei
+
+        t[0xCB] = self._op_cb_prefix
+        t[0xDD] = self._op_dd_prefix
+        t[0xED] = self._op_ed_prefix
+        t[0xFD] = self._op_fd_prefix
+
+        return t
+
+    def _op_unimplemented(self, op: int) -> None:
+        raise RuntimeError(
+            f"unimplemented opcode {op:#04x} at {(self.pc - 1) & 0xFFFF:#06x}"
+        )
+
+    def _op_nop(self, op: int) -> None:
+        pass
+
+    def _op_halt(self, op: int) -> None:
+        self.halted = True
+
+    def _op_ld_bc_nn(self, op: int) -> None:
+        self.bc = self._fetch_word()
+
+    def _op_ld_de_nn(self, op: int) -> None:
+        self.de = self._fetch_word()
+
+    def _op_ld_hl_nn(self, op: int) -> None:
+        self.hl = self._fetch_word()
+
+    def _op_ld_sp_nn(self, op: int) -> None:
+        self.sp = self._fetch_word()
+
+    def _op_ld_r_n(self, op: int) -> None:
+        self._set_reg((op >> 3) & 7, self._fetch())
+
+    def _op_ld_a_ind_de(self, op: int) -> None:
+        self.a = self._rb(self.de)
+
+    def _op_ld_a_ind_nn(self, op: int) -> None:
+        self.a = self._rb(self._fetch_word())
+
+    def _op_ld_ind_nn_a(self, op: int) -> None:
+        self._wb(self._fetch_word(), self.a)
+
+    def _op_ld_r_r(self, op: int) -> None:
+        dst, src = (op >> 3) & 7, op & 7
+        self._set_reg(dst, self._get_reg(src))
+
+    def _op_push_bc(self, op: int) -> None:
+        self._push(self.bc)
+
+    def _op_push_de(self, op: int) -> None:
+        self._push(self.de)
+
+    def _op_push_hl(self, op: int) -> None:
+        self._push(self.hl)
+
+    def _op_push_af(self, op: int) -> None:
+        self._push(self.af)
+
+    def _op_pop_bc(self, op: int) -> None:
+        self.bc = self._pop()
+
+    def _op_pop_de(self, op: int) -> None:
+        self.de = self._pop()
+
+    def _op_pop_hl(self, op: int) -> None:
+        self.hl = self._pop()
+
+    def _op_pop_af(self, op: int) -> None:
+        self.af = self._pop()
+
+    def _op_ex_de_hl(self, op: int) -> None:
+        self.hl, self.de = self.de, self.hl
+
+    def _op_ex_sp_hl(self, op: int) -> None:
+        tmp = self._rw(self.sp)
+        self._ww(self.sp, self.hl)
+        self.hl = tmp
+
+    def _op_add_hl_bc(self, op: int) -> None:
+        self._add_hl(self.bc)
+
+    def _op_add_hl_de(self, op: int) -> None:
+        self._add_hl(self.de)
+
+    def _op_add_hl_hl(self, op: int) -> None:
+        self._add_hl(self.hl)
+
+    def _op_inc_bc(self, op: int) -> None:
+        self.bc = (self.bc + 1) & 0xFFFF
+
+    def _op_dec_bc(self, op: int) -> None:
+        self.bc = (self.bc - 1) & 0xFFFF
+
+    def _op_inc_de(self, op: int) -> None:
+        self.de = (self.de + 1) & 0xFFFF
+
+    def _op_dec_de(self, op: int) -> None:
+        self.de = (self.de - 1) & 0xFFFF
+
+    def _op_inc_hl(self, op: int) -> None:
+        self.hl = (self.hl + 1) & 0xFFFF
+
+    def _op_dec_hl(self, op: int) -> None:
+        self.hl = (self.hl - 1) & 0xFFFF
+
+    def _op_inc_h(self, op: int) -> None:
+        self.h = self._inc8(self.h)
+
+    def _op_inc_a(self, op: int) -> None:
+        self.a = self._inc8(self.a)
+
+    def _op_dec_a(self, op: int) -> None:
+        self.a = self._dec8(self.a)
+
+    def _op_dec_e(self, op: int) -> None:
+        self.e = self._dec8(self.e)
+
+    def _op_alu_a_r(self, op: int) -> None:
+        src = self._get_reg(op & 7)
+        grp = (op >> 3) & 7
+        if   grp == 0: self.a = self._add8(self.a, src)
+        elif grp == 1: self.a = self._add8(self.a, src, self.f & FLAG_C)
+        elif grp == 2: self.a = self._sub8(self.a, src)
+        elif grp == 3: self.a = self._sub8(self.a, src, self.f & FLAG_C)
+        elif grp == 4: self.a &= src; self.f = self._flag_sz(self.a) | FLAG_H
+        elif grp == 5: self.a ^= src; self.f = self._flag_sz(self.a)
+        elif grp == 6: self.a |= src; self.f = self._flag_sz(self.a)
+        elif grp == 7: self._sub8(self.a, src)
+
+    def _op_and_n(self, op: int) -> None:
+        self.a &= self._fetch()
+        self.f = self._flag_sz(self.a) | FLAG_H
+
+    def _op_or_n(self, op: int) -> None:
+        self.a |= self._fetch()
+        self.f = self._flag_sz(self.a)
+
+    def _op_cp_n(self, op: int) -> None:
+        self._sub8(self.a, self._fetch())
+
+    def _op_rrca(self, op: int) -> None:
+        c = self.a & 1
+        self.a = ((self.a >> 1) | (c << 7)) & 0xFF
+        self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if c else 0)
+
+    def _op_cpl(self, op: int) -> None:
+        self.a ^= 0xFF
+        self.f |= FLAG_H | FLAG_N
+
+    def _op_scf(self, op: int) -> None:
+        self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | FLAG_C
+
+    def _op_jp_nn(self, op: int) -> None:
+        self.pc = self._fetch_word()
+
+    def _op_jp_z(self, op: int) -> None:
+        addr = self._fetch_word()
+        if self.f & FLAG_Z:
+            self.pc = addr
+
+    def _op_jp_nz(self, op: int) -> None:
+        addr = self._fetch_word()
+        if not (self.f & FLAG_Z):
+            self.pc = addr
+
+    def _op_jp_p(self, op: int) -> None:
+        addr = self._fetch_word()
+        if not (self.f & FLAG_S):
+            self.pc = addr
+
+    def _op_jp_m(self, op: int) -> None:
+        addr = self._fetch_word()
+        if self.f & FLAG_S:
+            self.pc = addr
+
+    def _op_jr(self, op: int) -> None:
+        self._jr_cond(True)
+
+    def _op_jr_nz(self, op: int) -> None:
+        self._jr_cond(not (self.f & FLAG_Z))
+
+    def _op_jr_z(self, op: int) -> None:
+        self._jr_cond(bool(self.f & FLAG_Z))
+
+    def _op_jr_nc(self, op: int) -> None:
+        self._jr_cond(not (self.f & FLAG_C))
+
+    def _op_jr_c(self, op: int) -> None:
+        self._jr_cond(bool(self.f & FLAG_C))
+
+    def _op_djnz(self, op: int) -> None:
+        self.b = (self.b - 1) & 0xFF
+        self._jr_cond(self.b != 0)
+
+    def _op_call_nn(self, op: int) -> None:
+        addr = self._fetch_word()
+        if addr == SPECTRUM_KEY_ADDR:
+            self._hook_key()
+        elif addr == SPECTRUM_KEY_QUERY_ADDR:
+            self._hook_key_query()
         else:
-            self._exec_main(op)
+            self._push(self.pc)
+            self.pc = addr
 
-    def _exec_main(self, op: int) -> None:
-        if op == 0x00: pass
-        elif op == 0x76: self.halted = True
+    def _op_ret(self, op: int) -> None:
+        self.pc = self._pop()
 
-        elif op == 0x01: self.bc = self._fetch_word()
-        elif op == 0x11: self.de = self._fetch_word()
-        elif op == 0x21: self.hl = self._fetch_word()
-        elif op == 0x31: self.sp = self._fetch_word()
+    def _op_out_n_a(self, op: int) -> None:
+        port = self._fetch()
+        self._outputs.append((port | (self.a << 8), self.a))
 
-        elif op == 0x06: self.b = self._fetch()
-        elif op == 0x0E: self.c = self._fetch()
-        elif op == 0x16: self.d = self._fetch()
-        elif op == 0x1E: self.e = self._fetch()
-        elif op == 0x26: self.h = self._fetch()
-        elif op == 0x2E: self.l = self._fetch()
-        elif op == 0x36: self._wb(self.hl, self._fetch())
-        elif op == 0x3E: self.a = self._fetch()
+    def _op_di(self, op: int) -> None:
+        self.iff = False
 
-        elif op == 0x1A: self.a = self._rb(self.de)
-        elif op == 0x3A:
-            addr = self._fetch_word()
-            self.a = self._rb(addr)
-        elif op == 0x32:
-            addr = self._fetch_word()
-            self._wb(addr, self.a)
+    def _op_ei(self, op: int) -> None:
+        self.iff = True
 
-        elif 0x40 <= op <= 0x7F:
-            dst, src = (op >> 3) & 7, op & 7
-            self._set_reg(dst, self._get_reg(src))
+    def _op_cb_prefix(self, op: int) -> None:
+        self._exec_cb()
 
-        elif op == 0xC5: self._push(self.bc)
-        elif op == 0xD5: self._push(self.de)
-        elif op == 0xE5: self._push(self.hl)
-        elif op == 0xF5: self._push(self.af)
-        elif op == 0xC1: self.bc = self._pop()
-        elif op == 0xD1: self.de = self._pop()
-        elif op == 0xE1: self.hl = self._pop()
-        elif op == 0xF1: self.af = self._pop()
+    def _op_dd_prefix(self, op: int) -> None:
+        self._exec_ix_iy(lambda: self.ix, self._set_ix)
 
-        elif op == 0xEB: self.hl, self.de = self.de, self.hl
-        elif op == 0xE3:
-            tmp = self._rw(self.sp)
-            self._ww(self.sp, self.hl)
-            self.hl = tmp
+    def _op_ed_prefix(self, op: int) -> None:
+        self._exec_ed()
 
-        elif op == 0x09: self._add_hl(self.bc)
-        elif op == 0x19: self._add_hl(self.de)
-        elif op == 0x29: self._add_hl(self.hl)
-        elif op == 0x03: self.bc = (self.bc + 1) & 0xFFFF
-        elif op == 0x0B: self.bc = (self.bc - 1) & 0xFFFF
-        elif op == 0x13: self.de = (self.de + 1) & 0xFFFF
-        elif op == 0x1B: self.de = (self.de - 1) & 0xFFFF
-        elif op == 0x23: self.hl = (self.hl + 1) & 0xFFFF
-        elif op == 0x2B: self.hl = (self.hl - 1) & 0xFFFF
-
-        elif op == 0x24: self.h = self._inc8(self.h)
-        elif op == 0x3C: self.a = self._inc8(self.a)
-        elif op == 0x3D: self.a = self._dec8(self.a)
-        elif op == 0x1D: self.e = self._dec8(self.e)
-
-        elif 0x80 <= op <= 0xBF:
-            src = self._get_reg(op & 7)
-            grp = (op >> 3) & 7
-            if   grp == 0: self.a = self._add8(self.a, src)
-            elif grp == 1: self.a = self._add8(self.a, src, self.f & FLAG_C)
-            elif grp == 2: self.a = self._sub8(self.a, src)
-            elif grp == 3: self.a = self._sub8(self.a, src, self.f & FLAG_C)
-            elif grp == 4: self.a &= src; self.f = self._flag_sz(self.a) | FLAG_H
-            elif grp == 5: self.a ^= src; self.f = self._flag_sz(self.a)
-            elif grp == 6: self.a |= src; self.f = self._flag_sz(self.a)
-            elif grp == 7: self._sub8(self.a, src)
-
-        elif op == 0xE6:
-            self.a &= self._fetch()
-            self.f = self._flag_sz(self.a) | FLAG_H
-        elif op == 0xF6:
-            self.a |= self._fetch()
-            self.f = self._flag_sz(self.a)
-        elif op == 0xFE:
-            self._sub8(self.a, self._fetch())
-
-        elif op == 0x0F:
-            c = self.a & 1
-            self.a = ((self.a >> 1) | (c << 7)) & 0xFF
-            self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if c else 0)
-
-        elif op == 0x2F: self.a ^= 0xFF; self.f |= FLAG_H | FLAG_N
-        elif op == 0x37: self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | FLAG_C
-
-        elif op == 0xC3: self.pc = self._fetch_word()
-        elif op == 0xCA: addr = self._fetch_word(); (self.f & FLAG_Z) and self._jp(addr)
-        elif op == 0xC2: addr = self._fetch_word(); (not (self.f & FLAG_Z)) and self._jp(addr)
-        elif op == 0xF2: addr = self._fetch_word(); (not (self.f & FLAG_S)) and self._jp(addr)
-        elif op == 0xFA: addr = self._fetch_word(); (self.f & FLAG_S) and self._jp(addr)
-
-        elif op == 0x18: self._jr_cond(True)
-        elif op == 0x20: self._jr_cond(not (self.f & FLAG_Z))
-        elif op == 0x28: self._jr_cond(bool(self.f & FLAG_Z))
-        elif op == 0x30: self._jr_cond(not (self.f & FLAG_C))
-        elif op == 0x38: self._jr_cond(bool(self.f & FLAG_C))
-        elif op == 0x10:
-            self.b = (self.b - 1) & 0xFF
-            self._jr_cond(self.b != 0)
-
-        elif op == 0xCD:
-            addr = self._fetch_word()
-            if addr == SPECTRUM_KEY_ADDR:
-                self._hook_key()
-            elif addr == SPECTRUM_KEY_QUERY_ADDR:
-                self._hook_key_query()
-            else:
-                self._push(self.pc)
-                self.pc = addr
-        elif op == 0xC9: self.pc = self._pop()
-
-        elif op == 0xD3:
-            port = self._fetch()
-            self._outputs.append((port | (self.a << 8), self.a))
-
-        elif op == 0xF3: self.iff = False
-        elif op == 0xFB: self.iff = True
-
-        else:
-            raise RuntimeError(f"unimplemented opcode {op:#04x} at {(self.pc - 1) & 0xFFFF:#06x}")
-
-    def _jp(self, addr: int) -> None:
-        self.pc = addr
+    def _op_fd_prefix(self, op: int) -> None:
+        self._exec_ix_iy(lambda: self.iy, self._set_iy)
 
     def _hook_key(self) -> None:
         if self._input_pos < len(self.input_buffer):
@@ -429,12 +603,6 @@ class Z80:
             raise RuntimeError(
                 f"unimplemented IX/IY opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}"
             )
-
-    def _exec_dd(self) -> None:
-        self._exec_ix_iy(lambda: self.ix, self._set_ix)
-
-    def _exec_fd(self) -> None:
-        self._exec_ix_iy(lambda: self.iy, self._set_iy)
 
     def _set_ix(self, v: int) -> None: self.ix = v & 0xFFFF
     def _set_iy(self, v: int) -> None: self.iy = v & 0xFFFF

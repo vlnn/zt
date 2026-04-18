@@ -22,8 +22,8 @@ They are deviations from the Z80 spec, kept bug-for-bug until Phase 3+:
     only S/Z (+ H for AND) are touched.
   - LDIR: runs the entire block copy inside a single _step(); _ticks advances
     by 1 regardless of BC size.
-  - Conditional JP instructions use short-circuit boolean side effects via
-    `(cond) and self._jp(addr)`. The operand word is always fetched.
+  - Conditional JP instructions always fetch the operand word; the branch
+    is taken by assigning to pc only when the condition holds.
   - No RLCA (0x07) implemented; only RRCA (0x0F).
   - ED family implements only SBC HL,DE (0x52) and LDIR (0xB0).
   - DD/FD prefixes implement only the subset used by the project assembler.
