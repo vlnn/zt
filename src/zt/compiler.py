@@ -57,6 +57,7 @@ class Word:
     inlined: bool = False
     source_file: str | None = None
     source_line: int | None = None
+    data_address: int | None = None
 
 
 class CompileError(Exception):
@@ -316,44 +317,54 @@ class Compiler:
             raise CompileError("host stack underflow", tok)
         return self._host_stack.pop()
 
-    def _compile_push_value(self, name: str, value: int, kind: str, tok: Token) -> None:
-        addr = self.asm.here
+    def _emit_pusher(self, value: int) -> int:
+        code_addr = self.asm.here
         self.asm.push_hl()
         self.asm.ld_hl_nn(value & 0xFFFF)
         self.asm.jp("NEXT")
-        self.words[name] = Word(
-            name=name, address=addr, kind=kind,
-            source_file=tok.source, source_line=tok.line,
-        )
+        return code_addr
+
+    def _emit_variable_shim(self) -> tuple[int, int]:
+        code_addr = self.asm.here
+        self.asm.push_hl()
+        self.asm.ld_hl_nn(0)
+        fixup = len(self.asm.code) - 2
+        self.asm.jp("NEXT")
+        data_addr = self.asm.here
+        self.asm.code[fixup] = data_addr & 0xFF
+        self.asm.code[fixup + 1] = (data_addr >> 8) & 0xFF
+        return code_addr, data_addr
 
     # --- directives ---
 
     @directive("variable")
     def _directive_variable(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
-        data_addr = self.asm.here + 4 + 3
-        self._compile_push_value(name_tok.value, data_addr, "variable", name_tok)
+        code_addr, data_addr = self._emit_variable_shim()
         self.asm.word(0)
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=code_addr, kind="variable",
+            data_address=data_addr,
+            source_file=name_tok.source, source_line=name_tok.line,
+        )
 
     @directive("constant")
     def _directive_constant(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
         name_tok = self._next_token(tok)
-        self._compile_push_value(name_tok.value, value, "constant", name_tok)
+        code_addr = self._emit_pusher(value)
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=code_addr, kind="constant",
+            source_file=name_tok.source, source_line=name_tok.line,
+        )
 
     @directive("create")
     def _directive_create(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
-        data_addr_placeholder = self.asm.here
-        self.asm.push_hl()
-        self.asm.ld_hl_nn(0)
-        fixup_offset = len(self.asm.code) - 2
-        self.asm.jp("NEXT")
-        data_start = self.asm.here
-        self.asm.code[fixup_offset] = data_start & 0xFF
-        self.asm.code[fixup_offset + 1] = (data_start >> 8) & 0xFF
+        code_addr, data_addr = self._emit_variable_shim()
         self.words[name_tok.value] = Word(
-            name=name_tok.value, address=data_addr_placeholder, kind="variable",
+            name=name_tok.value, address=code_addr, kind="variable",
+            data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
         )
 

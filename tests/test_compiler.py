@@ -208,6 +208,59 @@ class TestCreate:
         assert c.asm.here > here_before, "allot should advance HERE"
 
 
+class TestDataAddress:
+
+    @pytest.mark.parametrize("src,name", [
+        ("variable x",         "x"),
+        ("create buf 10 allot", "buf"),
+        ("create tbl 1 , 2 ,",  "tbl"),
+    ], ids=["variable", "create-allot", "create-comma"])
+    def test_word_with_data_exposes_data_address(self, src, name):
+        c = make_compiler()
+        c.compile_source(src)
+        word = c.words[name]
+        assert word.data_address is not None, \
+            f"{name!r} should expose data_address so the harness can read its data slot"
+        assert word.data_address > word.address, \
+            "data_address should sit past the pusher shim, not at or before it"
+
+    @pytest.mark.parametrize("src,name", [
+        ("42 constant answer",      "answer"),
+        (": double dup + ;",        "double"),
+    ], ids=["constant", "colon"])
+    def test_word_without_data_has_none(self, src, name):
+        c = make_compiler()
+        c.compile_source(src)
+        assert c.words[name].data_address is None, \
+            f"{name!r} has no data slot; data_address should be None"
+
+    def test_primitives_have_none(self):
+        c = make_compiler()
+        assert c.words["dup"].data_address is None, \
+            "primitives have no data slot; data_address should be None"
+
+    def test_variable_data_address_is_writable(self):
+        c = make_compiler()
+        c.compile_source("variable x : main 42 x ! halt ;")
+        word = c.words["x"]
+        image = c.build()
+        offset = word.data_address - c.origin
+        assert image[offset] == 0 and image[offset + 1] == 0, \
+            "freshly compiled variable cell should start as 0"
+
+    def test_variable_data_address_is_what_pusher_pushes(self):
+        c = make_compiler()
+        c.compile_source("variable x")
+        word = c.words["x"]
+        image = c.build()
+        shim_offset = word.address - c.origin
+        pushed_low = image[shim_offset + 2]
+        pushed_high = image[shim_offset + 3]
+        pushed = pushed_low | (pushed_high << 8)
+        assert pushed == word.data_address, \
+            "the pusher's LD HL,nn literal should equal word.data_address"
+
+
 class TestBeginAgain:
 
     def test_begin_again_compiles(self):
