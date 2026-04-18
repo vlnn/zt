@@ -101,7 +101,7 @@ class TestExtractInlineBody:
             "a primitive referencing an external undefined label must be reported as non-extractable, not crash"
 
     def test_extracted_body_is_three_bytes_shorter_than_full_primitive(self):
-        a = Asm(0x0000)
+        a = Asm(0x0000, inline_next=False)
         a.label("NEXT")
         create_plus(a)
         full = a.resolve()
@@ -111,7 +111,7 @@ class TestExtractInlineBody:
             "extract should strip exactly the 3-byte JP NEXT tail"
 
     def test_extracted_body_is_a_prefix_of_the_full_primitive(self):
-        a = Asm(0x0000)
+        a = Asm(0x0000, inline_next=False)
         a.label("NEXT")
         create_swap(a)
         full = a.resolve()

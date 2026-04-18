@@ -46,7 +46,7 @@ class TestSierpinskiExample:
         )
 
     def test_require_dedup_registered_math_once(self, built_compiler):
-        math_paths = [p for p in built_compiler.included_files
+        math_paths = [p for p in built_compiler.include_resolver.seen_paths()
                       if p.name == "math.fs"]
         assert len(math_paths) == 1, (
             "math.fs should appear in included_files exactly once despite "

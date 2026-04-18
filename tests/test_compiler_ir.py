@@ -163,7 +163,7 @@ class TestResolveAgreesWithImage:
         c, image = _compile_built(source)
         word_addrs = _build_word_addr_table(c)
         for name, word in c.words.items():
-            if word.kind != "colon":
+            if word.kind != "colon" or word.inlined:
                 continue
             body_start = word.address + 3
             expected = resolve(word.body, word_addrs, base_address=body_start)

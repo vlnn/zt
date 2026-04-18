@@ -122,7 +122,7 @@ class TestRequire:
         c.compile_source(
             f"require {lib}\nrequire {lib}\n: main halt ;"
         )
-        assert c.included_files == {lib.resolve()}, (
+        assert c.include_resolver.seen_paths() == frozenset({lib.resolve()}), (
             "REQUIRE should mark the file as included exactly once"
         )
 

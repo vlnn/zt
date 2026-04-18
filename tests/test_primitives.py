@@ -29,7 +29,7 @@ from zt.primitives import (
 
 
 def _asm_with_next() -> Asm:
-    a = Asm(0x8000)
+    a = Asm(0x8000, inline_next=False)
     a.label("NEXT")
     return a
 
@@ -456,7 +456,7 @@ def test_lit_pushes_hl_then_loads_from_ix():
 
 
 def test_docol_swaps_return_addr_with_ix_then_saves_old_ip():
-    a = Asm(0x8000)
+    a = Asm(0x8000, inline_next=False)
     a.label("NEXT")
     create_docol(a)
     out = a.resolve()

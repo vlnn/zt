@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any, Callable, Literal as TypingLiteral
 
 from zt.asm import Asm
+from zt.code_emitter import CodeEmitter
+from zt.control_stack import ControlStack, ControlStackError
 from zt.debug import SourceEntry
+from zt.dictionary import Dictionary
+from zt.include_resolver import IncludeNotFound, IncludeResolver
 from zt.inline_bodies import (
     InlineContext,
     emit_inline_plan,
@@ -31,6 +35,8 @@ from zt.peephole import (
     max_pattern_length,
 )
 from zt.primitives import PRIMITIVES
+from zt.string_pool import StringPool
+from zt.token_stream import TokenStream
 from zt.tokenizer import Token, tokenize
 
 
@@ -70,28 +76,24 @@ class Compiler:
         return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
         include_dirs: list[Path] | None = None,
         optimize: bool = True,
-        inline_next: bool = False,
-        inline_primitives: bool = False,
+        inline_next: bool = True,
+        inline_primitives: bool = True,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
         self.return_stack_top = return_stack_top
-        self.include_dirs: list[Path] = [Path(d) for d in (include_dirs or [])]
-        self.included_files: set[Path] = set()
+        self.include_resolver: IncludeResolver = IncludeResolver(include_dirs or [])
         self.asm = Asm(origin, inline_next=inline_next)
-        self.words: dict[str, Word] = {}
+        self.words: Dictionary = Dictionary()
         self.state: TypingLiteral["interpret", "compile"] = "interpret"
-        self.control_stack: list[tuple[str, Any]] = []
+        self.control_stack: ControlStack = ControlStack()
         self.current_word: str | None = None
-        self._tokens: list[Token] = []
-        self._token_pos: int = 0
+        self._tokens: TokenStream = TokenStream([])
         self._host_stack: list[int] = []
-        self._pending_strings: list[tuple[str, bytes]] = []
-        self._string_counter: int = 0
-        self.source_map: list[SourceEntry] = []
-        self._current_body: list[Cell] | None = None
-        self._label_counter: int = 0
-        self._placeholder_labels: dict[int, int] = {}
+        self.string_pool: StringPool = StringPool()
+        self.emitter: CodeEmitter = CodeEmitter(
+            asm=self.asm, words=self.words, origin=origin,
+        )
         self.warnings: list[str] = []
         self.optimize: bool = optimize
         self.inline_next: bool = inline_next
@@ -102,15 +104,14 @@ class Compiler:
         self._register_directives()
         self._register_immediates()
 
+    @property
+    def source_map(self) -> list[SourceEntry]:
+        return self.emitter.source_map
+
     def _register_primitives(self) -> None:
         for creator in PRIMITIVES:
             creator(self.asm)
-        for name, addr in self.asm.labels.items():
-            if name.startswith("_"):
-                continue
-            lower = name.lower()
-            if lower not in self.words:
-                self.words[lower] = Word(name=lower, address=addr, kind="prim")
+        self.words.register_primitives(self.asm)
         if self.inline_primitives:
             self._inline_context = InlineContext.build(PRIMITIVES)
 
@@ -157,16 +158,14 @@ class Compiler:
             )
 
     def compile_source(self, text: str, source: str = "<input>") -> None:
-        self._tokens = tokenize(text, source)
-        self._token_pos = 0
-        while self._token_pos < len(self._tokens):
-            tok = self._tokens[self._token_pos]
-            self._token_pos += 1
+        self._tokens = TokenStream(tokenize(text, source))
+        while self._tokens.has_more():
+            tok = self._tokens.next()
             self._compile_token(tok)
         if self.state == "compile":
             raise CompileError(
                 f"unclosed colon definition '{self.current_word}'",
-                self._tokens[-1] if self._tokens else None,
+                self._tokens.last_token(),
             )
 
     def _compile_token(self, tok: Token) -> None:
@@ -223,7 +222,7 @@ class Compiler:
         replacement = self.words.get(rule.replacement)
         if replacement is None:
             return False
-        self._token_pos += len(rule.pattern) - 1
+        self._tokens.advance_by(len(rule.pattern) - 1)
         self._emit_word_ref(replacement, tok)
         return True
 
@@ -231,7 +230,7 @@ class Compiler:
         span = max_pattern_length(self._peephole_rules)
         if span <= 0:
             return []
-        tail = self._tokens[self._token_pos:self._token_pos + span - 1]
+        tail = self._tokens.lookahead(span - 1)
         return [self._token_element(t) for t in (first_tok, *tail)]
 
     def _token_element(self, tok: Token) -> PatternElement | None:
@@ -260,7 +259,7 @@ class Compiler:
         self._warn_if_redefining(name, tok)
         self.state = "compile"
         self.current_word = name
-        self._current_body = []
+        self.emitter.begin_body()
         addr = self.asm.here
         self.asm.call("DOCOL")
         self.words[name] = Word(
@@ -269,31 +268,24 @@ class Compiler:
         )
 
     def _warn_if_redefining(self, name: str, tok: Token) -> None:
-        previous = self.words.get(name)
-        if previous is None or previous.kind != "colon":
-            return
-        if previous.source_file is None or previous.source_line is None:
-            return
-        here = f"{tok.source}:{tok.line}"
-        there = f"{previous.source_file}:{previous.source_line}"
-        self.warnings.append(
-            f"{here}: warning: redefining '{name}' "
-            f"(first defined at {there})"
+        warning = self.words.redefinition_warning(
+            name, source_file=tok.source, source_line=tok.line,
         )
+        if warning is not None:
+            self.warnings.append(warning)
 
     def _end_colon(self, tok: Token) -> None:
         if self.state != "compile":
             raise CompileError("; outside colon definition", tok)
         if self.control_stack:
-            tag, _ = self.control_stack[-1]
+            tag, _ = self.control_stack.peek()
             self.control_stack.clear()
             raise CompileError(
                 f"unclosed {tag} in '{self.current_word}'", tok
             )
         self._emit_word_ref(self.words["exit"], tok)
         word = self.words[self.current_word]
-        word.body = self._current_body or []
-        self._current_body = None
+        word.body = self.emitter.end_body()
         self.state = "interpret"
         self.current_word = None
         self._try_inline_colon(word)
@@ -309,76 +301,27 @@ class Compiler:
         word.inlined = True
 
     def _rewind_to_word_start(self, word: Word) -> None:
-        code_offset = word.address - self.origin
-        self._truncate_asm_code(code_offset)
-        self._drop_fixups_after(code_offset)
-        self._drop_source_entries_after(word.address)
-
-    def _truncate_asm_code(self, code_offset: int) -> None:
-        del self.asm.code[code_offset:]
-
-    def _drop_fixups_after(self, code_offset: int) -> None:
-        self.asm.fixups = [
-            f for f in self.asm.fixups if _fixup_offset(f) < code_offset
-        ]
-        rel = getattr(self.asm, "rel_fixups", None)
-        if rel is not None:
-            self.asm.rel_fixups = [
-                f for f in rel if _fixup_offset(f) < code_offset
-            ]
-
-    def _drop_source_entries_after(self, address: int) -> None:
-        self.source_map = [
-            e for e in self.source_map if _source_entry_addr(e) < address
-        ]
+        self.emitter.rewind_to(word.address)
 
     def _compile_literal(self, value: int, tok: Token) -> None:
-        lit_addr = self.words["lit"].address
-        self._emit_cell(lit_addr, tok)
-        self._emit_cell(value & 0xFFFF, tok)
-        self._append_ir(Literal(value & 0xFFFF))
+        self.emitter.compile_literal(value, tok)
 
     def _emit_cell(self, value: int | str, tok: Token) -> None:
-        self.source_map.append(
-            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
-        )
-        self.asm.word(value)
+        self.emitter.emit_cell(value, tok)
 
     def _append_ir(self, cell: Cell) -> None:
-        if self._current_body is not None:
-            self._current_body.append(cell)
+        self.emitter.append_ir(cell)
 
     def _allocate_label(self) -> int:
-        label_id = self._label_counter
-        self._label_counter += 1
-        return label_id
+        return self.emitter.allocate_label()
 
     def _emit_word_ref(self, word: Word, tok: Token) -> None:
-        self._emit_cell(word.address, tok)
-        if word.kind == "colon":
-            self._append_ir(ColonRef(word.name))
-        else:
-            self._append_ir(PrimRef(word.name))
-
-    def _emit_branch_cell(self, kind: str, target_label_id: int, tok: Token) -> None:
-        self._emit_cell(self.words[kind].address, tok)
-        self._append_ir(Branch(kind=kind, target=Label(id=target_label_id)))
-
-    def _emit_branch_target_placeholder(self, tok: Token, label_id: int) -> int:
-        offset = len(self.asm.code)
-        self._placeholder_labels[offset] = label_id
-        self._emit_cell(0, tok)
-        return offset
-
-    def _emit_branch_target_immediate(self, target: int, tok: Token) -> None:
-        self._emit_cell(target, tok)
+        self.emitter.emit_word_ref(word, tok)
 
     def _next_token(self, context_tok: Token) -> Token:
-        if self._token_pos >= len(self._tokens):
+        if not self._tokens.has_more():
             raise CompileError("unexpected end of input", context_tok)
-        tok = self._tokens[self._token_pos]
-        self._token_pos += 1
-        return tok
+        return self._tokens.next()
 
     def _host_pop(self, tok: Token) -> int:
         if not self._host_stack:
@@ -439,54 +382,32 @@ class Compiler:
     # --- control stack helpers ---
 
     def _push_control(self, tag: str, value: Any) -> None:
-        self.control_stack.append((tag, value))
+        self.control_stack.push(tag, value)
 
     def _pop_control(self, expected_tag: str, tok: Token) -> Any:
-        if not self.control_stack:
-            raise CompileError(
-                f"control stack underflow ({expected_tag})", tok
-            )
-        tag, value = self.control_stack.pop()
-        if tag != expected_tag:
-            raise CompileError(
-                f"control flow mismatch: expected {expected_tag}, got {tag}", tok
-            )
-        return value
+        try:
+            return self.control_stack.pop(expected_tag)
+        except ControlStackError as e:
+            raise CompileError(str(e), tok) from e
 
     def _pop_control_any(self, expected_tags: list[str], tok: Token) -> tuple[str, Any]:
-        if not self.control_stack:
-            raise CompileError(
-                f"control stack underflow ({'/'.join(expected_tags)})", tok
-            )
-        tag, value = self.control_stack.pop()
-        if tag not in expected_tags:
-            raise CompileError(
-                f"control flow mismatch: expected {'/'.join(expected_tags)}, got {tag}",
-                tok,
-            )
-        return tag, value
+        try:
+            return self.control_stack.pop_any(expected_tags)
+        except ControlStackError as e:
+            raise CompileError(str(e), tok) from e
 
     def _compile_zbranch_placeholder(self, tok: Token) -> int:
-        label_id = self._allocate_label()
-        self._emit_branch_cell("0branch", label_id, tok)
-        return self._emit_branch_target_placeholder(tok, label_id)
+        return self.emitter.compile_zbranch_placeholder(tok)
 
     def _compile_branch_placeholder(self, tok: Token) -> int:
-        label_id = self._allocate_label()
-        self._emit_branch_cell("branch", label_id, tok)
-        return self._emit_branch_target_placeholder(tok, label_id)
+        return self.emitter.compile_branch_placeholder(tok)
 
     def _patch_placeholder(self, offset: int, target: int) -> None:
-        self.asm.code[offset] = target & 0xFF
-        self.asm.code[offset + 1] = (target >> 8) & 0xFF
-        label_id = self._placeholder_labels.pop(offset, None)
-        if label_id is not None:
-            self._append_ir(Label(id=label_id))
+        self.emitter.patch_placeholder(offset, target)
 
     def _compile_branch_to_label(self, kind: str, target_addr: int,
                                  target_label_id: int, tok: Token) -> None:
-        self._emit_branch_cell(kind, target_label_id, tok)
-        self._emit_branch_target_immediate(target_addr, tok)
+        self.emitter.compile_branch_to_label(kind, target_addr, target_label_id, tok)
 
     # --- immediate words: BEGIN/AGAIN ---
 
@@ -522,19 +443,10 @@ class Compiler:
         self._compile_branch_to_label("0branch", target_addr, label_id, tok)
 
     def _immediate_while(self, _compiler: Compiler, tok: Token) -> None:
-        if not self.control_stack:
-            raise CompileError(
-                "control stack underflow (while)", tok
-            )
         placeholder = self._compile_zbranch_placeholder(tok)
-        begin_entry = self.control_stack.pop()
-        if begin_entry[0] != "begin":
-            raise CompileError(
-                f"control flow mismatch: expected begin, got {begin_entry[0]}",
-                tok,
-            )
+        begin_value = self._pop_control("begin", tok)
         self._push_control("while", placeholder)
-        self.control_stack.append(begin_entry)
+        self._push_control("begin", begin_value)
 
     def _immediate_repeat(self, _compiler: Compiler, tok: Token) -> None:
         begin_addr, begin_label_id = self._pop_control("begin", tok)
@@ -572,13 +484,13 @@ class Compiler:
             self._patch_placeholder(leave_offset, self.asm.here)
 
     def _immediate_leave(self, _compiler: Compiler, tok: Token) -> None:
-        for i in range(len(self.control_stack) - 1, -1, -1):
-            if self.control_stack[i][0] == "do":
-                self._emit_word_ref(self.words["unloop"], tok)
-                placeholder = self._compile_branch_placeholder(tok)
-                self.control_stack[i][1]["leaves"].append(placeholder)
-                return
-        raise CompileError("LEAVE outside DO/LOOP", tok)
+        frame = self.control_stack.find_innermost("do")
+        if frame is None:
+            raise CompileError("LEAVE outside DO/LOOP", tok)
+        _tag, do_info = frame
+        self._emit_word_ref(self.words["unloop"], tok)
+        placeholder = self._compile_branch_placeholder(tok)
+        do_info["leaves"].append(placeholder)
 
     # --- immediate words: brackets, tick, recurse ---
 
@@ -604,24 +516,20 @@ class Compiler:
     # --- immediate words: string literals ---
 
     def _next_string_token(self, starter: Token) -> Token:
-        if self._token_pos >= len(self._tokens):
+        peeked = self._tokens.peek()
+        if peeked is None:
             raise CompileError(
                 f"{starter.value} without string body", starter,
             )
-        tok = self._tokens[self._token_pos]
-        if tok.kind != "string":
+        if peeked.kind != "string":
             raise CompileError(
-                f"{starter.value} must be followed by a string, got {tok.kind} '{tok.value}'",
+                f"{starter.value} must be followed by a string, got {peeked.kind} '{peeked.value}'",
                 starter,
             )
-        self._token_pos += 1
-        return tok
+        return self._tokens.next()
 
     def _allocate_string(self, data: bytes) -> str:
-        label = f"_str_{self._string_counter}"
-        self._string_counter += 1
-        self._pending_strings.append((label, data))
-        return label
+        return self.string_pool.allocate(data)
 
     def _compile_string_literal(self, data: bytes, tok: Token) -> tuple[str, int]:
         label = self._allocate_string(data)
@@ -648,29 +556,22 @@ class Compiler:
         body = self._next_string_token(tok)
         self._compile_string_literal(body.value.encode("latin-1"), tok)
 
-    def _flush_pending_strings(self) -> None:
-        for label, data in self._pending_strings:
-            self.asm.label(label)
-            for byte_value in data:
-                self.asm.byte(byte_value)
-        self._pending_strings.clear()
-
     # --- immediate words: INCLUDE / REQUIRE ---
 
     def _immediate_include(self, _compiler: Compiler, tok: Token) -> None:
         filename = self._read_filename_token(tok)
-        path = self._resolve_include(filename, tok)
+        path = self._resolve_include_path(filename, tok)
         self._include_file(path)
 
     def _immediate_require(self, _compiler: Compiler, tok: Token) -> None:
         filename = self._read_filename_token(tok)
-        path = self._resolve_include(filename, tok)
-        if path in self.included_files:
+        path = self._resolve_include_path(filename, tok)
+        if self.include_resolver.has_seen(path):
             return
         self._include_file(path)
 
     def _read_filename_token(self, context_tok: Token) -> str:
-        if self._token_pos >= len(self._tokens):
+        if not self._tokens.has_more():
             raise CompileError(
                 f"expected filename after '{context_tok.value}'",
                 context_tok,
@@ -684,33 +585,17 @@ class Compiler:
             )
         return name_tok.raw or name_tok.value
 
-    def _resolve_include(self, filename: str, context_tok: Token) -> Path:
-        given = Path(filename)
-        if given.is_absolute():
-            if given.is_file():
-                return given.resolve()
-            raise CompileError(
-                f"include: cannot find '{filename}'", context_tok,
-            )
-        candidates: list[Path] = []
-        current = Path(context_tok.source)
-        if current.is_file():
-            candidates.append(current.parent / filename)
-        candidates.extend(d / filename for d in self.include_dirs)
-        for candidate in candidates:
-            if candidate.is_file():
-                return candidate.resolve()
-        searched = "\n  ".join(str(p) for p in candidates) or "(no search paths)"
-        raise CompileError(
-            f"include: cannot find '{filename}'; searched:\n  {searched}",
-            context_tok,
-        )
+    def _resolve_include_path(self, filename: str, context_tok: Token) -> Path:
+        try:
+            return self.include_resolver.resolve(filename, Path(context_tok.source))
+        except IncludeNotFound as e:
+            raise CompileError(str(e), context_tok) from e
 
     def _include_file(self, path: Path) -> None:
-        self.included_files.add(path)
+        self.include_resolver.mark_seen(path)
         text = path.read_text()
         new_tokens = tokenize(text, source=str(path))
-        self._tokens[self._token_pos:self._token_pos] = new_tokens
+        self._tokens.splice_in(new_tokens)
 
     # --- build ---
 
@@ -719,13 +604,13 @@ class Compiler:
             path = Path(__file__).resolve().parent.parent.parent / "stdlib" / "core.fs"
         else:
             path = Path(path)
-        self.included_files.add(path.resolve())
+        self.include_resolver.mark_seen(path.resolve())
         self.compile_source(path.read_text(), source=str(path))
 
     def compile_main_call(self) -> None:
         if "main" not in self.words:
             raise CompileError("no 'main' word defined")
-        self._flush_pending_strings()
+        self.string_pool.flush(self.asm)
         main_body_addr = self.asm.here
         self.asm.word(self.words["main"].address)
         halt_addr = self.words["halt"].address
@@ -769,18 +654,6 @@ class Compiler:
         return addrs
 
 
-def _fixup_offset(fixup: Any) -> int:
-    if hasattr(fixup, "offset"):
-        return fixup.offset
-    return fixup[0]
-
-
-def _source_entry_addr(entry: Any) -> int:
-    if hasattr(entry, "address"):
-        return entry.address
-    return entry[0]
-
-
 def parse_number(text: str) -> int:
     if text.startswith("$"):
         return int(text[1:], 16)
@@ -793,8 +666,8 @@ def compile_and_run(
     source: str,
     origin: int = DEFAULT_ORIGIN,
     optimize: bool = True,
-    inline_next: bool = False,
-    inline_primitives: bool = False,
+    inline_next: bool = True,
+    inline_primitives: bool = True,
 ) -> list[int]:
     from zt.sim import Z80, _read_data_stack
 
@@ -822,8 +695,8 @@ def compile_and_run_with_output(
     max_ticks: int = 10_000_000,
     stdlib: bool = False,
     optimize: bool = True,
-    inline_next: bool = False,
-    inline_primitives: bool = False,
+    inline_next: bool = True,
+    inline_primitives: bool = True,
 ) -> tuple[list[int], bytes]:
     from zt.sim import (
         SPECTRUM_FONT_BASE,
@@ -867,8 +740,8 @@ def build_from_source(
     data_stack_top: int = DEFAULT_DATA_STACK_TOP,
     return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
     optimize: bool = True,
-    inline_next: bool = False,
-    inline_primitives: bool = False,
+    inline_next: bool = True,
+    inline_primitives: bool = True,
 ) -> tuple[bytes, Compiler]:
     c = Compiler(
         origin=origin, data_stack_top=data_stack_top,

@@ -154,7 +154,7 @@ class TestPlanNegativeCases:
 
 
 def _asm_with_next_at_zero() -> Asm:
-    a = Asm(0x0000)
+    a = Asm(0x0000, inline_next=False)
     a.label("NEXT")
     return a
 

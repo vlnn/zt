@@ -300,7 +300,8 @@ class TestCliInlinePrimitivesFlag:
         src = self._write_source(tmp_path)
         plain = tmp_path / "plain.bin"
         inlined = tmp_path / "inlined.bin"
-        _run_cli("build", str(src), "-o", str(plain), "--no-stdlib")
+        _run_cli("build", str(src), "-o", str(plain),
+                 "--no-stdlib", "--no-inline-primitives")
         _run_cli("build", str(src), "-o", str(inlined),
                  "--no-stdlib", "--inline-primitives")
         assert plain.read_bytes() != inlined.read_bytes(), (

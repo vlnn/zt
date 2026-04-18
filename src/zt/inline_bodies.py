@@ -95,7 +95,7 @@ def has_mid_body_dispatch(creator: Callable) -> bool:
 def has_absolute_jump_in_body(creator: Callable) -> bool:
     if _is_dispatcher(creator):
         return False
-    a = Asm(0x0000)
+    a = Asm(0x0000, inline_next=False)
     a.label("NEXT")
     try:
         creator(a)
@@ -191,7 +191,7 @@ def _build_name_to_key_map(
 
 
 def _labels_of(creator: Callable) -> dict[str, int] | None:
-    a = Asm(0x0000)
+    a = Asm(0x0000, inline_next=False)
     a.label("NEXT")
     creator(a)
     try:
@@ -206,7 +206,7 @@ def _is_dispatcher(creator: Callable) -> bool:
 
 
 def _try_assemble(creator: Callable) -> bytes | None:
-    a = Asm(0x0000)
+    a = Asm(0x0000, inline_next=False)
     a.label("NEXT")
     creator(a)
     try:

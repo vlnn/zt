@@ -111,7 +111,9 @@ class TestSpeedupGeneralisesAcrossInlinableColons:
 class TestOrthogonalitySpeedup:
 
     def test_inline_primitives_reduces_ticks_on_top_of_inline_next(self):
-        next_only = _ticks(_BENCH_SOURCE, inline_next=True)
+        next_only = _ticks(
+            _BENCH_SOURCE, inline_next=True, inline_primitives=False,
+        )
         both = _ticks(
             _BENCH_SOURCE, inline_next=True, inline_primitives=True,
         )
@@ -121,8 +123,12 @@ class TestOrthogonalitySpeedup:
         )
 
     def test_inline_primitives_reduces_ticks_with_optimizer_off(self):
-        threaded = _ticks(_BENCH_SOURCE, optimize=False)
-        inlined = _ticks(_BENCH_SOURCE, optimize=False, inline_primitives=True)
+        threaded = _ticks(
+            _BENCH_SOURCE, optimize=False, inline_primitives=False,
+        )
+        inlined = _ticks(
+            _BENCH_SOURCE, optimize=False, inline_primitives=True,
+        )
         assert inlined < threaded, (
             "inline_primitives should still help when peephole optimizer is off; "
             f"threaded={threaded}, inlined={inlined}"

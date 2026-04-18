@@ -12,10 +12,10 @@ from zt.compiler import Compiler, compile_and_run
 
 class TestCompilerFlag:
 
-    def test_default_is_disabled(self):
+    def test_default_is_enabled(self):
         c = Compiler()
-        assert c.inline_primitives is False, \
-            "Compiler should default to inline_primitives=False to preserve existing behaviour"
+        assert c.inline_primitives is True, \
+            "Compiler should default to inline_primitives=True for best runtime performance"
 
     def test_flag_accessible_on_instance(self):
         c = Compiler(inline_primitives=True)
@@ -77,7 +77,7 @@ class TestBytesAtColonStart:
             "step 3 is shallow; calling another colon must not be inlined"
 
     def test_empty_colon_becomes_just_dispatch(self):
-        c = Compiler(inline_primitives=True)
+        c = Compiler(inline_primitives=True, inline_next=False)
         c.compile_source(": nothing ;")
         assert _bytes_at_word(c, "nothing", 1)[0] == 0xC3, \
             "an empty inlined colon should collapse to a single JP NEXT (0xC3)"

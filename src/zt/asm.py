@@ -13,7 +13,7 @@ class Asm:
     labels: dict[str, int] = field(default_factory=dict)
     fixups: list[tuple[int, str]] = field(default_factory=list)
     rel_fixups: list[tuple[int, str]] = field(default_factory=list)
-    inline_next: bool = False
+    inline_next: bool = True
 
     @property
     def here(self) -> int:

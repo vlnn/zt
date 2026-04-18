@@ -87,7 +87,7 @@ class TestMaxPatternLength:
 
 
 def _asm_with_next() -> Asm:
-    a = Asm(0x8000)
+    a = Asm(0x8000, inline_next=False)
     a.label("NEXT")
     return a
 

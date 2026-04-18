@@ -78,13 +78,13 @@ class TestEmitNextBody:
 
 class TestAsmDispatch:
 
-    def test_default_flag_is_false(self):
+    def test_default_flag_is_true(self):
         a = Asm(0x8000)
-        assert a.inline_next is False, \
-            "Asm.inline_next should default to False to preserve current behaviour"
+        assert a.inline_next is True, \
+            "Asm.inline_next should default to True for best runtime performance"
 
     def test_dispatch_without_inlining_emits_jp_next(self):
-        a = Asm(0x8000)
+        a = Asm(0x8000, inline_next=False)
         a.label("NEXT")
         a.dispatch()
         out = a.resolve()
@@ -143,7 +143,7 @@ def test_primitive_ends_with_inlined_next_when_enabled(creator):
 @pytest.mark.parametrize("creator", DISPATCH_TAIL_PRIMITIVES,
                          ids=lambda c: c.__name__)
 def test_primitive_ends_with_jp_next_when_disabled(creator):
-    a = Asm(0x8000)
+    a = Asm(0x8000, inline_next=False)
     a.label("NEXT")
     creator(a)
     out = a.resolve()
@@ -177,10 +177,10 @@ class TestImageSizeGrowsWithInlining:
 
 class TestCompilerWiring:
 
-    def test_compiler_defaults_to_non_inlined(self):
+    def test_compiler_defaults_to_inlined(self):
         c = Compiler()
-        assert c.asm.inline_next is False, \
-            "Compiler should default to inline_next=False to preserve existing behaviour"
+        assert c.asm.inline_next is True, \
+            "Compiler should default to inline_next=True for best runtime performance"
 
     def test_compiler_threads_flag_to_asm(self):
         c = Compiler(inline_next=True)

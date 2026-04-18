@@ -6,7 +6,7 @@ from zt.compiler import Compiler, CompileError, Word, compile_and_run
 
 
 def make_compiler(origin: int = 0x8000) -> Compiler:
-    return Compiler(origin=origin)
+    return Compiler(origin=origin, inline_primitives=False, inline_next=False)
 
 
 class TestWordDataclass:

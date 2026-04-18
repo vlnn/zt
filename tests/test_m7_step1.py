@@ -7,7 +7,7 @@ from zt.debug import SourceEntry
 
 
 def make_compiler() -> Compiler:
-    return Compiler()
+    return Compiler(inline_primitives=False, inline_next=False)
 
 
 @pytest.fixture

@@ -61,13 +61,20 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
     build.add_argument("--no-optimize", dest="optimize", action="store_false",
                        default=True, help="disable peephole optimizer")
     build.add_argument("--inline-next", dest="inline_next", action="store_true",
-                       default=False,
+                       default=True,
                        help="inline the NEXT dispatch body into each primitive "
-                            "(~10%% speedup, ~500 bytes larger image)")
+                            "(default; ~10%% speedup, ~500 bytes larger image)")
+    build.add_argument("--no-inline-next", dest="inline_next",
+                       action="store_false",
+                       help="do not inline the NEXT dispatch body")
     build.add_argument("--inline-primitives", dest="inline_primitives",
-                       action="store_true", default=False,
+                       action="store_true", default=True,
                        help="inline pure-primitive colons by replacing "
-                            "the CALL DOCOL prologue with pasted primitive bytes")
+                            "the CALL DOCOL prologue with pasted primitive bytes "
+                            "(default)")
+    build.add_argument("--no-inline-primitives", dest="inline_primitives",
+                       action="store_false",
+                       help="do not inline pure-primitive colons")
     build.add_argument("--profile", dest="profile", action="store_true", default=False,
                        help="run the built image in the simulator and write a profile report")
     build.add_argument("--profile-output", type=Path, default=None, dest="profile_output",
