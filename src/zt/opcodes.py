@@ -28,14 +28,17 @@ def _no(mnemonic: str, *encoding: int) -> OpcodeSpec:
 
 
 def _n(mnemonic: str, *encoding: int) -> OpcodeSpec:
+    """8-bit immediate (one byte)"""
     return OpcodeSpec(mnemonic=mnemonic, encoding=tuple(encoding), operand="n")
 
 
 def _d(mnemonic: str, *encoding: int) -> OpcodeSpec:
+    """8-bit signed"""
     return OpcodeSpec(mnemonic=mnemonic, encoding=tuple(encoding), operand="d")
 
 
 def _nn(mnemonic: str, *encoding: int) -> OpcodeSpec:
+    """16-bit immediate / absolute address (two bytes, little-endian)"""
     return OpcodeSpec(mnemonic=mnemonic, encoding=tuple(encoding), operand="nn")
 
 
@@ -194,6 +197,7 @@ _BY_ENCODING_WITH_OPERAND: dict[tuple[int, ...], OpcodeSpec] = {
 
 
 def decode(memory: bytes | bytearray, pc: int) -> tuple[OpcodeSpec, int]:
+    """Return (spec, next_pc) for the instruction at `pc`, preferring 2-byte prefixed encodings."""
     for encoding_len in (2, 1):
         if pc + encoding_len > len(memory):
             continue

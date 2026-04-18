@@ -10,9 +10,7 @@
     11 1 do i . loop cr ;
 
 : hello
-    7 0 cls
     banner
-    ." counting: " count-to-ten
-    ." goodbye!" cr ;
+    ." counting: " count-to-ten ;
 
-: main  hello begin again ;
+: main 7 0 cls begin hello again ;
