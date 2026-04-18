@@ -6,6 +6,11 @@ from typing import Any, Callable, Literal
 
 from zt.asm import Asm
 from zt.debug import SourceEntry
+from zt.inline_bodies import (
+    InlineContext,
+    emit_inline_plan,
+    plan_colon_inlining,
+)
 from zt.peephole import (
     DEFAULT_RULES,
     PatternElement,
@@ -53,6 +58,7 @@ class Compiler:
         include_dirs: list[Path] | None = None,
         optimize: bool = True,
         inline_next: bool = False,
+        inline_primitives: bool = False,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
@@ -75,6 +81,8 @@ class Compiler:
         self.warnings: list[str] = []
         self.optimize: bool = optimize
         self.inline_next: bool = inline_next
+        self.inline_primitives: bool = inline_primitives
+        self._inline_context: InlineContext | None = None
         self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
         self._register_primitives()
         self._register_directives()
@@ -89,6 +97,8 @@ class Compiler:
             lower = name.lower()
             if lower not in self.words:
                 self.words[lower] = Word(name=lower, address=addr, kind="prim")
+        if self.inline_primitives:
+            self._inline_context = InlineContext.build(PRIMITIVES)
 
     def _register_directives(self) -> None:
         for name, action in [
@@ -273,6 +283,46 @@ class Compiler:
         self._current_body = None
         self.state = "interpret"
         self.current_word = None
+        self._try_inline_colon(word)
+
+    def _try_inline_colon(self, word: Word) -> None:
+        if self._inline_context is None:
+            return
+        plan = plan_colon_inlining(word, self.words, self._inline_context)
+        if plan is None:
+            return
+        self._rewind_to_word_start(word)
+        emit_inline_plan(self.asm, plan, self._inline_context)
+
+    def _rewind_to_word_start(self, word: Word) -> None:
+        code_offset = word.address - self.origin
+        self._truncate_asm_code(code_offset)
+        self._drop_fixups_after(code_offset)
+        self._drop_body_refs_after(code_offset)
+        self._drop_source_entries_after(word.address)
+
+    def _truncate_asm_code(self, code_offset: int) -> None:
+        del self.asm.code[code_offset:]
+
+    def _drop_fixups_after(self, code_offset: int) -> None:
+        self.asm.fixups = [
+            f for f in self.asm.fixups if _fixup_offset(f) < code_offset
+        ]
+        rel = getattr(self.asm, "rel_fixups", None)
+        if rel is not None:
+            self.asm.rel_fixups = [
+                f for f in rel if _fixup_offset(f) < code_offset
+            ]
+
+    def _drop_body_refs_after(self, code_offset: int) -> None:
+        self._body_cell_refs = {
+            o: r for o, r in self._body_cell_refs.items() if o < code_offset
+        }
+
+    def _drop_source_entries_after(self, address: int) -> None:
+        self.source_map = [
+            e for e in self.source_map if _source_entry_addr(e) < address
+        ]
 
     def _compile_literal(self, value: int, tok: Token) -> None:
         lit_addr = self.words["lit"].address
@@ -658,6 +708,18 @@ class Compiler:
             body_list[body_idx] = low | (high << 8)
 
 
+def _fixup_offset(fixup: Any) -> int:
+    if hasattr(fixup, "offset"):
+        return fixup.offset
+    return fixup[0]
+
+
+def _source_entry_addr(entry: Any) -> int:
+    if hasattr(entry, "address"):
+        return entry.address
+    return entry[0]
+
+
 def parse_number(text: str) -> int:
     if text.startswith("$"):
         return int(text[1:], 16)
@@ -671,10 +733,14 @@ def compile_and_run(
     origin: int = DEFAULT_ORIGIN,
     optimize: bool = True,
     inline_next: bool = False,
+    inline_primitives: bool = False,
 ) -> list[int]:
     from zt.sim import Z80, _read_data_stack
 
-    c = Compiler(origin=origin, optimize=optimize, inline_next=inline_next)
+    c = Compiler(
+        origin=origin, optimize=optimize,
+        inline_next=inline_next, inline_primitives=inline_primitives,
+    )
     c.compile_source(source)
     c.compile_main_call()
     image = c.build()
@@ -696,6 +762,7 @@ def compile_and_run_with_output(
     stdlib: bool = False,
     optimize: bool = True,
     inline_next: bool = False,
+    inline_primitives: bool = False,
 ) -> tuple[list[int], bytes]:
     from zt.sim import (
         SPECTRUM_FONT_BASE,
@@ -705,7 +772,10 @@ def compile_and_run_with_output(
         decode_screen_text,
     )
 
-    c = Compiler(origin=origin, optimize=optimize, inline_next=inline_next)
+    c = Compiler(
+        origin=origin, optimize=optimize,
+        inline_next=inline_next, inline_primitives=inline_primitives,
+    )
     if stdlib:
         c.include_stdlib()
     c.compile_source(source)
@@ -737,10 +807,13 @@ def build_from_source(
     return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
     optimize: bool = True,
     inline_next: bool = False,
+    inline_primitives: bool = False,
 ) -> tuple[bytes, Compiler]:
-    c = Compiler(origin=origin, data_stack_top=data_stack_top,
-                 return_stack_top=return_stack_top, optimize=optimize,
-                 inline_next=inline_next)
+    c = Compiler(
+        origin=origin, data_stack_top=data_stack_top,
+        return_stack_top=return_stack_top, optimize=optimize,
+        inline_next=inline_next, inline_primitives=inline_primitives,
+    )
     c.compile_source(source)
     c.compile_main_call()
     return c.build(), c
