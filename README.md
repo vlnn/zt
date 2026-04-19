@@ -1,3 +1,6 @@
+[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
+
+
 # zt — Z80 Forth cross-compiler for the ZX Spectrum
 
 A Python-hosted toolchain that takes a `.fs` Forth source file and emits a Spectrum
@@ -34,27 +37,13 @@ make examples        # build build/*.sna from every example
 
 ### Demo
 
-The plasma example scrolling through the attribute area, and a short reaction
-clip of the redraw loop under load:
+The plasma example, scrolling through the attribute area:
 
-<table>
-  <tr>
-    <td>
-      <video src="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9" controls muted loop height="300">
-        <a href="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9">plasma.mp4</a>
-      </video>
-    </td>
-    <td>
-      <video src="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6" controls muted loop height="300">
-        <a href="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6">reaction.mp4</a>
-      </video>
-    </td>
-  </tr>
-  <tr>
-    <td align="center"><sub><code>examples/plasma</code></sub></td>
-    <td align="center"><sub>reaction loop</sub></td>
-  </tr>
-</table>
+<video src="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9" controls muted loop height="280"></video>
+
+A short reaction clip of the redraw loop under load:
+
+<video src="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6" controls muted loop height="280"></video>
 
 ### Hello world
 
@@ -342,17 +331,16 @@ ladder and is both faster (one list index vs. walking a chain of comparisons)
 and easier to extend — adding a new opcode is one `reg(op, handler, cost)`
 line in `_build_ops_table`.
 
-The simulator hooks `CALL $15E6` and `CALL $15E9` to synthesize `KEY` and
-`KEY?` behaviour. This is a convenient shortcut for tests but a real-hardware
-hazard: those two addresses are arbitrary ROM offsets and calling them on a
-48K will do something between "nothing useful" and "lock up." See
-`COMPILER-ROADMAP.md` §1.1 for the fix.
+Keyboard input goes through the real Spectrum matrix: `KEY`, `KEY?`, and
+`KEY-STATE` are Z80 primitives that issue `IN A,($FE)` across the eight
+half-rows and decode the result into an ASCII code, a pressed/not-pressed
+flag, or a per-key state test. The simulator intercepts reads from port
+`$FE` and synthesizes matrix responses from its `input_buffer`, so tests
+can feed key presses as Python strings and the exact same compiled bytes
+run unchanged on real hardware.
 
 ### Limitations worth knowing about
 
-- **Keyboard on real hardware doesn't work yet.** `KEY` and `KEY?` are
-  simulator stubs. You can run anything that prints or draws, but anything
-  that reads input only works in the simulator.
 - **No sound.** No beeper click, no AY.
 - **No sprites.** `EMIT` renders characters through the ROM font, and `CMOVE`
   can blit bytes, but there's no pre-composed sprite primitive or
