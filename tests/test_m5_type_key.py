@@ -144,55 +144,98 @@ class TestUModPrimitive:
 
 class TestKeyPrimitive:
 
-    def test_key_empty_buffer_returns_zero(self, fm):
+    def test_key_no_keys_pressed_returns_zero(self, fm):
         result = fm.run([fm.label("KEY")])
         assert result.data_stack == [0], (
-            "KEY with no input should return 0"
+            "KEY with no keys pressed should return 0"
         )
 
-    def test_key_reads_one_char(self, fm):
+    @pytest.mark.parametrize("ch", [
+        "Z", "X", "C", "V",
+        "A", "S", "D", "F", "G",
+        "Q", "W", "E", "R", "T",
+        "1", "2", "3", "4", "5",
+        "0", "9", "8", "7", "6",
+        "P", "O", "I", "U", "Y",
+        "L", "K", "J", "H",
+        "M", "N", "B",
+        " ", "\r",
+    ])
+    def test_key_decodes_each_spectrum_key(self, fm, ch):
+        result = fm.run([fm.label("KEY")], pressed_keys={ord(ch)})
+        assert result.data_stack == [ord(ch)], (
+            f"KEY with {ch!r} held should return its ASCII code"
+        )
+
+    def test_key_via_input_buffer_shim(self, fm):
         result = fm.run([fm.label("KEY")], input_buffer=b"A")
         assert result.data_stack == [65], (
-            "KEY should return byte value of input char 'A'"
-        )
-
-    def test_key_reads_multiple_chars(self, fm):
-        result = fm.run(
-            [fm.label("KEY"), fm.label("KEY"), fm.label("KEY")],
-            input_buffer=b"XYZ",
-        )
-        assert result.data_stack == [88, 89, 90], (
-            "three KEYs should return X, Y, Z in order"
-        )
-
-    def test_key_returns_zero_after_exhausted(self, fm):
-        result = fm.run([fm.label("KEY"), fm.label("KEY")], input_buffer=b"A")
-        assert result.data_stack == [65, 0], (
-            "second KEY with 1-char buffer should return 0"
+            "KEY via input_buffer shim should read the held char"
         )
 
 
 class TestKeyQueryPrimitive:
 
-    def test_key_query_empty_buffer_is_false(self, fm):
+    def test_key_query_no_keys_pressed_is_false(self, fm):
         result = fm.run([fm.label("KEY_QUERY")])
         assert result.data_stack == [0], (
-            "KEY? with no input should push 0 (false)"
+            "KEY? with no keys pressed should push 0"
         )
 
-    def test_key_query_with_buffer_is_true(self, fm):
+    def test_key_query_any_key_pressed_is_true(self, fm):
+        result = fm.run([fm.label("KEY_QUERY")], pressed_keys={ord("A")})
+        assert result.data_stack == [0xFFFF], (
+            "KEY? with any key held should push -1"
+        )
+
+    def test_key_query_via_input_buffer_shim(self, fm):
         result = fm.run([fm.label("KEY_QUERY")], input_buffer=b"A")
         assert result.data_stack == [0xFFFF], (
-            "KEY? with pending input should push -1 (0xFFFF)"
+            "KEY? via input_buffer shim should report input available"
         )
 
-    def test_key_query_then_key(self, fm):
+
+class TestKeyStatePrimitive:
+
+    def test_key_state_unpressed_is_false(self, fm):
         result = fm.run(
-            [fm.label("KEY_QUERY"), fm.label("KEY"), fm.label("KEY_QUERY")],
-            input_buffer=b"A",
+            [fm.label("LIT"), ord("A"), fm.label("KEY_STATE")],
         )
-        assert result.data_stack == [0xFFFF, 65, 0], (
-            "KEY? KEY KEY? on 1-char buffer should give (-1, 'A', 0)"
+        assert result.data_stack == [0], (
+            "KEY-STATE for an unpressed key should return 0"
+        )
+
+    def test_key_state_pressed_is_true(self, fm):
+        result = fm.run(
+            [fm.label("LIT"), ord("A"), fm.label("KEY_STATE")],
+            pressed_keys={ord("A")},
+        )
+        assert result.data_stack == [0xFFFF], (
+            "KEY-STATE for a held key should return -1"
+        )
+
+    def test_key_state_detects_simultaneous_presses(self, fm):
+        result = fm.run(
+            [
+                fm.label("LIT"), ord("A"), fm.label("KEY_STATE"),
+                fm.label("LIT"), ord("S"), fm.label("KEY_STATE"),
+                fm.label("LIT"), ord("D"), fm.label("KEY_STATE"),
+            ],
+            pressed_keys={ord("A"), ord("D")},
+        )
+        assert result.data_stack == [0xFFFF, 0, 0xFFFF], (
+            "KEY-STATE should report A and D as held and S as not held, "
+            "proving multiple simultaneous keypresses are detectable"
+        )
+
+    def test_key_state_for_unknown_ascii_is_false(self, fm):
+        result = fm.run(
+            [fm.label("LIT"), ord("!"), fm.label("KEY_STATE")],
+            pressed_keys={ord("A")},
+        )
+        assert result.data_stack == [0], (
+            "KEY-STATE for a character not on the Spectrum keyboard should "
+            "return 0 even when other keys are held"
         )
 
 

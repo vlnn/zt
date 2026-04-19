@@ -483,3 +483,5 @@ def test_multiply_does_not_preserve_bc():
 def test_u_mod_div_does_not_preserve_bc():
     out = _compile_primitive(create_u_mod_div)
     assert 0xC5 not in out[:6], "U_MOD_DIV should not PUSH BC (BC is caller-clobber)"
+
+

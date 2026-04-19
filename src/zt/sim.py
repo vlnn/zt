@@ -13,8 +13,39 @@ SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_FONT_BASE = 0x3D00
 SPECTRUM_SCREEN_BASE = 0x4000
 SPECTRUM_ATTR_BASE = 0x5800
-SPECTRUM_KEY_ADDR = 0x15E6
-SPECTRUM_KEY_QUERY_ADDR = 0x15E9
+SPECTRUM_KEYBOARD_PORT_LOW = 0xFE
+
+SPECTRUM_KEY_LAYOUT: dict[int, tuple[int, int]] = {
+    0x01: (0, 0), ord("Z"): (0, 1), ord("X"): (0, 2), ord("C"): (0, 3), ord("V"): (0, 4),
+    ord("A"): (1, 0), ord("S"): (1, 1), ord("D"): (1, 2), ord("F"): (1, 3), ord("G"): (1, 4),
+    ord("Q"): (2, 0), ord("W"): (2, 1), ord("E"): (2, 2), ord("R"): (2, 3), ord("T"): (2, 4),
+    ord("1"): (3, 0), ord("2"): (3, 1), ord("3"): (3, 2), ord("4"): (3, 3), ord("5"): (3, 4),
+    ord("0"): (4, 0), ord("9"): (4, 1), ord("8"): (4, 2), ord("7"): (4, 3), ord("6"): (4, 4),
+    ord("P"): (5, 0), ord("O"): (5, 1), ord("I"): (5, 2), ord("U"): (5, 3), ord("Y"): (5, 4),
+    0x0D:      (6, 0), ord("L"): (6, 1), ord("K"): (6, 2), ord("J"): (6, 3), ord("H"): (6, 4),
+    ord(" "): (7, 0), 0x02:      (7, 1), ord("M"): (7, 2), ord("N"): (7, 3), ord("B"): (7, 4),
+}
+
+INPUT_BUFFER_PRESSED_READS = 12
+INPUT_BUFFER_RELEASED_READS = 4
+
+
+def _normalize_ascii(byte: int) -> int:
+    if ord("a") <= byte <= ord("z"):
+        return byte - 32
+    return byte
+
+
+def _keyboard_port_byte(pressed_keys: set[int], high_byte: int) -> int:
+    bits = 0x1F
+    for ascii_code in pressed_keys:
+        location = SPECTRUM_KEY_LAYOUT.get(_normalize_ascii(ascii_code))
+        if location is None:
+            continue
+        row, col = location
+        if (high_byte & (1 << row)) == 0:
+            bits &= ~(1 << col)
+    return (bits & 0x1F) | 0xE0
 
 DEFAULT_ORIGIN = 0x8000
 DEFAULT_DATA_STACK_TOP = 0xFF00
@@ -79,6 +110,7 @@ class Z80:
         "mem", "pc", "sp", "a", "f", "b", "c", "d", "e", "h", "l",
         "ix", "iy", "halted", "iff", "_outputs", "_ticks", "_t_states",
         "input_buffer", "_input_pos", "_ops", "_op_costs",
+        "pressed_keys", "_port_reads_at_pos",
     )
 
     def __init__(self) -> None:
@@ -94,6 +126,8 @@ class Z80:
         self._t_states = 0
         self.input_buffer: bytearray = bytearray()
         self._input_pos: int = 0
+        self.pressed_keys: set[int] = set()
+        self._port_reads_at_pos: int = 0
         self._ops, self._op_costs = self._build_ops_table()
 
     @property
@@ -271,6 +305,10 @@ class Z80:
 
         reg(0x24, self._op_inc_h, 4)
         reg(0x3C, self._op_inc_a, 4)
+        reg(0x04, self._op_inc_b, 4)
+        reg(0x14, self._op_inc_d, 4)
+        reg(0x05, self._op_dec_b, 4)
+        reg(0xD6, self._op_sub_n, 7)
         reg(0x3D, self._op_dec_a, 4)
         reg(0x1D, self._op_dec_e, 4)
 
@@ -282,6 +320,7 @@ class Z80:
         reg(0xFE, self._op_cp_n, 7)
 
         reg(0x0F, self._op_rrca, 4)
+        reg(0x07, self._op_rlca, 4)
         reg(0x2F, self._op_cpl, 4)
         reg(0x37, self._op_scf, 4)
 
@@ -302,6 +341,7 @@ class Z80:
         reg(0xC9, self._op_ret, 10)
 
         reg(0xD3, self._op_out_n_a, 11)
+        reg(0xDB, self._op_in_a_n, 11)
         reg(0xF3, self._op_di, 4)
         reg(0xFB, self._op_ei, 4)
 
@@ -321,6 +361,8 @@ class Z80:
         pass
 
     def _op_halt(self, op: int) -> None:
+        if self.iff:
+            return
         self.halted = True
 
     def _op_ld_bc_nn(self, op: int) -> None:
@@ -418,6 +460,19 @@ class Z80:
     def _op_inc_a(self, op: int) -> None:
         self.a = self._inc8(self.a)
 
+    def _op_inc_b(self, op: int) -> None:
+        self.b = self._inc8(self.b)
+
+    def _op_inc_d(self, op: int) -> None:
+        self.d = self._inc8(self.d)
+
+    def _op_dec_b(self, op: int) -> None:
+        self.b = self._dec8(self.b)
+
+    def _op_sub_n(self, op: int) -> None:
+        n = self._fetch()
+        self.a = self._sub8(self.a, n)
+
     def _op_dec_a(self, op: int) -> None:
         self.a = self._dec8(self.a)
 
@@ -453,6 +508,11 @@ class Z80:
     def _op_rrca(self, op: int) -> None:
         c = self.a & 1
         self.a = ((self.a >> 1) | (c << 7)) & 0xFF
+        self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if c else 0)
+
+    def _op_rlca(self, op: int) -> None:
+        c = (self.a >> 7) & 1
+        self.a = ((self.a << 1) | c) & 0xFF
         self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if c else 0)
 
     def _op_cpl(self, op: int) -> None:
@@ -506,13 +566,8 @@ class Z80:
 
     def _op_call_nn(self, op: int) -> None:
         addr = self._fetch_word()
-        if addr == SPECTRUM_KEY_ADDR:
-            self._hook_key()
-        elif addr == SPECTRUM_KEY_QUERY_ADDR:
-            self._hook_key_query()
-        else:
-            self._push(self.pc)
-            self.pc = addr
+        self._push(self.pc)
+        self.pc = addr
 
     def _op_ret(self, op: int) -> None:
         self.pc = self._pop()
@@ -520,6 +575,10 @@ class Z80:
     def _op_out_n_a(self, op: int) -> None:
         port = self._fetch()
         self._outputs.append((port | (self.a << 8), self.a))
+
+    def _op_in_a_n(self, op: int) -> None:
+        n = self._fetch()
+        self.a = self._read_port((self.a << 8) | n)
 
     def _op_di(self, op: int) -> None:
         self.iff = False
@@ -539,15 +598,27 @@ class Z80:
     def _op_fd_prefix(self, op: int) -> None:
         self._exec_ix_iy(lambda: self.iy, self._set_iy)
 
-    def _hook_key(self) -> None:
-        if self._input_pos < len(self.input_buffer):
-            self.a = self.input_buffer[self._input_pos]
-            self._input_pos += 1
-        else:
-            self.a = 0
+    def _read_port(self, port: int) -> int:
+        if (port & 0xFF) != SPECTRUM_KEYBOARD_PORT_LOW:
+            return 0xFF
+        keys = self._current_pressed_keys()
+        return _keyboard_port_byte(keys, (port >> 8) & 0xFF)
 
-    def _hook_key_query(self) -> None:
-        self.a = 0xFF if self._input_pos < len(self.input_buffer) else 0x00
+    def _current_pressed_keys(self) -> set[int]:
+        if self.pressed_keys:
+            return self.pressed_keys
+        if self._input_pos >= len(self.input_buffer):
+            return set()
+        cycle = INPUT_BUFFER_PRESSED_READS + INPUT_BUFFER_RELEASED_READS
+        phase = self._port_reads_at_pos
+        self._port_reads_at_pos += 1
+        if self._port_reads_at_pos >= cycle:
+            self._port_reads_at_pos = 0
+            self._input_pos += 1
+        if phase < INPUT_BUFFER_PRESSED_READS:
+            ch = self.input_buffer[self._input_pos if phase < cycle else 0]
+            return {_normalize_ascii(ch)}
+        return set()
 
     def _add_hl(self, v: int) -> None:
         r = self.hl + v
@@ -701,12 +772,13 @@ class ForthMachine:
         initial_stack: list[int] | None = None,
         max_ticks: int = DEFAULT_MAX_TICKS,
         input_buffer: bytes = b"",
+        pressed_keys: set[int] | None = None,
         profile: bool = False,
     ) -> ForthResult:
         body_bytes, body_addr, local_labels = self._build_body(cells)
         return self._execute(
             body_bytes, body_addr, initial_stack or [], max_ticks, input_buffer,
-            local_labels=local_labels, profile=profile,
+            local_labels=local_labels, profile=profile, pressed_keys=pressed_keys,
         )
 
     def run_colon(
@@ -776,12 +848,15 @@ class ForthMachine:
         input_buffer: bytes = b"",
         local_labels: dict[str, int] | None = None,
         profile: bool = False,
+        pressed_keys: set[int] | None = None,
     ) -> ForthResult:
         m = Z80()
         m.load(self.origin, self._prim_code)
         m.load(SPECTRUM_FONT_BASE, TEST_FONT)
         m.load(self._body_base, body_bytes)
         m.input_buffer = bytearray(input_buffer)
+        if pressed_keys is not None:
+            m.pressed_keys = set(pressed_keys)
 
         startup_addr = self._body_base + len(body_bytes)
         startup = self._emit_startup(body_addr, initial_stack, startup_addr)

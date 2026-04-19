@@ -720,6 +720,7 @@ def compile_and_run_with_output(
     source: str,
     origin: int = DEFAULT_ORIGIN,
     input_buffer: bytes = b"",
+    pressed_keys: set[int] | None = None,
     max_ticks: int = 10_000_000,
     stdlib: bool = False,
     optimize: bool = True,
@@ -748,6 +749,8 @@ def compile_and_run_with_output(
     m.load(origin, image)
     m.load(SPECTRUM_FONT_BASE, TEST_FONT)
     m.input_buffer = bytearray(input_buffer)
+    if pressed_keys is not None:
+        m.pressed_keys = set(pressed_keys)
     m.pc = c.words["_start"].address
     m.run(max_ticks=max_ticks)
     if not m.halted:

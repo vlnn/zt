@@ -6,9 +6,8 @@ from __future__ import annotations
 from zt.assemble.asm import Asm
 
 SPECTRUM_BORDER_PORT = 0xFE
+SPECTRUM_KEYBOARD_PORT_LOW = 0xFE
 EMIT_FONT_BASE_MINUS_0X100 = 0x3C00
-SPECTRUM_KEY_ADDR = 0x15E6
-SPECTRUM_KEY_QUERY_ADDR = 0x15E9
 
 
 def create_next(a: Asm) -> None:
@@ -855,20 +854,126 @@ def create_key(a: Asm) -> None:
     a.label("KEY")
     a.alias("key", "KEY")
     a.push_hl()
-    a.call(SPECTRUM_KEY_ADDR)
+    a.ld_d_n(0)
+    a.ld_e_n(0xFE)
+    a.label("_key_row")
+    a.ld_a_e()
+    a.in_a_n(SPECTRUM_KEYBOARD_PORT_LOW)
+    a.cpl()
+    a.and_n(0x1F)
+    a.jr_nz_to("_key_found")
+    a.inc_d()
+    a.ld_a_d()
+    a.cp_n(8)
+    a.jr_z_to("_key_none")
+    a.rlc_e()
+    a.jr_to("_key_row")
+    a.label("_key_none")
+    a.ld_hl_nn(0)
+    a.jr_to("_key_exit")
+    a.label("_key_found")
+    a.ld_b_n(0)
+    a.label("_key_bit")
+    a.rrca()
+    a.jr_c_to("_key_decode")
+    a.inc_b()
+    a.jr_to("_key_bit")
+    a.label("_key_decode")
+    a.ld_a_d()
+    a.add_a_a()
+    a.add_a_d()
+    a.add_a_d()
+    a.add_a_d()
+    a.add_a_b()
+    a.ld_e_a()
+    a.ld_d_n(0)
+    a.ld_hl_nn("_key_table")
+    a.add_hl_de()
+    a.ld_a_ind_hl()
     a.ld_l_a()
     a.ld_h_n(0)
+    a.label("_key_exit")
     a.dispatch()
+    a.label("_key_table")
+    for byte in _SPECTRUM_KEY_TABLE:
+        a.byte(byte)
 
 
 def create_key_query(a: Asm) -> None:
     a.label("KEY_QUERY")
     a.alias("key?", "KEY_QUERY")
     a.push_hl()
-    a.call(SPECTRUM_KEY_QUERY_ADDR)
-    a.ld_l_a()
-    a.ld_h_a()
+    a.ld_a_n(0)
+    a.in_a_n(SPECTRUM_KEYBOARD_PORT_LOW)
+    a.cpl()
+    a.and_n(0x1F)
+    a.ld_hl_nn(0)
+    a.jr_z_to("_kq_done")
+    a.ld_hl_nn(0xFFFF)
+    a.label("_kq_done")
     a.dispatch()
+
+
+def create_key_state(a: Asm) -> None:
+    a.label("KEY_STATE")
+    a.alias("key-state", "KEY_STATE")
+    a.ld_a_l()
+    a.ld_b_n(40)
+    a.ld_hl_nn("_key_table")
+    a.label("_ks_search")
+    a.cp_ind_hl()
+    a.jr_z_to("_ks_found")
+    a.inc_hl()
+    a.dec_b()
+    a.jr_nz_to("_ks_search")
+    a.ld_hl_nn(0)
+    a.jr_to("_ks_exit")
+    a.label("_ks_found")
+    a.ld_a_n(40)
+    a.sub_b()
+    a.ld_b_n(0)
+    a.label("_ks_div")
+    a.cp_n(5)
+    a.jr_c_to("_ks_div_done")
+    a.sub_n(5)
+    a.inc_b()
+    a.jr_to("_ks_div")
+    a.label("_ks_div_done")
+    a.ld_c_a()
+    a.ld_a_n(0xFE)
+    a.label("_ks_rot")
+    a.dec_b()
+    a.jp_m("_ks_read")
+    a.rlca()
+    a.jr_to("_ks_rot")
+    a.label("_ks_read")
+    a.in_a_n(SPECTRUM_KEYBOARD_PORT_LOW)
+    a.cpl()
+    a.ld_b_c()
+    a.label("_ks_shift")
+    a.dec_b()
+    a.jp_m("_ks_test")
+    a.rrca()
+    a.jr_to("_ks_shift")
+    a.label("_ks_test")
+    a.and_n(1)
+    a.ld_hl_nn(0)
+    a.jr_z_to("_ks_exit")
+    a.ld_hl_nn(0xFFFF)
+    a.label("_ks_exit")
+    a.dispatch()
+
+
+_SPECTRUM_KEY_TABLE: tuple[int, ...] = (
+    0x00, 0x5A, 0x58, 0x43, 0x56,
+    0x41, 0x53, 0x44, 0x46, 0x47,
+    0x51, 0x57, 0x45, 0x52, 0x54,
+    0x31, 0x32, 0x33, 0x34, 0x35,
+    0x30, 0x39, 0x38, 0x37, 0x36,
+    0x50, 0x4F, 0x49, 0x55, 0x59,
+    0x0D, 0x4C, 0x4B, 0x4A, 0x48,
+    0x20, 0x00, 0x4D, 0x4E, 0x42,
+)
 
 
 def create_u_mod_div(a: Asm) -> None:
@@ -1070,6 +1175,7 @@ PRIMITIVES = [
     create_type,
     create_key,
     create_key_query,
+    create_key_state,
     create_reset_cursor,
     create_scroll_attr,
     create_wait_frame,

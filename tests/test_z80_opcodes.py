@@ -27,7 +27,6 @@ They are deviations from the Z80 spec, kept bug-for-bug until Phase 3+:
     by 1 regardless of BC size.
   - Conditional JP instructions always fetch the operand word; the branch
     is taken by assigning to pc only when the condition holds.
-  - No RLCA (0x07) implemented; only RRCA (0x0F).
   - ED family implements only SBC HL,DE (0x52) and LDIR (0xB0).
   - DD/FD prefixes implement only the subset used by the project assembler.
 """
@@ -671,6 +670,23 @@ class TestRunHaltAndBounds:
         assert z80.halted, "halt opcode should set halted flag"
         assert z80._ticks == 1, "halt should count as one executed tick"
 
+    def test_halt_with_interrupts_enabled_does_not_halt(self, z80):
+        _load(z80, 0x0000, 0x76, 0x00)
+        z80.iff = True
+        z80.run(max_ticks=2)
+        assert not z80.halted, (
+            "halt with iff=True should simulate a frame interrupt and continue"
+        )
+        assert z80.pc == 2, (
+            "halt with iff=True should advance pc past the halt so wait-frame returns"
+        )
+
+    def test_ei_halt_di_sequence_advances_past_halt(self, z80):
+        _load(z80, 0x0000, 0xFB, 0x76, 0xF3, 0x00)
+        z80.run(max_ticks=10)
+        assert not z80.halted, "ei; halt; di; should not leave the cpu halted"
+        assert not z80.iff, "di after halt should clear the iff flag"
+
     def test_max_ticks_bounds_execution_without_halting(self, z80):
         _load(z80, 0x0000, 0x18, 0xFE)
         z80.run(max_ticks=7)
@@ -684,41 +700,129 @@ class TestRunHaltAndBounds:
         assert z80.a == 0, "max_ticks=0 should execute no instructions"
 
 
-class TestKeyHooks:
+class TestSpectrumKeyboardPorts:
 
-    def test_call_to_key_query_signals_input_available(self, z80):
+    def test_port_fe_reads_high_when_no_keys_pressed(self, z80):
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0x00
+        z80._step()
+        assert z80.a & 0x1F == 0x1F, (
+            "IN A,($FE) with no keys pressed should leave bits 0-4 all set"
+        )
+
+    @pytest.mark.parametrize("key,high_byte,expected_low_bit_clear", [
+        (ord("Z"),  0xFE, 1),
+        (ord("X"),  0xFE, 2),
+        (ord("A"),  0xFD, 0),
+        (ord("S"),  0xFD, 1),
+        (ord("Q"),  0xFB, 0),
+        (ord("1"),  0xF7, 0),
+        (ord("5"),  0xF7, 4),
+        (ord("0"),  0xEF, 0),
+        (ord("P"),  0xDF, 0),
+        (ord("\r"), 0xBF, 0),
+        (ord(" "),  0x7F, 0),
+        (ord("B"),  0x7F, 4),
+    ])
+    def test_single_pressed_key_clears_expected_bit(
+        self, z80, key, high_byte, expected_low_bit_clear,
+    ):
+        z80.pressed_keys = {key}
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = high_byte
+        z80._step()
+        expected_mask = 0x1F & ~(1 << expected_low_bit_clear)
+        assert z80.a & 0x1F == expected_mask, (
+            f"pressing {chr(key)!r} should clear bit {expected_low_bit_clear} "
+            f"on port high=${high_byte:02X}"
+        )
+
+    def test_wrong_half_row_shows_key_as_unpressed(self, z80):
+        z80.pressed_keys = {ord("A")}
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0xFE
+        z80._step()
+        assert z80.a & 0x1F == 0x1F, (
+            "A is on row 1; scanning row 0 (high=$FE) should see nothing pressed"
+        )
+
+    def test_multiple_keys_same_row_clear_multiple_bits(self, z80):
+        z80.pressed_keys = {ord("Z"), ord("C")}
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0xFE
+        z80._step()
+        expected = 0x1F & ~((1 << 1) | (1 << 3))
+        assert z80.a & 0x1F == expected, (
+            "Z and C both pressed on row 0 should clear bits 1 and 3"
+        )
+
+    def test_multi_row_scan_ands_selected_rows(self, z80):
+        z80.pressed_keys = {ord("A"), ord("Z")}
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0xFC
+        z80._step()
+        expected = 0x1F & ~((1 << 0) | (1 << 1))
+        assert z80.a & 0x1F == expected, (
+            "scanning rows 0 and 1 together (high=$FC) should report both keys"
+        )
+
+    def test_in_a_c_reads_port_bc(self, z80):
+        z80.pressed_keys = {ord("Q")}
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0xFB
+        z80._step()
+        assert z80.a & 0x1F == (0x1F & ~1), (
+            "IN A,(n) with A=$FB, n=$FE should scan row 2 (QWERT) and see Q"
+        )
+
+    def test_non_keyboard_port_reads_ff(self, z80):
+        _load(z80, 0x0000, 0xDB, 0x1F)
+        z80.a = 0x00
+        z80._step()
+        assert z80.a == 0xFF, (
+            "reading a port whose low byte is not $FE should return $FF"
+        )
+
+
+class TestInputBufferAsKeyboard:
+
+    def test_input_buffer_drives_keyboard_reads(self, z80):
         z80.input_buffer = bytearray(b"A")
-        _load(z80, 0x0000, 0xCD, 0xE9, 0x15)
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0xFD
         z80._step()
-        assert z80.a == 0xFF, "call KEY_QUERY with input should load 0xFF into a"
+        assert z80.a & 0x1F == (0x1F & ~1), (
+            "with input_buffer='A' and no explicit pressed_keys, port reads "
+            "should synthesize the 'A' press (row 1 bit 0 clear)"
+        )
 
-    def test_call_to_key_query_signals_no_input(self, z80):
+    def test_pressed_keys_overrides_input_buffer(self, z80):
+        z80.input_buffer = bytearray(b"A")
+        z80.pressed_keys = {ord("Z")}
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0xFE
+        z80._step()
+        assert z80.a & 0x1F == (0x1F & ~2), (
+            "explicit pressed_keys should take precedence over input_buffer; "
+            "Z on row 0 bit 1"
+        )
+
+    def test_empty_input_reads_no_keys(self, z80):
         z80.input_buffer = bytearray()
-        _load(z80, 0x0000, 0xCD, 0xE9, 0x15)
+        _load(z80, 0x0000, 0xDB, 0xFE)
+        z80.a = 0x00
         z80._step()
-        assert z80.a == 0x00, "call KEY_QUERY without input should load 0x00 into a"
-
-    def test_call_to_key_consumes_from_buffer(self, z80):
-        z80.input_buffer = bytearray(b"XY")
-        _load(z80, 0x0000, 0xCD, 0xE6, 0x15)
-        z80._step()
-        assert z80.a == ord("X"), "call KEY should return next input byte"
-        assert z80._input_pos == 1, "call KEY should advance input position"
-
-    def test_call_to_key_returns_zero_when_exhausted(self, z80):
-        z80.input_buffer = bytearray()
-        _load(z80, 0x0000, 0xCD, 0xE6, 0x15)
-        z80._step()
-        assert z80.a == 0, "call KEY on empty buffer should return 0"
+        assert z80.a & 0x1F == 0x1F, (
+            "empty input_buffer and no pressed_keys should read all bits high"
+        )
 
 
 class TestUnimplementedOpcodes:
 
     @pytest.mark.parametrize("program,context", [
-        ((0x07,), "main"),
         ((0xED, 0x44), "ed"),
         ((0xDD, 0x7E), "ix/iy"),
-    ], ids=["rlca_main", "unimplemented_ed", "unimplemented_ix"])
+    ], ids=["unimplemented_ed", "unimplemented_ix"])
     def test_unimplemented_opcode_raises(self, z80, program, context):
         _load(z80, 0x0000, *program)
         with pytest.raises(RuntimeError, match="unimplemented"):

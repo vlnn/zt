@@ -102,6 +102,7 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _no("xor_e",        0xAB),
     _no("cpl",          0x2F),
     _no("rrca",         0x0F),
+    _no("rlca",         0x07),
 
     _no("ld_a_b",       0x78),
     _no("ld_a_c",       0x79),
@@ -187,7 +188,20 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _no("ei",           0xFB),
     _no("scf",          0x37),
 
+    _no("inc_b",        0x04),
+    _no("inc_d",        0x14),
+    _no("dec_b",        0x05),
+    _no("add_a_b",      0x80),
+    _no("add_a_d",      0x82),
+    _no("sub_b",        0x90),
+    _no("cp_ind_hl",    0xBE),
+    _no("ld_b_c",       0x41),
+    _no("ld_e_a",       0x5F),
+    _no("rlc_e",        0xCB, 0x03),
+    _n ("sub_n",        0xD6),
+
     _n ("out_n_a",      0xD3),
+    _n ("in_a_n",       0xDB),
 )
 
 
