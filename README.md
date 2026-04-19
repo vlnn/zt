@@ -1,4 +1,5 @@
-[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
+[![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner-direct-single.svg)](https://stand-with-ukraine.pp.ua)
+
 
 # zt — Z80 Forth cross-compiler for the ZX Spectrum
 
@@ -40,7 +41,8 @@ The plasma at startup — plasma-init paints the full attribute area reacting to
 <video src="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9" controls muted loop preload="metadata" width="350" height="280"></video>
 
 Another demo is a simple reaction game — a random digit comes up, and after the user's keypress (hopefully with the same digit as requested) a small statistics line comes up:
-<video src="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6" controls muted loop preload="metadata" width="350" height="280"></video>
+<video src="[https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6](https://github.com/user-attachments/assets/876d6af3-73b6-4657-afd4-6dade3d217b3
+)" controls muted loop preload="metadata" width="350" height="280"></video>
 
 ### Hello world
 
@@ -387,3 +389,5 @@ run unchanged on real hardware.
 - **48K only.** No `.tap`, no 128K banking, no AY support.
 
 Most of these are addressed in other docs.
+
+[![Made in Ukraine](https://img.shields.io/badge/made_in-Ukraine-ffd700.svg?labelColor=0057b7)](https://stand-with-ukraine.pp.ua)
