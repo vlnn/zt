@@ -77,6 +77,11 @@ DEFAULT_DATA_STACK_TOP = 0xFF00
 DEFAULT_RETURN_STACK_TOP = 0xFE00
 
 
+def _bundled_stdlib_dir() -> Path:
+    import zt.stdlib
+    return Path(zt.stdlib.__path__[0])
+
+
 class Compiler:
 
     def __init__(
@@ -92,7 +97,9 @@ class Compiler:
         self.origin = origin
         self.data_stack_top = data_stack_top
         self.return_stack_top = return_stack_top
-        self.include_resolver: IncludeResolver = IncludeResolver(include_dirs or [])
+        self.include_resolver: IncludeResolver = IncludeResolver(
+            include_dirs or [], bundled_stdlib_dir=_bundled_stdlib_dir(),
+        )
         outer_asm = Asm(origin, inline_next=inline_next)
         self.words: Dictionary = Dictionary()
         self.state: TypingLiteral["interpret", "compile"] = "interpret"
@@ -628,12 +635,9 @@ class Compiler:
     # --- build ---
 
     def include_stdlib(self, path: object | None = None) -> None:
-        if path is None:
-            path = Path(__file__).resolve().parent.parent.parent.parent / "stdlib" / "core.fs"
-        else:
-            path = Path(path)
-        self.include_resolver.mark_seen(path.resolve())
-        self.compile_source(path.read_text(), source=str(path))
+        source = Path(path) if path is not None else _bundled_stdlib_dir() / "core.fs"
+        self.include_resolver.mark_seen(source.resolve())
+        self.compile_source(source.read_text(), source=str(source))
 
     def compile_main_call(self) -> None:
         if "main" not in self.words:

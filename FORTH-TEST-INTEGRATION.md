@@ -32,7 +32,7 @@ include test-lib.fs
 
 ## Assertions
 
-`stdlib/test-lib.fs` provides three:
+`src/zt/stdlib/test-lib.fs` provides three:
 
 | Word           | Stack effect              | Fails when          |
 |----------------|---------------------------|---------------------|

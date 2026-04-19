@@ -1,5 +1,5 @@
 """
-`INCLUDE` / `REQUIRE` path resolution: searches relative to the including file and then the configured include dirs, and deduplicates already-loaded sources.
+`INCLUDE` / `REQUIRE` path resolution: searches relative to the including file, then the configured include dirs, then the bundled stdlib dir. Deduplicates already-loaded sources.
 """
 from __future__ import annotations
 
@@ -12,8 +12,15 @@ class IncludeNotFound(Exception):
 
 class IncludeResolver:
 
-    def __init__(self, include_dirs: list[Path]) -> None:
+    def __init__(
+        self,
+        include_dirs: list[Path],
+        bundled_stdlib_dir: Path | None = None,
+    ) -> None:
         self.include_dirs: list[Path] = [Path(d) for d in include_dirs]
+        self.bundled_stdlib_dir: Path | None = (
+            Path(bundled_stdlib_dir) if bundled_stdlib_dir is not None else None
+        )
         self._seen: set[Path] = set()
 
     def resolve(self, filename: str, source_path: Path) -> Path:
@@ -48,6 +55,8 @@ class IncludeResolver:
         if source_path.is_file():
             candidates.append(source_path.parent / filename)
         candidates.extend(d / filename for d in self.include_dirs)
+        if self.bundled_stdlib_dir is not None:
+            candidates.append(self.bundled_stdlib_dir / filename)
         return candidates
 
     def _not_found_message(self, filename: str, candidates: list[Path]) -> str:

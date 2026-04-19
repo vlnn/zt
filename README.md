@@ -333,7 +333,7 @@ hazard: those two addresses are arbitrary ROM offsets and calling them on a
 - **No sprites.** `EMIT` renders characters through the ROM font, and `CMOVE`
   can blit bytes, but there's no pre-composed sprite primitive or
   pre-shifted mask support.
-- **Signed multiply and divide live in `stdlib/core.fs`** built on top of a
+- **Signed multiply and divide live in `src/zt/stdlib/core.fs`** built on top of a
   single unsigned `U/MOD` primitive. Fine for slow code, too slow for inner
   loops.
 - **No interrupt hook.** The compiled program runs with interrupts disabled
