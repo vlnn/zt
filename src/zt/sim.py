@@ -72,8 +72,8 @@ class ForthResult:
 class Z80:
     __slots__ = (
         "mem", "pc", "sp", "a", "f", "b", "c", "d", "e", "h", "l",
-        "ix", "iy", "halted", "iff", "_outputs", "_ticks",
-        "input_buffer", "_input_pos", "_ops",
+        "ix", "iy", "halted", "iff", "_outputs", "_ticks", "_t_states",
+        "input_buffer", "_input_pos", "_ops", "_op_costs",
     )
 
     def __init__(self) -> None:
@@ -86,9 +86,10 @@ class Z80:
         self.iff = False
         self._outputs: list[tuple[int, int]] = []
         self._ticks = 0
+        self._t_states = 0
         self.input_buffer: bytearray = bytearray()
         self._input_pos: int = 0
-        self._ops = self._build_ops_table()
+        self._ops, self._op_costs = self._build_ops_table()
 
     @property
     def hl(self) -> int: return (self.h << 8) | self.l
@@ -180,6 +181,7 @@ class Z80:
         if offset & 0x80: offset -= 256
         if cond:
             self.pc = (self.pc + offset) & 0xFFFF
+            self._t_states += 5
 
     def _get_reg(self, idx: int) -> int:
         return (self.b, self.c, self.d, self.e, self.h, self.l, self._rb(self.hl), self.a)[idx]
@@ -197,6 +199,7 @@ class Z80:
 
     def run(self, max_ticks: int = DEFAULT_MAX_TICKS, profiler=None) -> None:
         self._ticks = 0
+        self._t_states = 0
         while not self.halted and self._ticks < max_ticks:
             if profiler is not None:
                 profiler.sample(self.pc)
@@ -205,95 +208,102 @@ class Z80:
 
     def _step(self) -> None:
         op = self._fetch()
+        self._t_states += self._op_costs[op]
         self._ops[op](op)
 
-    def _build_ops_table(self) -> list:
+    def _build_ops_table(self) -> tuple[list, list]:
         t = [self._op_unimplemented] * 256
+        c = [0] * 256
 
-        t[0x00] = self._op_nop
-        t[0x76] = self._op_halt
+        def reg(op: int, handler, cost: int) -> None:
+            t[op] = handler
+            c[op] = cost
 
-        t[0x01] = self._op_ld_bc_nn
-        t[0x11] = self._op_ld_de_nn
-        t[0x21] = self._op_ld_hl_nn
-        t[0x31] = self._op_ld_sp_nn
+        reg(0x00, self._op_nop, 4)
+        reg(0x76, self._op_halt, 4)
 
-        for op in (0x06, 0x0E, 0x16, 0x1E, 0x26, 0x2E, 0x36, 0x3E):
-            t[op] = self._op_ld_r_n
+        reg(0x01, self._op_ld_bc_nn, 10)
+        reg(0x11, self._op_ld_de_nn, 10)
+        reg(0x21, self._op_ld_hl_nn, 10)
+        reg(0x31, self._op_ld_sp_nn, 10)
 
-        t[0x1A] = self._op_ld_a_ind_de
-        t[0x3A] = self._op_ld_a_ind_nn
-        t[0x32] = self._op_ld_ind_nn_a
+        for op in (0x06, 0x0E, 0x16, 0x1E, 0x26, 0x2E, 0x3E):
+            reg(op, self._op_ld_r_n, 7)
+        reg(0x36, self._op_ld_r_n, 10)
+
+        reg(0x1A, self._op_ld_a_ind_de, 7)
+        reg(0x3A, self._op_ld_a_ind_nn, 13)
+        reg(0x32, self._op_ld_ind_nn_a, 13)
 
         for op in range(0x40, 0x80):
             if op != 0x76:
-                t[op] = self._op_ld_r_r
+                reg(op, self._op_ld_r_r, 4)
 
-        t[0xC5] = self._op_push_bc
-        t[0xD5] = self._op_push_de
-        t[0xE5] = self._op_push_hl
-        t[0xF5] = self._op_push_af
-        t[0xC1] = self._op_pop_bc
-        t[0xD1] = self._op_pop_de
-        t[0xE1] = self._op_pop_hl
-        t[0xF1] = self._op_pop_af
+        reg(0xC5, self._op_push_bc, 11)
+        reg(0xD5, self._op_push_de, 11)
+        reg(0xE5, self._op_push_hl, 11)
+        reg(0xF5, self._op_push_af, 11)
+        reg(0xC1, self._op_pop_bc, 10)
+        reg(0xD1, self._op_pop_de, 10)
+        reg(0xE1, self._op_pop_hl, 10)
+        reg(0xF1, self._op_pop_af, 10)
 
-        t[0xEB] = self._op_ex_de_hl
-        t[0xE3] = self._op_ex_sp_hl
+        reg(0xEB, self._op_ex_de_hl, 4)
+        reg(0xE3, self._op_ex_sp_hl, 19)
 
-        t[0x09] = self._op_add_hl_bc
-        t[0x19] = self._op_add_hl_de
-        t[0x29] = self._op_add_hl_hl
+        reg(0x09, self._op_add_hl_bc, 11)
+        reg(0x19, self._op_add_hl_de, 11)
+        reg(0x29, self._op_add_hl_hl, 11)
 
-        t[0x03] = self._op_inc_bc
-        t[0x0B] = self._op_dec_bc
-        t[0x13] = self._op_inc_de
-        t[0x1B] = self._op_dec_de
-        t[0x23] = self._op_inc_hl
-        t[0x2B] = self._op_dec_hl
+        reg(0x03, self._op_inc_bc, 6)
+        reg(0x0B, self._op_dec_bc, 6)
+        reg(0x13, self._op_inc_de, 6)
+        reg(0x1B, self._op_dec_de, 6)
+        reg(0x23, self._op_inc_hl, 6)
+        reg(0x2B, self._op_dec_hl, 6)
 
-        t[0x24] = self._op_inc_h
-        t[0x3C] = self._op_inc_a
-        t[0x3D] = self._op_dec_a
-        t[0x1D] = self._op_dec_e
+        reg(0x24, self._op_inc_h, 4)
+        reg(0x3C, self._op_inc_a, 4)
+        reg(0x3D, self._op_dec_a, 4)
+        reg(0x1D, self._op_dec_e, 4)
 
         for op in range(0x80, 0xC0):
-            t[op] = self._op_alu_a_r
+            reg(op, self._op_alu_a_r, 4)
 
-        t[0xE6] = self._op_and_n
-        t[0xF6] = self._op_or_n
-        t[0xFE] = self._op_cp_n
+        reg(0xE6, self._op_and_n, 7)
+        reg(0xF6, self._op_or_n, 7)
+        reg(0xFE, self._op_cp_n, 7)
 
-        t[0x0F] = self._op_rrca
-        t[0x2F] = self._op_cpl
-        t[0x37] = self._op_scf
+        reg(0x0F, self._op_rrca, 4)
+        reg(0x2F, self._op_cpl, 4)
+        reg(0x37, self._op_scf, 4)
 
-        t[0xC3] = self._op_jp_nn
-        t[0xCA] = self._op_jp_z
-        t[0xC2] = self._op_jp_nz
-        t[0xF2] = self._op_jp_p
-        t[0xFA] = self._op_jp_m
+        reg(0xC3, self._op_jp_nn, 10)
+        reg(0xCA, self._op_jp_z, 10)
+        reg(0xC2, self._op_jp_nz, 10)
+        reg(0xF2, self._op_jp_p, 10)
+        reg(0xFA, self._op_jp_m, 10)
 
-        t[0x18] = self._op_jr
-        t[0x20] = self._op_jr_nz
-        t[0x28] = self._op_jr_z
-        t[0x30] = self._op_jr_nc
-        t[0x38] = self._op_jr_c
-        t[0x10] = self._op_djnz
+        reg(0x18, self._op_jr, 7)
+        reg(0x20, self._op_jr_nz, 7)
+        reg(0x28, self._op_jr_z, 7)
+        reg(0x30, self._op_jr_nc, 7)
+        reg(0x38, self._op_jr_c, 7)
+        reg(0x10, self._op_djnz, 8)
 
-        t[0xCD] = self._op_call_nn
-        t[0xC9] = self._op_ret
+        reg(0xCD, self._op_call_nn, 17)
+        reg(0xC9, self._op_ret, 10)
 
-        t[0xD3] = self._op_out_n_a
-        t[0xF3] = self._op_di
-        t[0xFB] = self._op_ei
+        reg(0xD3, self._op_out_n_a, 11)
+        reg(0xF3, self._op_di, 4)
+        reg(0xFB, self._op_ei, 4)
 
-        t[0xCB] = self._op_cb_prefix
-        t[0xDD] = self._op_dd_prefix
-        t[0xED] = self._op_ed_prefix
-        t[0xFD] = self._op_fd_prefix
+        reg(0xCB, self._op_cb_prefix, 0)
+        reg(0xDD, self._op_dd_prefix, 0)
+        reg(0xED, self._op_ed_prefix, 0)
+        reg(0xFD, self._op_fd_prefix, 0)
 
-        return t
+        return t, c
 
     def _op_unimplemented(self, op: int) -> None:
         raise RuntimeError(
@@ -333,6 +343,8 @@ class Z80:
     def _op_ld_r_r(self, op: int) -> None:
         dst, src = (op >> 3) & 7, op & 7
         self._set_reg(dst, self._get_reg(src))
+        if dst == 6 or src == 6:
+            self._t_states += 3
 
     def _op_push_bc(self, op: int) -> None:
         self._push(self.bc)
@@ -406,7 +418,8 @@ class Z80:
         self.e = self._dec8(self.e)
 
     def _op_alu_a_r(self, op: int) -> None:
-        src = self._get_reg(op & 7)
+        src_idx = op & 7
+        src = self._get_reg(src_idx)
         grp = (op >> 3) & 7
         if   grp == 0: self.a = self._add8(self.a, src)
         elif grp == 1: self.a = self._add8(self.a, src, self.f & FLAG_C)
@@ -416,6 +429,8 @@ class Z80:
         elif grp == 5: self.a ^= src; self.f = self._flag_sz(self.a)
         elif grp == 6: self.a |= src; self.f = self._flag_sz(self.a)
         elif grp == 7: self._sub8(self.a, src)
+        if src_idx == 6:
+            self._t_states += 3
 
     def _op_and_n(self, op: int) -> None:
         self.a &= self._fetch()
@@ -576,6 +591,18 @@ class Z80:
         elif cat == 3:
             self._set_reg(idx, val | (1 << grp))
 
+        if idx == 6:
+            self._t_states += 12 if cat == 1 else 15
+        else:
+            self._t_states += 8
+
+    _IX_IY_COSTS = {
+        0x21: 14, 0x23: 10, 0x2B: 10, 0xE5: 15, 0xE1: 14,
+        0x5E: 19, 0x56: 19, 0x6E: 19, 0x66: 19,
+        0x75: 19, 0x74: 19, 0x73: 19, 0x72: 19,
+        0xE3: 23,
+    }
+
     def _exec_ix_iy(self, reg_get, reg_set) -> None:
         op = self._fetch()
         r = reg_get()
@@ -604,6 +631,8 @@ class Z80:
                 f"unimplemented IX/IY opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}"
             )
 
+        self._t_states += self._IX_IY_COSTS[op]
+
     def _set_ix(self, v: int) -> None: self.ix = v & 0xFFFF
     def _set_iy(self, v: int) -> None: self.iy = v & 0xFFFF
 
@@ -621,12 +650,14 @@ class Z80:
             ov = ((self.hl ^ self.de) & 0x8000) and ((self.hl ^ r) & 0x8000)
             if ov: self.f |= FLAG_PV
             self.hl = r & 0xFFFF
+            self._t_states += 15
         elif op == 0xB0:
             while self.bc:
                 self._wb(self.de, self._rb(self.hl))
                 self.hl = (self.hl + 1) & 0xFFFF
                 self.de = (self.de + 1) & 0xFFFF
                 self.bc = (self.bc - 1) & 0xFFFF
+                self._t_states += 16 if self.bc == 0 else 21
             self.f &= ~(FLAG_H | FLAG_PV | FLAG_N)
         else:
             raise RuntimeError(f"unimplemented ED opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}")

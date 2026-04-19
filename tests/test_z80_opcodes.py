@@ -720,3 +720,348 @@ class TestUnimplementedOpcodes:
         _load(z80, 0x0000, *program)
         with pytest.raises(RuntimeError, match="unimplemented"):
             z80._step()
+
+
+class TestTStatesStartAtZero:
+
+    def test_fresh_z80_has_zero_t_states(self, z80):
+        assert z80._t_states == 0, "a fresh Z80 should start with zero T-states"
+
+    def test_run_resets_t_states(self, z80):
+        z80._t_states = 999
+        _load(z80, 0x0000, 0x76)
+        z80.run(max_ticks=1)
+        assert z80._t_states == 4, "run() should reset _t_states and count only this run's cycles"
+
+
+class TestTStatesMainFixed:
+
+    @pytest.mark.parametrize("program,expected_cost", [
+        ((0x00,),                4),
+        ((0x76,),                4),
+        ((0x01, 0x34, 0x12),    10),
+        ((0x11, 0x34, 0x12),    10),
+        ((0x21, 0x34, 0x12),    10),
+        ((0x31, 0x34, 0x12),    10),
+        ((0x06, 0x42),           7),
+        ((0x0E, 0x42),           7),
+        ((0x16, 0x42),           7),
+        ((0x1E, 0x42),           7),
+        ((0x26, 0x42),           7),
+        ((0x2E, 0x42),           7),
+        ((0x3E, 0x42),           7),
+        ((0x36, 0x42),          10),
+        ((0x1A,),                7),
+        ((0x3A, 0x00, 0xC0),    13),
+        ((0x32, 0x00, 0xC0),    13),
+        ((0xEB,),                4),
+        ((0xE3,),               19),
+        ((0x09,),               11),
+        ((0x19,),               11),
+        ((0x29,),               11),
+        ((0x03,),                6),
+        ((0x0B,),                6),
+        ((0x13,),                6),
+        ((0x1B,),                6),
+        ((0x23,),                6),
+        ((0x2B,),                6),
+        ((0x24,),                4),
+        ((0x3C,),                4),
+        ((0x3D,),                4),
+        ((0x1D,),                4),
+        ((0xE6, 0x0F),           7),
+        ((0xF6, 0x0F),           7),
+        ((0xFE, 0x0F),           7),
+        ((0x0F,),                4),
+        ((0x2F,),                4),
+        ((0x37,),                4),
+        ((0xC3, 0x00, 0x90),    10),
+        ((0xC9,),               10),
+        ((0xD3, 0xFE),          11),
+        ((0xF3,),                4),
+        ((0xFB,),                4),
+    ], ids=[
+        "nop", "halt",
+        "ld_bc_nn", "ld_de_nn", "ld_hl_nn", "ld_sp_nn",
+        "ld_b_n", "ld_c_n", "ld_d_n", "ld_e_n", "ld_h_n", "ld_l_n", "ld_a_n",
+        "ld_ind_hl_n",
+        "ld_a_ind_de", "ld_a_ind_nn", "ld_ind_nn_a",
+        "ex_de_hl", "ex_sp_hl",
+        "add_hl_bc", "add_hl_de", "add_hl_hl",
+        "inc_bc", "dec_bc", "inc_de", "dec_de", "inc_hl", "dec_hl",
+        "inc_h", "inc_a", "dec_a", "dec_e",
+        "and_n", "or_n", "cp_n",
+        "rrca", "cpl", "scf",
+        "jp_nn", "ret", "out_n_a", "di", "ei",
+    ])
+    def test_fixed_cost(self, z80, program, expected_cost):
+        _step(z80, *program)
+        assert z80._t_states == expected_cost, (
+            f"opcode {program[0]:#04x} should cost {expected_cost} T-states"
+        )
+
+    @pytest.mark.parametrize("push_op,pair", [
+        (0xC5, "bc"), (0xD5, "de"), (0xE5, "hl"), (0xF5, "af"),
+    ], ids=["push_bc", "push_de", "push_hl", "push_af"])
+    def test_push_costs_11(self, z80, push_op, pair):
+        z80.sp = 0xFF00
+        _step(z80, push_op)
+        assert z80._t_states == 11, f"push {pair} should cost 11 T-states"
+
+    @pytest.mark.parametrize("pop_op,pair", [
+        (0xC1, "bc"), (0xD1, "de"), (0xE1, "hl"), (0xF1, "af"),
+    ], ids=["pop_bc", "pop_de", "pop_hl", "pop_af"])
+    def test_pop_costs_10(self, z80, pop_op, pair):
+        z80.sp = 0xFF00
+        _step(z80, pop_op)
+        assert z80._t_states == 10, f"pop {pair} should cost 10 T-states"
+
+    def test_call_costs_17(self, z80):
+        z80.sp = 0xFF00
+        _step(z80, 0xCD, 0x00, 0x90)
+        assert z80._t_states == 17, "call nn should cost 17 T-states"
+
+
+class TestTStatesLdRegReg:
+
+    def test_reg_to_reg_no_hl_costs_4(self, z80):
+        _step(z80, 0x47)
+        assert z80._t_states == 4, "ld b,a should cost 4 T-states (no (HL) involvement)"
+
+    @pytest.mark.parametrize("opcode", [
+        0x46, 0x4E, 0x56, 0x5E, 0x66, 0x6E, 0x7E,
+    ], ids=["ld_b_ind_hl", "ld_c_ind_hl", "ld_d_ind_hl", "ld_e_ind_hl",
+           "ld_h_ind_hl", "ld_l_ind_hl", "ld_a_ind_hl"])
+    def test_ld_r_from_hl_costs_7(self, z80, opcode):
+        z80.hl = 0xC000
+        _step(z80, opcode)
+        assert z80._t_states == 7, f"opcode {opcode:#04x} reading (HL) should cost 7 T-states"
+
+    @pytest.mark.parametrize("opcode", [
+        0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x77,
+    ], ids=["ld_ind_hl_b", "ld_ind_hl_c", "ld_ind_hl_d", "ld_ind_hl_e",
+           "ld_ind_hl_h", "ld_ind_hl_l", "ld_ind_hl_a"])
+    def test_ld_hl_from_r_costs_7(self, z80, opcode):
+        z80.hl = 0xC000
+        _step(z80, opcode)
+        assert z80._t_states == 7, f"opcode {opcode:#04x} writing (HL) should cost 7 T-states"
+
+
+class TestTStatesAluRegister:
+
+    @pytest.mark.parametrize("grp_base,label", [
+        (0x80, "add_a"),
+        (0x88, "adc_a"),
+        (0x90, "sub"),
+        (0x98, "sbc_a"),
+        (0xA0, "and"),
+        (0xA8, "xor"),
+        (0xB0, "or"),
+        (0xB8, "cp"),
+    ])
+    def test_alu_register_form_costs_4(self, z80, grp_base, label):
+        _step(z80, grp_base)
+        assert z80._t_states == 4, f"{label} b should cost 4 T-states"
+
+    @pytest.mark.parametrize("opcode,label", [
+        (0x86, "add_a_ind_hl"),
+        (0x8E, "adc_a_ind_hl"),
+        (0x96, "sub_ind_hl"),
+        (0x9E, "sbc_a_ind_hl"),
+        (0xA6, "and_ind_hl"),
+        (0xAE, "xor_ind_hl"),
+        (0xB6, "or_ind_hl"),
+        (0xBE, "cp_ind_hl"),
+    ])
+    def test_alu_ind_hl_costs_7(self, z80, opcode, label):
+        z80.hl = 0xC000
+        _step(z80, opcode)
+        assert z80._t_states == 7, f"{label} should cost 7 T-states"
+
+
+class TestTStatesBranching:
+
+    def test_jr_unconditional_costs_12(self, z80):
+        _step(z80, 0x18, 0x05)
+        assert z80._t_states == 12, "jr should always cost 12 T-states"
+
+    @pytest.mark.parametrize("opcode,flag,taken", [
+        (0x20, 0,      True),
+        (0x20, FLAG_Z, False),
+        (0x28, FLAG_Z, True),
+        (0x28, 0,      False),
+        (0x30, 0,      True),
+        (0x30, FLAG_C, False),
+        (0x38, FLAG_C, True),
+        (0x38, 0,      False),
+    ], ids=[
+        "jr_nz_taken", "jr_nz_not_taken",
+        "jr_z_taken",  "jr_z_not_taken",
+        "jr_nc_taken", "jr_nc_not_taken",
+        "jr_c_taken",  "jr_c_not_taken",
+    ])
+    def test_jr_cc_taken_costs_12_not_taken_costs_7(self, z80, opcode, flag, taken):
+        z80.f = flag
+        _step(z80, opcode, 0x05)
+        expected = 12 if taken else 7
+        assert z80._t_states == expected, (
+            f"jr cc {opcode:#04x} {'taken' if taken else 'not taken'} should cost {expected}"
+        )
+
+    def test_djnz_taken_costs_13(self, z80):
+        z80.b = 2
+        _step(z80, 0x10, 0xFE)
+        assert z80._t_states == 13, "djnz taken should cost 13 T-states"
+
+    def test_djnz_not_taken_costs_8(self, z80):
+        z80.b = 1
+        _step(z80, 0x10, 0xFE)
+        assert z80._t_states == 8, "djnz not taken should cost 8 T-states"
+
+    @pytest.mark.parametrize("opcode,flag,condition", [
+        (0xCA, FLAG_Z, "z-taken"),
+        (0xCA, 0,      "z-not-taken"),
+        (0xC2, 0,      "nz-taken"),
+        (0xC2, FLAG_Z, "nz-not-taken"),
+        (0xF2, 0,      "p-taken"),
+        (0xF2, FLAG_S, "p-not-taken"),
+        (0xFA, FLAG_S, "m-taken"),
+        (0xFA, 0,      "m-not-taken"),
+    ], ids=lambda x: str(x))
+    def test_jp_cc_always_costs_10(self, z80, opcode, flag, condition):
+        z80.f = flag
+        _step(z80, opcode, 0x00, 0x90)
+        assert z80._t_states == 10, (
+            f"jp cc ({condition}) should always cost 10 T-states regardless of branch"
+        )
+
+
+class TestTStatesCB:
+
+    @pytest.mark.parametrize("cb_op,idx_name", [
+        (0x10, "b"), (0x11, "c"), (0x12, "d"), (0x13, "e"),
+        (0x14, "h"), (0x15, "l"),              (0x17, "a"),
+    ], ids=["rl_b", "rl_c", "rl_d", "rl_e", "rl_h", "rl_l", "rl_a"])
+    def test_rotate_register_costs_8(self, z80, cb_op, idx_name):
+        _step(z80, 0xCB, cb_op)
+        assert z80._t_states == 8, f"cb rl {idx_name} should cost 8 T-states"
+
+    def test_rotate_ind_hl_costs_15(self, z80):
+        z80.hl = 0xC000
+        _step(z80, 0xCB, 0x16)
+        assert z80._t_states == 15, "cb rl (hl) should cost 15 T-states"
+
+    def test_bit_register_costs_8(self, z80):
+        _step(z80, 0xCB, 0x7C)
+        assert z80._t_states == 8, "cb bit 7,h should cost 8 T-states"
+
+    def test_bit_ind_hl_costs_12(self, z80):
+        z80.hl = 0xC000
+        _step(z80, 0xCB, 0x7E)
+        assert z80._t_states == 12, "cb bit 7,(hl) should cost 12 T-states"
+
+    def test_res_register_costs_8(self, z80):
+        _step(z80, 0xCB, 0x87)
+        assert z80._t_states == 8, "cb res 0,a should cost 8 T-states"
+
+    def test_res_ind_hl_costs_15(self, z80):
+        z80.hl = 0xC000
+        _step(z80, 0xCB, 0x86)
+        assert z80._t_states == 15, "cb res 0,(hl) should cost 15 T-states"
+
+    def test_set_register_costs_8(self, z80):
+        _step(z80, 0xCB, 0xC7)
+        assert z80._t_states == 8, "cb set 0,a should cost 8 T-states"
+
+    def test_set_ind_hl_costs_15(self, z80):
+        z80.hl = 0xC000
+        _step(z80, 0xCB, 0xC6)
+        assert z80._t_states == 15, "cb set 0,(hl) should cost 15 T-states"
+
+
+class TestTStatesED:
+
+    def test_sbc_hl_de_costs_15(self, z80):
+        _step(z80, 0xED, 0x52)
+        assert z80._t_states == 15, "sbc hl,de should cost 15 T-states"
+
+    def test_ldir_zero_count_costs_nothing(self, z80):
+        z80.bc = 0
+        _step(z80, 0xED, 0xB0)
+        assert z80._t_states == 0, "ldir with BC=0 should cost no T-states (current behavior)"
+
+    def test_ldir_single_byte_costs_16(self, z80):
+        z80.hl = 0xC000
+        z80.de = 0xC100
+        z80.bc = 1
+        _step(z80, 0xED, 0xB0)
+        assert z80._t_states == 16, "ldir copying 1 byte should cost 16 T-states"
+
+    def test_ldir_two_bytes_costs_37(self, z80):
+        z80.hl = 0xC000
+        z80.de = 0xC100
+        z80.bc = 2
+        _step(z80, 0xED, 0xB0)
+        assert z80._t_states == 37, "ldir 2 bytes should cost 21 + 16 = 37 T-states"
+
+    @pytest.mark.parametrize("count,expected", [
+        (1, 16),
+        (2, 37),
+        (3, 58),
+        (4, 79),
+        (10, 16 + 21 * 9),
+    ])
+    def test_ldir_cost_formula(self, z80, count, expected):
+        z80.hl = 0xC000
+        z80.de = 0xC100
+        z80.bc = count
+        _step(z80, 0xED, 0xB0)
+        assert z80._t_states == expected, (
+            f"ldir copying {count} bytes should cost {expected} T-states (16 + 21*(n-1))"
+        )
+
+
+class TestTStatesIxIy:
+
+    @pytest.mark.parametrize("program,expected,label", [
+        ((0xDD, 0x21, 0x00, 0x90),  14, "ld_ix_nn"),
+        ((0xDD, 0x23),              10, "inc_ix"),
+        ((0xFD, 0x2B),              10, "dec_iy"),
+        ((0xDD, 0xE5),              15, "push_ix"),
+        ((0xDD, 0xE1),              14, "pop_ix"),
+        ((0xDD, 0x5E, 0x00),        19, "ld_e_ix"),
+        ((0xDD, 0x56, 0x00),        19, "ld_d_ix"),
+        ((0xDD, 0x6E, 0x00),        19, "ld_l_ix"),
+        ((0xDD, 0x66, 0x00),        19, "ld_h_ix"),
+        ((0xDD, 0x75, 0x00),        19, "ld_ix_l"),
+        ((0xDD, 0x74, 0x00),        19, "ld_ix_h"),
+        ((0xDD, 0x73, 0x00),        19, "ld_ix_e"),
+        ((0xDD, 0x72, 0x00),        19, "ld_ix_d"),
+        ((0xDD, 0xE3),              23, "ex_sp_ix"),
+        ((0xFD, 0x21, 0x00, 0x90),  14, "ld_iy_nn"),
+        ((0xFD, 0x23),              10, "inc_iy"),
+        ((0xFD, 0x5E, 0x00),        19, "ld_e_iy"),
+    ], ids=lambda x: x if isinstance(x, str) else None)
+    def test_ix_iy_cost(self, z80, program, expected, label):
+        z80.sp = 0xFF00
+        z80.ix = 0xC000
+        z80.iy = 0xC000
+        _step(z80, *program)
+        assert z80._t_states == expected, f"{label} should cost {expected} T-states"
+
+
+class TestTStatesAccumulate:
+
+    def test_multiple_steps_accumulate(self, z80):
+        _step(z80, 0x00)
+        _step(z80, 0x00)
+        _step(z80, 0x00)
+        assert z80._t_states == 12, "three NOPs should accumulate to 12 T-states"
+
+    def test_real_sequence_of_primitives(self, z80):
+        _step(z80, 0x21, 0x34, 0x12)
+        _step(z80, 0x11, 0x78, 0x56)
+        _step(z80, 0x19)
+        assert z80._t_states == 10 + 10 + 11, (
+            "ld hl,nn + ld de,nn + add hl,de should total 31 T-states"
+        )
