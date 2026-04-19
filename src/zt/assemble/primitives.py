@@ -778,21 +778,15 @@ def _mul_step(a: Asm, skip_label: str) -> None:
 
 
 def create_multiply(a: Asm) -> None:
-    """`* ( x1 x2 -- x1*x2 )` — 16-bit by 16-bit multiply with early-exit when BC becomes zero."""
+    """`* ( x1 x2 -- x1*x2 )` — 16-bit by 16-bit multiply (full 16 shift-and-add rounds)."""
     a.label("MULTIPLY")
     a.alias("*", "MULTIPLY")
     a.pop_de()
     a.ld_b_h()
     a.ld_c_l()
     a.ld_hl_nn(0)
-    for i in range(8):
+    for i in range(16):
         _mul_step(a, f"_mul_s{i}")
-    a.ld_a_b()
-    a.or_c()
-    a.jr_z_to("_mul_done")
-    for i in range(8, 16):
-        _mul_step(a, f"_mul_s{i}")
-    a.label("_mul_done")
     a.dispatch()
 
 
@@ -1252,6 +1246,60 @@ def create_scroll_attr(a: Asm) -> None:
     for _ in range(32):
         a.byte(0)
 
+def create_at_xy(a: Asm) -> None:
+    """`AT-XY ( col row -- )` — move the EMIT cursor to (col, row)."""
+    a.label("AT_XY")
+    a.alias("at-xy", "AT_XY")
+    a.ld_a_l()
+    a.ld_ind_nn_a("_emit_cursor_row")
+    a.pop_hl()
+    a.ld_a_l()
+    a.ld_ind_nn_a("_emit_cursor_col")
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_beep(a: Asm) -> None:
+    """`BEEP ( cycles period -- )` — square-wave tone on port $FE bit 4.
+
+    Toggles the speaker for `cycles` half-periods, each separated by a delay
+    of `period` counts. Higher `period` = lower pitch. Border flickers to
+    black during playback; restore it with `BORDER` after.
+    """
+    a.label("BEEP")
+    a.alias("beep", "BEEP")
+    a.pop_de()
+    a.xor_a()
+    a.ld_ind_nn_a("_beep_phase")
+    a.label("_beep_outer")
+    a.push_hl()
+    a.push_de()
+    a.ld_a_ind_nn("_beep_phase")
+    a.ld_e_n(0x10)
+    a.xor_e()
+    a.ld_ind_nn_a("_beep_phase")
+    a.out_n_a(SPECTRUM_BORDER_PORT)
+    a.pop_de()
+    a.pop_hl()
+    a.push_hl()
+    a.label("_beep_delay")
+    a.dec_hl()
+    a.ld_a_h()
+    a.or_l()
+    a.jr_nz_to("_beep_delay")
+    a.pop_hl()
+    a.dec_de()
+    a.ld_a_d()
+    a.or_e()
+    a.jr_nz_to("_beep_outer")
+    a.xor_a()
+    a.out_n_a(SPECTRUM_BORDER_PORT)
+    a.pop_hl()
+    a.dispatch()
+    a.label("_beep_phase")
+    a.byte(0)
+
+
 def create_wait_frame(a: Asm) -> None:
     """`WAIT-FRAME` — block until the Spectrum frame interrupt fires (one-frame vsync)."""
     a.label("WAIT_FRAME")
@@ -1300,5 +1348,7 @@ PRIMITIVES = [
     create_key_state,
     create_reset_cursor,
     create_scroll_attr,
+    create_at_xy,
+    create_beep,
     create_wait_frame,
 ]
