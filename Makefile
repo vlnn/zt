@@ -6,7 +6,7 @@ BUILD_DIR    := build
 SINGLE_SOURCES := $(wildcard $(EXAMPLES_DIR)/*.fs)
 SINGLE_SNAS    := $(patsubst $(EXAMPLES_DIR)/%.fs,$(BUILD_DIR)/%.sna,$(SINGLE_SOURCES))
 
-MULTIFILE_ROOTS := sierpinski plasma
+MULTIFILE_ROOTS := sierpinski plasma mined-out
 MULTIFILE_SNAS  := $(patsubst %,$(BUILD_DIR)/%.sna,$(MULTIFILE_ROOTS))
 
 .PHONY: all examples test clean help
@@ -34,6 +34,12 @@ $(BUILD_DIR)/plasma.sna: \
         $(EXAMPLES_DIR)/plasma/main.fs \
         $(wildcard $(EXAMPLES_DIR)/plasma/lib/*.fs) \
         $(wildcard $(EXAMPLES_DIR)/plasma/app/*.fs) \
+        | $(BUILD_DIR)
+	$(ZT) build $< -o $@ --map $(@:.sna=.map)
+
+$(BUILD_DIR)/mined-out.sna: \
+        $(EXAMPLES_DIR)/mined-out/main.fs \
+        $(wildcard $(EXAMPLES_DIR)/mined-out/app/*.fs) \
         | $(BUILD_DIR)
 	$(ZT) build $< -o $@ --map $(@:.sna=.map)
 
