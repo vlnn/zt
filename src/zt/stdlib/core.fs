@@ -6,6 +6,8 @@
 : spaces  ( n -- )
     begin dup 0 > while 1- 32 emit repeat drop ;
 
+: -rot    ( a b c -- c a b )   rot rot ;
+
 \ Signed symmetric division built on unsigned u/mod.
 : /mod  ( n1 n2 -- r q )
     2dup xor 0< >r
