@@ -136,9 +136,25 @@ variable bill-col
 
 : pick-bill      ( -- )   11 random 6 +  5 +  bill-col ! ;
 
+: place-chamber-cell  ( col row -- )
+    2dup t-fence -rot tile!
+    fence-at ;
+
+: draw-chamber-bar-at-row  ( row -- )
+    >r
+    bill-col @ 1-  r@ place-chamber-cell
+    bill-col @     r@ place-chamber-cell
+    bill-col @ 1+  r@ place-chamber-cell
+    r> drop ;
+
+: draw-chamber   ( -- )
+    7 draw-chamber-bar-at-row
+    9 draw-chamber-bar-at-row ;
+
 : place-bill     ( -- )
     t-empty bill-col @ bill-row tile!
-    bill-col @ bill-row bill-at ;
+    bill-col @ bill-row bill-at
+    draw-chamber ;
 
 : bill?          ( col row -- flag )
     bill-row = swap bill-col @ = and ;

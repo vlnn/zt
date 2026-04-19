@@ -10,6 +10,7 @@ require sounds.fs
 require board.fs
 require actors.fs
 require hud.fs
+require menu.fs
 
 variable alive
 
@@ -100,17 +101,21 @@ variable alive
     check-hiscore
     reset-for-new-game ;
 
+: should-select-level?  ( -- flag )   max-level-reached @ 2 < 0= ;
+
 : continue-or-restart ( -- )
     won? if
         has-bill? if bill-rescued exit then
         advance-level exit
     then
     check-hiscore
-    reset-for-new-game ;
+    reset-for-new-game
+    should-select-level? if select-level then ;
 
 : init-game      ( -- )
     setup-keys
     hi-reset
+    1 max-level-reached !
     0 score !
     1 level-no !
     1 seed! ;

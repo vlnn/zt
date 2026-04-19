@@ -5,4 +5,5 @@ require sounds.fs
 require board.fs
 require actors.fs
 require hud.fs
+require menu.fs
 require game.fs

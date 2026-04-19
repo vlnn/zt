@@ -36,6 +36,7 @@ class TestMinedOutLayout:
         "app/board.fs",
         "app/actors.fs",
         "app/hud.fs",
+        "app/menu.fs",
         "app/game.fs",
     ])
     def test_example_files_exist(self, relpath):
@@ -55,12 +56,12 @@ class TestMinedOutCompiles:
 class TestMinedOutWordsByModule:
 
     @pytest.mark.parametrize("word", [
-        "score", "level-no", "ti",
+        "score", "level-no", "ti", "max-level-reached",
         "level-paper", "level-border", "level-mines", "level-bonus",
         "level-paper@", "level-border@", "level-mines@", "level-bonus@",
         "has-damsels?", "has-spreader?", "has-bug?", "has-map-blow?", "has-bill?",
         "map-blow-threshold", "map-blow-due?", "reset-ti",
-        "advance-level", "apply-level-colors",
+        "advance-level", "bump-max-level", "apply-level-colors",
     ])
     def test_state_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -97,6 +98,7 @@ class TestMinedOutWordsByModule:
         "spreader-row-jitter", "spreader-trail-row",
         "bug-step", "bug-reset", "player-hit-bug?",
         "bill-col", "bill-row", "pick-bill", "place-bill", "bill?",
+        "draw-chamber",
     ])
     def test_actors_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -113,12 +115,22 @@ class TestMinedOutWordsByModule:
         )
 
     @pytest.mark.parametrize("word", [
+        "valid-level-key?", "key->level", "apply-level-select",
+        "read-valid-level", "select-level",
+    ])
+    def test_menu_module_words(self, built_compiler, word):
+        assert word in built_compiler.words, (
+            f"app/menu.fs should define '{word}'"
+        )
+
+    @pytest.mark.parametrize("word", [
         "init-game", "init-level", "end-of-level",
         "step-once", "play-loop",
         "won?", "die", "win",
         "reward-level", "reward-bill",
         "check-hiscore", "record-hiscore",
         "continue-or-restart", "reset-for-new-game",
+        "should-select-level?",
         "blow-map-away", "bill-banner", "bill-rescued",
     ])
     def test_game_module_words(self, built_compiler, word):

@@ -623,3 +623,139 @@ require ../examples/mined-out/app/mined.fs
     17 bill-col !   17 pcol !  bill-row prow !
     continue-or-restart
     score @  0 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs — max-level-reached tracks progress across a session
+\ -----------------------------------------------------------------------------
+
+: test-bump-max-when-level-exceeds-max
+    1 max-level-reached !   5 level-no !
+    bump-max-level
+    max-level-reached @  5 assert-eq ;
+
+: test-bump-max-keeps-highest
+    5 max-level-reached !   3 level-no !
+    bump-max-level
+    max-level-reached @  5 assert-eq ;
+
+: test-advance-level-also-bumps-max
+    3 max-level-reached !   3 level-no !
+    advance-level
+    max-level-reached @  4 assert-eq ;
+
+: test-advance-level-past-max-clamps-both
+    8 max-level-reached !   8 level-no !
+    advance-level
+    advance-level
+    max-level-reached @  9 assert-eq ;
+
+: test-reset-for-new-game-preserves-max
+    5 max-level-reached !
+    reset-for-new-game
+    max-level-reached @  5 assert-eq ;
+
+: test-init-game-sets-max-to-one
+    42 max-level-reached !
+    init-game
+    max-level-reached @  1 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ menu.fs — level-select key validation and parsing
+\ -----------------------------------------------------------------------------
+
+: test-valid-key-0-rejected           3 max-level-reached !  48 valid-level-key?  assert-false ;
+: test-valid-key-1-accepted-at-max-3  3 max-level-reached !  49 valid-level-key?  assert-true  ;
+: test-valid-key-3-accepted-at-max-3  3 max-level-reached !  51 valid-level-key?  assert-true  ;
+: test-valid-key-4-rejected-at-max-3  3 max-level-reached !  52 valid-level-key?  assert-false ;
+: test-valid-key-9-accepted-at-max-9  9 max-level-reached !  57 valid-level-key?  assert-true  ;
+: test-valid-key-letter-rejected      5 max-level-reached !  65 valid-level-key?  assert-false ;
+: test-valid-key-space-rejected       5 max-level-reached !  32 valid-level-key?  assert-false ;
+
+: test-key-to-level-one               49 key->level  1 assert-eq ;
+: test-key-to-level-five              53 key->level  5 assert-eq ;
+: test-key-to-level-nine              57 key->level  9 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ menu.fs — apply-level-select seeds level-no + initial-bonus score
+\ -----------------------------------------------------------------------------
+
+: test-apply-level-1-sets-level-no      99 score !  1 apply-level-select  level-no @   1 assert-eq ;
+: test-apply-level-1-gives-zero-bonus   99 score !  1 apply-level-select  score    @   0 assert-eq ;
+
+: test-apply-level-2-gives-250-bonus    99 score !  2 apply-level-select  score    @  250 assert-eq ;
+: test-apply-level-5-gives-2200-bonus   99 score !  5 apply-level-select  score    @ 2200 assert-eq ;
+: test-apply-level-8-gives-4200-bonus   99 score !  8 apply-level-select  score    @ 4200 assert-eq ;
+
+: test-apply-level-5-sets-level-no      99 score !  5 apply-level-select  level-no @   5 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — should-select-level? gates the prompt by max-level-reached
+\ -----------------------------------------------------------------------------
+
+: test-should-select-level-false-when-max-is-1   1 max-level-reached !  should-select-level?  assert-false ;
+: test-should-select-level-true-when-max-is-2    2 max-level-reached !  should-select-level?  assert-true  ;
+: test-should-select-level-true-when-max-is-9    9 max-level-reached !  should-select-level?  assert-true  ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs — has-damsels? is restricted to levels 2..8 (Bill owns level 9)
+\ -----------------------------------------------------------------------------
+
+: test-has-damsels-level-8-true    8 level-no !  has-damsels?  assert-true  ;
+: test-has-damsels-level-9-false   9 level-no !  has-damsels?  assert-false ;
+
+
+\ -----------------------------------------------------------------------------
+\ actors.fs — chamber walls frame Bill on rows 7 and 9
+\ -----------------------------------------------------------------------------
+
+: test-chamber-top-bar-left
+    board-init  17 bill-col !
+    draw-chamber
+    16 7 fence?  assert-true ;
+
+: test-chamber-top-bar-center
+    board-init  17 bill-col !
+    draw-chamber
+    17 7 fence?  assert-true ;
+
+: test-chamber-top-bar-right
+    board-init  17 bill-col !
+    draw-chamber
+    18 7 fence?  assert-true ;
+
+: test-chamber-bottom-bar-left
+    board-init  17 bill-col !
+    draw-chamber
+    16 9 fence?  assert-true ;
+
+: test-chamber-bottom-bar-right
+    board-init  17 bill-col !
+    draw-chamber
+    18 9 fence?  assert-true ;
+
+: test-chamber-row-8-is-open-at-bill
+    board-init  17 bill-col !
+    draw-chamber
+    17 8 empty?  assert-true ;
+
+: test-chamber-row-8-is-open-beside-bill
+    board-init  17 bill-col !
+    draw-chamber
+    16 8 empty?  assert-true ;
+
+: test-place-bill-draws-chamber-top-bar
+    board-init
+    1 seed!
+    pick-bill  place-bill
+    bill-col @ 7 fence?  assert-true ;
+
+: test-place-bill-keeps-bill-cell-empty
+    board-init
+    1 seed!
+    pick-bill  place-bill
+    bill-col @ bill-row empty?  assert-true ;

@@ -5,6 +5,7 @@ require core.fs
 variable score
 variable level-no
 variable ti
+variable max-level-reached
 
 create level-paper    6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c, 6 c,
 create level-border   0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 2 c,
@@ -19,11 +20,11 @@ create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 ,
 : level-bonus@   ( -- n )        level-bonus  lx 2 * + @ ;
 
 : level>=?       ( n -- flag )   level-no @ swap < 0= ;
-: has-damsels?   ( -- flag )     2 level>=? ;
+: has-bill?      ( -- flag )     9 level>=? ;
+: has-damsels?   ( -- flag )     2 level>=?  has-bill? 0=  and ;
 : has-spreader?  ( -- flag )     3 level>=? ;
 : has-bug?       ( -- flag )     4 level>=? ;
 : has-map-blow?  ( -- flag )     5 level>=? ;
-: has-bill?      ( -- flag )     9 level>=? ;
 
 : reset-ti            ( -- )        0 ti ! ;
 : map-blow-threshold  ( -- n )      level-paper@ 260 * 70 + ;
@@ -31,8 +32,12 @@ create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 ,
     has-map-blow? 0= if 0 exit then
     ti @ map-blow-threshold > ;
 
+: bump-max-level ( -- )
+    level-no @ max-level-reached @ max  max-level-reached ! ;
+
 : advance-level  ( -- )
-    level-no @ 1+ 9 min level-no ! ;
+    level-no @ 1+ 9 min level-no !
+    bump-max-level ;
 
 : apply-level-colors  ( -- )
     level-paper@ 0 cls

@@ -54,17 +54,13 @@ create board-buf  704 allot
 
 : gap?           ( col -- flag )      dup gap-left = swap gap-right = or ;
 
-variable _fr
-
-: place-fence-at-col  ( col -- )
-    dup gap? 0= if
-        dup _fr @ t-fence -rot tile!
-        dup _fr @ fence-at
-    then drop ;
+: place-fence-at-col  ( col row -- )
+    over gap? if 2drop exit then
+    2dup t-fence -rot tile!
+    fence-at ;
 
 : fence-row      ( row -- )
-    _fr !
-    board-cols 0 do i place-fence-at-col loop ;
+    board-cols 0 do  i over place-fence-at-col  loop drop ;
 
 : build-fences   ( -- )
     top-fence-row fence-row
@@ -79,22 +75,20 @@ variable _fr
 : scatter-mines  ( n -- )
     0 do rand-col rand-interior try-place-mine loop ;
 
-variable _mr
+: reveal-cell-if-mine  ( col row -- )
+    2dup mine? if mine-at else 2drop then ;
+
+: erase-cell-if-mine   ( col row -- )
+    2dup mine? if erase-at else 2drop then ;
 
 : reveal-row     ( row -- )
-    _mr !
-    board-cols 0 do
-        i _mr @ mine? if i _mr @ mine-at then
-    loop ;
+    board-cols 0 do  i over reveal-cell-if-mine  loop drop ;
 
 : show-all-mines ( -- )
     board-rows 0 do i reveal-row loop ;
 
 : hide-mines-in-row  ( row -- )
-    _mr !
-    board-cols 0 do
-        i _mr @ mine? if i _mr @ erase-at then
-    loop ;
+    board-cols 0 do  i over erase-cell-if-mine  loop drop ;
 
 : hide-all-mines ( -- )
     board-rows 0 do i hide-mines-in-row loop ;
