@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compiler import (
+from zt.compile.compiler import (
     Compiler,
     CompileError,
     compile_and_run_with_output,

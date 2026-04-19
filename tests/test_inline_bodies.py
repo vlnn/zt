@@ -5,13 +5,13 @@ from __future__ import annotations
 
 import pytest
 
-from zt.asm import Asm
-from zt.inline_bodies import (
+from zt.assemble.asm import Asm
+from zt.assemble.inline_bodies import (
     build_inline_registry,
     extract_inline_body,
     primitive_name,
 )
-from zt.primitives import (
+from zt.assemble.primitives import (
     PRIMITIVES,
     create_2drop,
     create_2dup,

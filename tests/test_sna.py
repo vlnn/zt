@@ -3,7 +3,7 @@ Tests for `build_sna`: total size, header layout, stack pointer placement, borde
 """
 import pytest
 
-from zt.sna import (
+from zt.format.sna import (
     build_sna,
     SNA_HEADER_SIZE, SNA_RAM_BASE, SNA_TOTAL_SIZE,
 )

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from zt.image_loader import default_map_path, load_sna, read_map
-from zt.sna import SNA_RAM_BASE, build_sna
+from zt.format.image_loader import default_map_path, load_sna, read_map
+from zt.format.sna import SNA_RAM_BASE, build_sna
 
 
 class TestLoadSna:

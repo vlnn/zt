@@ -3,7 +3,7 @@ Hand-written Z80 bodies for all Forth primitives (`DUP`, `DROP`, `+`, `@`, `BRAN
 """
 from __future__ import annotations
 
-from zt.asm import Asm
+from zt.assemble.asm import Asm
 
 SPECTRUM_BORDER_PORT = 0xFE
 EMIT_FONT_BASE_MINUS_0X100 = 0x3C00

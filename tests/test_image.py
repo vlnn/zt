@@ -3,8 +3,8 @@ Baseline tests for `build_image`: it produces non-empty bytes, resolves all labe
 """
 import pytest
 
-from zt.image import build_image
-from zt.sna import build_sna, SNA_HEADER_SIZE, SNA_TOTAL_SIZE
+from zt.assemble.image import build_image
+from zt.format.sna import build_sna, SNA_HEADER_SIZE, SNA_TOTAL_SIZE
 
 
 def test_build_image_produces_nonempty_bytes():

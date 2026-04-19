@@ -3,7 +3,7 @@
 """
 from __future__ import annotations
 
-from zt.tokenizer import Token
+from zt.compile.tokenizer import Token
 
 
 class TokenStreamExhausted(Exception):

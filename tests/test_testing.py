@@ -1,5 +1,5 @@
 """
-Tests for `zt.testing`: passing/failing assertions, extra include dirs, `discover_tests`, and `run_tests`.
+Tests for `zt.test_runner`: passing/failing assertions, extra include dirs, `discover_tests`, and `run_tests`.
 """
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from zt.testing import ForthTestResult, compile_and_run_word
+from zt.test_runner import ForthTestResult, compile_and_run_word
 
 
 PASSING_SRC = """
@@ -113,46 +113,46 @@ class TestDiscovery:
         return tmp_path
 
     def test_finds_test_words_in_top_level_file(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         items = list(discover_tests([project]))
         words = [word for _, word in items]
         assert "test-one" in words, "should find first word"
         assert "test-two" in words, "should find second word"
 
     def test_skips_non_test_words(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         words = [w for _, w in discover_tests([project])]
         assert "helper" not in words, \
             "words without the 'test-' prefix should not be collected"
 
     def test_recurses_into_subdirectories(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         words = [w for _, w in discover_tests([project])]
         assert "test-three" in words, "should find words in nested directories"
 
     def test_skips_files_not_matching_test_glob(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         items = list(discover_tests([project]))
         paths = [p.name for p, _ in items]
         assert "not_a_test.fs" not in paths, \
             "only files starting with 'test_' should be collected"
 
     def test_accepts_single_file_path(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         items = list(discover_tests([project / "test_arith.fs"]))
         assert len(items) == 2, "file path should yield its two test words"
         assert all(p == project / "test_arith.fs" for p, _ in items), \
             "file path should yield only its own words"
 
     def test_accepts_file_word_spec(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         spec = f"{project / 'test_arith.fs'}::test-two"
         items = list(discover_tests([spec]))
         assert items == [(project / "test_arith.fs", "test-two")], \
             "file::word spec should yield exactly that pair"
 
     def test_missing_word_in_spec_raises(self, project):
-        from zt.testing import discover_tests
+        from zt.test_runner import discover_tests
         spec = f"{project / 'test_arith.fs'}::test-nonexistent"
         with pytest.raises(Exception, match="test-nonexistent"):
             list(discover_tests([spec]))
@@ -174,14 +174,14 @@ class TestRunTests:
         return tmp_path
 
     def test_all_pass_returns_empty_failures(self, project):
-        from zt.testing import run_tests
+        from zt.test_runner import run_tests
         summary = run_tests([project / "test_pass.fs"])
         assert summary.passed == 2, "both test-one and test-two should pass"
         assert summary.failures == [], "no failures expected on passing file"
         assert summary.success is True, "success should be True when nothing failed"
 
     def test_failure_is_recorded_with_details(self, project):
-        from zt.testing import run_tests
+        from zt.test_runner import run_tests
         summary = run_tests([project / "test_fail.fs"])
         assert summary.passed == 0, "no tests pass in the failing file"
         assert len(summary.failures) == 1, "exactly one failure expected"
@@ -192,7 +192,7 @@ class TestRunTests:
         assert summary.success is False, "success should be False with a failure"
 
     def test_stop_on_first_aborts_remaining(self, project):
-        from zt.testing import run_tests
+        from zt.test_runner import run_tests
         summary = run_tests([project], stop_on_first_failure=True)
         assert len(summary.failures) == 1, \
             "stop_on_first_failure should break out after the first failure"
@@ -200,19 +200,19 @@ class TestRunTests:
             "should not run every test when stopping early"
 
     def test_keyword_filter_narrows_selection(self, project):
-        from zt.testing import run_tests
+        from zt.test_runner import run_tests
         summary = run_tests([project], keyword="one")
         assert summary.passed == 1, "'one' substring should match only test-one"
         assert summary.failures == [], "test-broken does not match 'one'"
 
     def test_keyword_filter_matches_substring(self, project):
-        from zt.testing import run_tests
+        from zt.test_runner import run_tests
         summary = run_tests([project], keyword="broken")
         assert len(summary.failures) == 1, "'broken' should select test-broken only"
         assert summary.passed == 0, "nothing else should run under this filter"
 
     def test_emits_events_for_each_test(self, project):
-        from zt.testing import run_tests
+        from zt.test_runner import run_tests
         events = []
         run_tests([project], on_result=events.append)
         words = [ev.word for ev in events]

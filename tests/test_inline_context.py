@@ -5,8 +5,8 @@ from __future__ import annotations
 
 import pytest
 
-from zt.inline_bodies import InlineContext, is_primitive_inlinable
-from zt.primitives import PRIMITIVES
+from zt.assemble.inline_bodies import InlineContext, is_primitive_inlinable
+from zt.assemble.primitives import PRIMITIVES
 
 
 @pytest.fixture(scope="module")

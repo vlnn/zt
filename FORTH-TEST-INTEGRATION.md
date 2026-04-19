@@ -91,7 +91,7 @@ Exit code is 0 when every selected test passes, 1 otherwise.
 Drop this `conftest.py` into your `tests/` directory:
 
 ```python
-from zt.testing import ForthTestResult, TEST_WORD_RE, compile_and_run_word
+from zt.test_runner import ForthTestResult, TEST_WORD_RE, compile_and_run_word
 import pytest
 
 
@@ -131,7 +131,7 @@ selectors, and Python tests in the same directory run alongside.
 
 ## How it works
 
-`zt.testing.compile_and_run_word(source, word)` is the core primitive. It:
+`zt.test_runner.compile_and_run_word(source, word)` is the core primitive. It:
 
 1. Compiles the source plus a synthetic `: main <word> halt ;`.
 2. Loads the image into the simulator and runs until halt.

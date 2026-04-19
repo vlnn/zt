@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.inline_bodies import (
+from zt.assemble.inline_bodies import (
     INLINABLE_PRIMITIVES,
     build_inline_registry,
     extract_inline_body,
@@ -14,7 +14,7 @@ from zt.inline_bodies import (
     is_primitive_inlinable,
     primitive_name,
 )
-from zt.primitives import (
+from zt.assemble.primitives import (
     PRIMITIVES,
     create_branch,
     create_halt,
@@ -93,7 +93,7 @@ class TestHasMidBodyDispatch:
             f"{creator.__name__} has an intermediate JP NEXT and must be flagged"
 
     def test_single_dispatch_primitives_are_not_flagged(self):
-        from zt.primitives import create_dup, create_plus, create_fetch
+        from zt.assemble.primitives import create_dup, create_plus, create_fetch
         for creator in (create_dup, create_plus, create_fetch):
             assert not has_mid_body_dispatch(creator), \
                 f"{creator.__name__} has only its trailing dispatch and must not be flagged"
@@ -118,7 +118,7 @@ class TestHasAbsoluteJumpInBody:
             "branch has only a trailing dispatch; no absolute fixup should remain in the body"
 
     def test_simple_primitive_has_no_absolute_jump(self):
-        from zt.primitives import create_dup, create_drop, create_plus
+        from zt.assemble.primitives import create_dup, create_drop, create_plus
         for creator in (create_dup, create_drop, create_plus):
             assert not has_absolute_jump_in_body(creator), \
                 f"{creator.__name__} body should have no absolute-addressed fixup"
@@ -128,38 +128,38 @@ class TestHasAbsoluteJumpInBody:
             "halt has no extractable body and cannot be flagged"
 
     def test_abs_flagged_due_to_conditional_jp_z(self):
-        from zt.primitives import create_abs
+        from zt.assemble.primitives import create_abs
         assert has_absolute_jump_in_body(create_abs), \
             "abs uses `jp_z _abs_done` (absolute JP Z,nn) and must be flagged as relocation-unsafe"
 
     def test_less_than_flagged_due_to_conditional_jp_p(self):
-        from zt.primitives import create_less_than
+        from zt.assemble.primitives import create_less_than
         assert has_absolute_jump_in_body(create_less_than), \
             "less_than uses `jp_p _lt_done` (absolute JP P,nn) and must be flagged"
 
     def test_greater_than_flagged_due_to_conditional_jp_p(self):
-        from zt.primitives import create_greater_than
+        from zt.assemble.primitives import create_greater_than
         assert has_absolute_jump_in_body(create_greater_than), \
             "greater_than uses `jp_p _gt_done` (absolute JP P,nn) and must be flagged"
 
     def test_lshift_is_not_false_positive_despite_unsafe_operand_byte(self):
-        from zt.primitives import create_lshift
+        from zt.assemble.primitives import create_lshift
         assert not has_absolute_jump_in_body(create_lshift), \
             "lshift contains byte 0xFC as a jr displacement operand (not an opcode); " \
             "the audit must not false-positive on operand bytes"
 
     def test_rshift_is_not_flagged(self):
-        from zt.primitives import create_rshift
+        from zt.assemble.primitives import create_rshift
         assert not has_absolute_jump_in_body(create_rshift), \
             "rshift uses only relative jumps (jr_z_to, jr_nz_to) and must not be flagged"
 
     def test_min_is_not_flagged(self):
-        from zt.primitives import create_min
+        from zt.assemble.primitives import create_min
         assert not has_absolute_jump_in_body(create_min), \
             "min uses only `jr_c_to` (relative) and must not be flagged"
 
     def test_equals_is_not_flagged(self):
-        from zt.primitives import create_equals
+        from zt.assemble.primitives import create_equals
         assert not has_absolute_jump_in_body(create_equals), \
             "equals uses only `jr_nz_to` (relative) and must not be flagged"
 

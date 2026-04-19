@@ -28,7 +28,7 @@ Tiers:
 currently simulator-only.
 **Difficulty:** low. ~30 lines of Z80, no architectural change.
 
-`src/zt/primitives.py` currently emits `CALL $15E6` / `CALL $15E9`. Those
+`src/zt/assemble/primitives.py` currently emits `CALL $15E6` / `CALL $15E9`. Those
 addresses are the simulator's hook points, not real ROM entry points. On a 48K
 they land mid-instruction in ROM and do nothing useful.
 
@@ -64,7 +64,7 @@ Change two constants and two `create_*` functions; add a small decode table.
 The simulator hook can stay as a faster path, or the simulator can be taught
 to synthesize port `$FE` reads from the `input_buffer`.
 
-### 1.2 Word-level testing facade (`zt.testing`)
+### 1.2 Word-level testing facade (`zt.test_runner`)
 
 **Impact:** critical for velocity. Today the simulator exposes everything
 needed (`_outputs`, `input_buffer`, `mem`, cycle count), but tests read raw
@@ -75,7 +75,7 @@ doc-#3 additions: `KEY-STATE`, `WAIT-FRAME`, `BEEP`, `KEMPSTON`,
 **Difficulty:** medium. Mostly API design and a few simulator hooks; no
 deep compiler work.
 
-Goal: a public `zt.testing` module that makes assertions read like
+Goal: a public `zt.test_runner` module that makes assertions read like
 behavioural specifications. A `WordHarness` that takes a snippet or a word
 name, runs it in the simulator, and returns a rich result object with
 semantic accessors rather than raw memory reads.
@@ -127,7 +127,7 @@ result.stack == [16]
    frame). Unblocks `WAIT-FRAME` and interrupt-handler TDD. `run_word`
    grows `max_frames=N` as an alternative stopping condition.
 
-5. **Promote `zt.testing` to public API.** Document it. Add a short
+5. **Promote `zt.test_runner` to public API.** Document it. Add a short
    "how to TDD a Forth word" guide. Now external zt users can TDD their
    own game logic in the same idiom the compiler tests use.
 

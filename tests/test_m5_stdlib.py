@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compiler import compile_and_run_with_output
+from zt.compile.compiler import compile_and_run_with_output
 
 
 def _run(source: str) -> tuple[list[int], bytes]:

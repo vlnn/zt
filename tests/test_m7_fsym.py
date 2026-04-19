@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from zt.compiler import Compiler
-from zt.fsym import load_fsym, to_dict, write_fsym
+from zt.compile.compiler import Compiler
+from zt.inspect.fsym import load_fsym, to_dict, write_fsym
 
 
 @pytest.fixture

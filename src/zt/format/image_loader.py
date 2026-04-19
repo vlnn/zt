@@ -6,7 +6,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from zt.sna import SNA_HEADER_SIZE, SNA_RAM_BASE, SNA_RAM_SIZE, SNA_TOTAL_SIZE
+from zt.format.sna import SNA_HEADER_SIZE, SNA_RAM_BASE, SNA_RAM_SIZE, SNA_TOTAL_SIZE
 
 
 _FUSE_LINE_RE = re.compile(r"^\$?([0-9A-Fa-f]+)\s+(\S+)\s*$")

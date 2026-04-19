@@ -5,16 +5,16 @@ from __future__ import annotations
 
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Compiler, compile_and_run
-from zt.peephole import (
+from zt.assemble.asm import Asm
+from zt.compile.compiler import Compiler, compile_and_run
+from zt.compile.peephole import (
     DEFAULT_RULES,
     PeepholeRule,
     find_match,
     max_pattern_length,
     rules_by_specificity,
 )
-from zt.primitives import create_dup_fetch, create_one, create_zero
+from zt.assemble.primitives import create_dup_fetch, create_one, create_zero
 
 
 # ---------------------------------------------------------------------------
@@ -155,12 +155,12 @@ def _body(compiler: Compiler, name: str):
 
 
 def _prim(name: str):
-    from zt.ir import PrimRef
+    from zt.compile.ir import PrimRef
     return PrimRef(name)
 
 
 def _lit_in(body) -> bool:
-    from zt.ir import Literal
+    from zt.compile.ir import Literal
     return any(isinstance(c, Literal) for c in body)
 
 
@@ -268,7 +268,7 @@ class TestBoundaries:
             "literal 1 in word `a` should fuse to ONE via the short rule"
 
     def test_pattern_does_not_eat_immediate_word(self, make_compiler):
-        from zt.ir import Branch
+        from zt.compile.ir import Branch
         c = make_compiler(optimize=True)
         c.compile_source(": f 0 if drop then ;")
         body = _body(c, "f")

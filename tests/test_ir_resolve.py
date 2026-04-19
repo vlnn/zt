@@ -3,7 +3,7 @@ Tests for `resolve()`: lowering cell lists to Z80 bytes, including literals, for
 """
 import pytest
 
-from zt.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef, cell_size, resolve
+from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef, cell_size, resolve
 
 
 @pytest.fixture

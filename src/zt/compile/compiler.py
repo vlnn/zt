@@ -8,18 +8,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal as TypingLiteral
 
-from zt.asm import Asm
-from zt.code_emitter import CodeEmitter
-from zt.control_stack import ControlStack, ControlStackError
-from zt.debug import SourceEntry
-from zt.dictionary import Dictionary
-from zt.include_resolver import IncludeNotFound, IncludeResolver
-from zt.inline_bodies import (
+from zt.assemble.asm import Asm
+from zt.compile.code_emitter import CodeEmitter
+from zt.compile.control_stack import ControlStack, ControlStackError
+from zt.compile.source import SourceEntry
+from zt.compile.dictionary import Dictionary
+from zt.compile.include_resolver import IncludeNotFound, IncludeResolver
+from zt.assemble.inline_bodies import (
     InlineContext,
     emit_inline_plan,
     plan_colon_inlining,
 )
-from zt.ir import (
+from zt.compile.ir import (
     Branch,
     Cell,
     ColonRef,
@@ -30,18 +30,18 @@ from zt.ir import (
     cell_size,
     resolve,
 )
-from zt.peephole import (
+from zt.compile.peephole import (
     DEFAULT_RULES,
     PatternElement,
     PeepholeRule,
     find_match,
     max_pattern_length,
 )
-from zt.primitives import PRIMITIVES
-from zt.string_pool import StringPool
-from zt.token_stream import TokenStream
-from zt.tokenizer import Token, tokenize
-from zt.word_registry import (
+from zt.assemble.primitives import PRIMITIVES
+from zt.compile.string_pool import StringPool
+from zt.compile.token_stream import TokenStream
+from zt.compile.tokenizer import Token, tokenize
+from zt.compile.word_registry import (
     collected_directives,
     collected_immediates,
     directive,
@@ -629,7 +629,7 @@ class Compiler:
 
     def include_stdlib(self, path: object | None = None) -> None:
         if path is None:
-            path = Path(__file__).resolve().parent.parent.parent / "stdlib" / "core.fs"
+            path = Path(__file__).resolve().parent.parent.parent.parent / "stdlib" / "core.fs"
         else:
             path = Path(path)
         self.include_resolver.mark_seen(path.resolve())

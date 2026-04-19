@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from zt.compiler import Compiler, CompileError, compile_and_run
+from zt.compile.compiler import Compiler, CompileError, compile_and_run
 
 
 def _write(path: Path, text: str) -> Path:

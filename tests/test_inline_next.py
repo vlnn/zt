@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Compiler, compile_and_run
-from zt.primitives import (
+from zt.assemble.asm import Asm
+from zt.compile.compiler import Compiler, compile_and_run
+from zt.assemble.primitives import (
     PRIMITIVES,
     create_2drop,
     create_2dup,

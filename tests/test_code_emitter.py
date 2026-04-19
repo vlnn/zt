@@ -3,11 +3,11 @@ Tests for `CodeEmitter`: cell emission, body capture, label allocation, branch p
 """
 import pytest
 
-from zt.asm import Asm
-from zt.code_emitter import CodeEmitter
-from zt.compiler import Word
-from zt.ir import Branch, ColonRef, Label, Literal, PrimRef
-from zt.tokenizer import Token
+from zt.assemble.asm import Asm
+from zt.compile.code_emitter import CodeEmitter
+from zt.compile.compiler import Word
+from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef
+from zt.compile.tokenizer import Token
 
 
 def _tok(line: int = 1, col: int = 1) -> Token:

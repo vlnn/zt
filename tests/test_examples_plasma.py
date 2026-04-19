@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from zt.compiler import Compiler
+from zt.compile.compiler import Compiler
 
 
 EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "plasma"

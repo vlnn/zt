@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.word_registry import (
+from zt.compile.word_registry import (
     collected_directives,
     collected_immediates,
     directive,

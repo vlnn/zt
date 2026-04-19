@@ -1,7 +1,7 @@
 """Milestone-5 tests for `KEY` / `EMIT` keyboard echo using the simulator's input buffer."""
 from __future__ import annotations
 
-from zt.compiler import compile_and_run_with_output
+from zt.compile.compiler import compile_and_run_with_output
 
 
 class TestKeyEcho:

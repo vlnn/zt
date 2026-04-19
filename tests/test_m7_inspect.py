@@ -3,9 +3,9 @@ Milestone-7 tests for `decompile`: basic colon words, literals, structured `begi
 """
 import pytest
 
-from zt.compiler import Compiler
-from zt.fsym import to_dict
-from zt.inspect import decompile
+from zt.compile.compiler import Compiler
+from zt.inspect.fsym import to_dict
+from zt.inspect.decompile import decompile
 
 
 def compile_and_dump(source: str) -> tuple[dict, bytes]:

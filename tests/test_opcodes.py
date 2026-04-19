@@ -7,8 +7,8 @@ import inspect
 
 import pytest
 
-from zt.asm import Asm
-from zt.opcodes import OPCODES, OpcodeSpec, decode
+from zt.assemble.asm import Asm
+from zt.assemble.opcodes import OPCODES, OpcodeSpec, decode
 
 
 HAND_WRITTEN = frozenset({

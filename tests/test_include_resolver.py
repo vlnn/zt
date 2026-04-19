@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from zt.include_resolver import IncludeResolver, IncludeNotFound
+from zt.compile.include_resolver import IncludeResolver, IncludeNotFound
 
 
 @pytest.fixture

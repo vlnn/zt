@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compiler import Compiler, compile_and_run
+from zt.compile.compiler import Compiler, compile_and_run
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ class TestBodyPreservedForInspection:
             "Word.body must remain populated after inlining so zt inspect still works"
 
     def test_body_references_original_primitive_addresses(self):
-        from zt.ir import PrimRef
+        from zt.compile.ir import PrimRef
         c = Compiler(inline_primitives=True)
         c.compile_source(": double dup + ;")
         body = c.words["double"].body
@@ -274,7 +274,7 @@ class TestImageSizeReasonable:
     def test_inlining_simple_colons_does_not_explode_image(self):
         src = ": double dup + ; : quadruple double double ; : main 3 quadruple halt ;"
         baseline = compile_and_run.__wrapped__ if hasattr(compile_and_run, "__wrapped__") else None
-        from zt.compiler import build_from_source
+        from zt.compile.compiler import build_from_source
         plain_image, _ = build_from_source(src, inline_primitives=False)
         inlined_image, _ = build_from_source(src, inline_primitives=True)
         growth = len(inlined_image) - len(plain_image)

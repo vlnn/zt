@@ -3,7 +3,7 @@ Tests that the Sierpinski triangle example actually draws the expected attribute
 """
 import pytest
 
-from zt.compiler import Compiler
+from zt.compile.compiler import Compiler
 from zt.sim import Z80
 
 ATTR_BASE = 22528

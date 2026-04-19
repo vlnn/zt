@@ -3,7 +3,7 @@ Tests for the IR cell dataclasses: field shape, frozen-ness, value validation, e
 """
 import pytest
 
-from zt.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef
+from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef
 
 
 class TestFieldShape:

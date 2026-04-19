@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from zt.compiler import Compiler, compile_and_run_with_output
+from zt.compile.compiler import Compiler, compile_and_run_with_output
 
 
 HELLO_HALTING = """

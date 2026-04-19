@@ -3,7 +3,7 @@ Sjasmplus-style SLD (source-level debug) writer. Emits the version/device header
 """
 from pathlib import Path
 
-from zt.compiler import Compiler, Word
+from zt.compile.compiler import Compiler, Word
 
 
 HEADER = ("|SLD.data.version|1\n"

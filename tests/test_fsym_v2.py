@@ -3,9 +3,9 @@ Tests for the fsym v2 schema (body cells + string labels), the v2 inspect path, 
 """
 import pytest
 
-from zt.compiler import Compiler
-from zt.fsym import FSYM_VERSION, to_dict
-from zt.inspect import decompile
+from zt.compile.compiler import Compiler
+from zt.inspect.fsym import FSYM_VERSION, to_dict
+from zt.inspect.decompile import decompile
 
 
 def _compile_and_dump(source: str, with_image: bool = False):

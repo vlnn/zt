@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compiler import DEFAULT_ORIGIN, Compiler
+from zt.compile.compiler import DEFAULT_ORIGIN, Compiler
 from zt.sim import Z80, _read_data_stack
 
 

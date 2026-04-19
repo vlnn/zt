@@ -3,9 +3,9 @@ Regression tests ensuring the Phase-3 inliner never shrinks or rewinds `asm.code
 """
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Compiler, compile_and_run
-from zt.ir import Literal, PrimRef
+from zt.assemble.asm import Asm
+from zt.compile.compiler import Compiler, compile_and_run
+from zt.compile.ir import Literal, PrimRef
 
 
 def _compile(source: str, **flags) -> Compiler:

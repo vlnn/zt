@@ -3,7 +3,7 @@ Symbol-map writer. Emits either Fuse-style (`$ADDR name`) or ZEsarUX-style (`nam
 """
 from pathlib import Path
 
-from zt.compiler import Compiler, Word
+from zt.compile.compiler import Compiler, Word
 
 
 FUSE = "fuse"

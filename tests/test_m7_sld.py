@@ -3,8 +3,8 @@ Milestone-7 tests for SLD output: header, `|T` trace lines, `|L` label lines, an
 """
 import pytest
 
-from zt.compiler import Compiler
-from zt.sld import HEADER, render, write_sld
+from zt.compile.compiler import Compiler
+from zt.format.sld import HEADER, render, write_sld
 
 
 @pytest.fixture

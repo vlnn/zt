@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from zt.profile_cli import (
+from zt.cli.profile import (
     EXIT_OK,
     EXIT_REGRESSION,
     EXIT_RUNTIME,
@@ -181,7 +181,7 @@ class TestImageMode:
 
     @pytest.fixture
     def built(self, tmp_path: Path) -> tuple[Path, Path]:
-        from zt.cli import _build_compiler as build
+        from zt.cli.main import _build_compiler as build
         import argparse as ap
         ns = ap.Namespace(
             source=HELLO_FS, origin=0x8000, dstack=0xFF00, rstack=0xFE00,
@@ -190,7 +190,7 @@ class TestImageMode:
         )
         compiler = build(ns)
         image = compiler.build()
-        from zt.sna import build_sna
+        from zt.format.sna import build_sna
         sna_path = tmp_path / "hello.sna"
         map_path = tmp_path / "hello.map"
         sna_path.write_bytes(build_sna(

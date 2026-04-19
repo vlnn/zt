@@ -7,7 +7,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from zt.profile import ProfileEntry, ProfileReport
+from zt.profile.core import ProfileEntry, ProfileReport
 
 
 ZPROF_VERSION = 1

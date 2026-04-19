@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterator
 
-from zt.asm import Asm
+from zt.assemble.asm import Asm
 
 if TYPE_CHECKING:
-    from zt.compiler import Word
+    from zt.compile.compiler import Word
 
 
 class Dictionary:
@@ -47,7 +47,7 @@ class Dictionary:
         return self._words.keys()
 
     def register_primitives(self, asm: Asm) -> None:
-        from zt.compiler import Word
+        from zt.compile.compiler import Word
         for name, addr in asm.labels.items():
             if name.startswith("_"):
                 continue

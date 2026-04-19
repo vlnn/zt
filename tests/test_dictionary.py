@@ -3,10 +3,10 @@ Tests for the `Dictionary` symbol table: register/lookup, primitive seeding, red
 """
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Word
-from zt.dictionary import Dictionary
-from zt.primitives import PRIMITIVES
+from zt.assemble.asm import Asm
+from zt.compile.compiler import Word
+from zt.compile.dictionary import Dictionary
+from zt.assemble.primitives import PRIMITIVES
 
 
 @pytest.fixture

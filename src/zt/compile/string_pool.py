@@ -3,7 +3,7 @@ Pending-string buffer. Allocates `_str_N` labels for `."` / `s"` literals during
 """
 from __future__ import annotations
 
-from zt.asm import Asm
+from zt.assemble.asm import Asm
 
 
 class StringPool:

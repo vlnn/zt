@@ -5,16 +5,16 @@ from __future__ import annotations
 
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Compiler
-from zt.inline_bodies import (
+from zt.assemble.asm import Asm
+from zt.compile.compiler import Compiler
+from zt.assemble.inline_bodies import (
     InlineContext,
     InlineStep,
     emit_inline_plan,
     is_colon_inlinable,
     plan_colon_inlining,
 )
-from zt.primitives import PRIMITIVES
+from zt.assemble.primitives import PRIMITIVES
 
 
 _DISPATCH_TO_ZERO = bytes([0xC3, 0x00, 0x00])

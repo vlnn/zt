@@ -3,7 +3,7 @@ Tests for the `Asm` class: label registration, opcode method emission, fixup res
 """
 import pytest
 
-from zt.asm import Asm
+from zt.assemble.asm import Asm
 
 
 def test_here_starts_at_origin():

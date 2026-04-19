@@ -10,10 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from zt.compiler import CompileError
-from zt.image_loader import default_map_path, load_sna, read_map
-from zt.profile import ProfileReport, Profiler, build_word_ranges, format_report
-from zt.profile_io import (
+from zt.compile.compiler import CompileError
+from zt.format.image_loader import default_map_path, load_sna, read_map
+from zt.profile.core import ProfileReport, Profiler, build_word_ranges, format_report
+from zt.profile.io import (
     DiffEntry,
     diff_reports,
     read_zprof,
@@ -133,7 +133,7 @@ def _profile_image(image_path: Path, symbols: Path | None, max_ticks: int) -> Pr
 
 
 def _compile_fs(source: Path):
-    from zt.compiler import Compiler
+    from zt.compile.compiler import Compiler
     c = Compiler()
     c.include_stdlib()
     c.compile_source(source.read_text(), source=str(source))

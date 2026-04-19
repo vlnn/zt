@@ -3,10 +3,10 @@ End-to-end tests for compiled control flow: `0branch`, `if/else/then`, `begin/un
 """
 import pytest
 
-from zt.asm import Asm
-from zt.compiler import Compiler, CompileError, compile_and_run
-from zt.primitives import create_zbranch, create_do_rt, create_loop_rt, create_ploop_rt
-from zt.primitives import create_i_index, create_j_index, create_unloop
+from zt.assemble.asm import Asm
+from zt.compile.compiler import Compiler, CompileError, compile_and_run
+from zt.assemble.primitives import create_zbranch, create_do_rt, create_loop_rt, create_ploop_rt
+from zt.assemble.primitives import create_i_index, create_j_index, create_unloop
 
 
 def make_compiler(origin: int = 0x8000) -> Compiler:
@@ -355,7 +355,7 @@ class TestMixedControlFlow:
             "DO/LOOP inside a word called from BEGIN/UNTIL should work"
 
     def test_begin_again_still_works(self):
-        from zt.compiler import Compiler
+        from zt.compile.compiler import Compiler
         from zt.sim import Z80
 
         c = Compiler()

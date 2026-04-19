@@ -1,10 +1,10 @@
 """
-Byte-for-byte tests that each `create_*` primitive in `zt.primitives` compiles to its expected exact Z80 byte sequence.
+Byte-for-byte tests that each `create_*` primitive in `zt.assemble.primitives` compiles to its expected exact Z80 byte sequence.
 """
 import pytest
 
-from zt.asm import Asm
-from zt.primitives import (
+from zt.assemble.asm import Asm
+from zt.assemble.primitives import (
     create_next, create_docol, create_exit,
     create_dup, create_drop, create_swap, create_over,
     create_rot, create_nip, create_tuck,

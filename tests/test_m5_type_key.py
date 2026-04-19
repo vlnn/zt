@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.asm import Asm
+from zt.assemble.asm import Asm
 from zt.sim import ForthMachine, Z80, decode_screen_cell
 
 

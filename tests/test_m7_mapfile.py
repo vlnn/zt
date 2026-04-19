@@ -1,8 +1,8 @@
 """Milestone-7 tests for `mapfile`: format auto-detection and Fuse / ZEsarUX rendering."""
 import pytest
 
-from zt.compiler import Compiler
-from zt.mapfile import FUSE, ZESARUX, detect_format, render, write_map
+from zt.compile.compiler import Compiler
+from zt.format.mapfile import FUSE, ZESARUX, detect_format, render, write_map
 
 
 @pytest.fixture

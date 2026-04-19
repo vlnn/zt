@@ -3,7 +3,7 @@ Tests for `ControlStack`: push/pop LIFO, tag mismatch errors, underflow, peek, c
 """
 import pytest
 
-from zt.control_stack import ControlStack, ControlStackError
+from zt.compile.control_stack import ControlStack, ControlStackError
 
 
 @pytest.fixture

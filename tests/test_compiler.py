@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compiler import Compiler, CompileError, Word, compile_and_run
+from zt.compile.compiler import Compiler, CompileError, Word, compile_and_run
 
 
 def make_compiler(origin: int = 0x8000) -> Compiler:
@@ -384,12 +384,12 @@ class TestIntegration:
 class TestCounterDemo:
 
     def test_counter_compiles(self):
-        from zt.image import build_from_forth
+        from zt.assemble.image import build_from_forth
         image = build_from_forth()
         assert len(image) > 100, "compiled counter demo should produce substantial image"
 
     def test_counter_runs_border_writes(self):
-        from zt.compiler import Compiler
+        from zt.compile.compiler import Compiler
         from zt.sim import Z80
 
         c = Compiler()
@@ -409,7 +409,7 @@ class TestCounterDemo:
 
     def test_counter_from_fs_file(self):
         from pathlib import Path
-        from zt.compiler import Compiler
+        from zt.compile.compiler import Compiler
         from zt.sim import Z80
 
         fs_path = Path(__file__).parent.parent / "examples" / "counter.fs"
@@ -431,13 +431,13 @@ class TestCounterDemo:
 
     def test_cli_build_produces_sna(self, tmp_path):
         from pathlib import Path
-        from zt.sna import SNA_TOTAL_SIZE, SNA_HEADER_SIZE, SNA_RAM_BASE
+        from zt.format.sna import SNA_TOTAL_SIZE, SNA_HEADER_SIZE, SNA_RAM_BASE
         from zt.sim import Z80
 
         fs_path = Path(__file__).parent.parent / "examples" / "counter.fs"
         sna_path = tmp_path / "counter.sna"
 
-        from zt.cli import main
+        from zt.cli.main import main
         import sys
         old_argv = sys.argv
         sys.argv = ["zt", "build", str(fs_path), "-o", str(sna_path)]

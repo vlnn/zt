@@ -3,8 +3,8 @@ Tests for `TokenStream`: empty behaviour, `advance` / `next`, `has_more`, `peek`
 """
 import pytest
 
-from zt.token_stream import TokenStream, TokenStreamExhausted
-from zt.tokenizer import Token
+from zt.compile.token_stream import TokenStream, TokenStreamExhausted
+from zt.compile.tokenizer import Token
 
 
 def _tok(value: str, kind: str = "word", line: int = 1, col: int = 1) -> Token:

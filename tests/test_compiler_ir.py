@@ -5,8 +5,8 @@ import os
 
 import pytest
 
-from zt.compiler import Compiler
-from zt.ir import (
+from zt.compile.compiler import Compiler
+from zt.compile.ir import (
     Branch,
     ColonRef,
     Label,

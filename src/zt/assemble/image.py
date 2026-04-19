@@ -3,9 +3,9 @@ High-level image builders: assembles the `START` stub, small demo words, and `bu
 """
 from __future__ import annotations
 
-from zt.asm import Asm
-from zt.compiler import build_from_source
-from zt.primitives import PRIMITIVES
+from zt.assemble.asm import Asm
+from zt.compile.compiler import build_from_source
+from zt.assemble.primitives import PRIMITIVES
 
 SPECTRUM_ATTR_BASE = 0x5800
 

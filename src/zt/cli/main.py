@@ -7,13 +7,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from zt.compiler import Compiler, CompileError
-from zt.fsym import load_fsym, write_fsym
-from zt.inspect import decompile
-from zt.mapfile import FUSE, ZESARUX, write_map
-from zt.profile_cli import args_from_namespace, register_profile, run_profile_command
-from zt.sld import write_sld
-from zt.sna import build_sna
+from zt.compile.compiler import Compiler, CompileError
+from zt.inspect.fsym import load_fsym, write_fsym
+from zt.inspect.decompile import decompile
+from zt.format.mapfile import FUSE, ZESARUX, write_map
+from zt.cli.profile import args_from_namespace, register_profile, run_profile_command
+from zt.format.sld import write_sld
+from zt.format.sna import build_sna
 
 
 SUPPORTED_FORMATS = ("sna", "bin")
@@ -146,7 +146,7 @@ def _write_debug_artifacts(compiler: Compiler, args: argparse.Namespace) -> None
 def _write_profile(compiler: Compiler, image: bytes, args: argparse.Namespace) -> None:
     if not args.profile:
         return
-    from zt.profile import Profiler, build_word_ranges, format_report
+    from zt.profile.core import Profiler, build_word_ranges, format_report
     from zt.sim import SPECTRUM_FONT_BASE, TEST_FONT, Z80
 
     ranges = build_word_ranges(
@@ -250,7 +250,7 @@ def _register_test(sub: argparse._SubParsersAction) -> None:
 
 
 def _do_test(args: argparse.Namespace) -> None:
-    from zt.testing import TestDiscoveryError, TestEvent, run_tests
+    from zt.test_runner import TestDiscoveryError, TestEvent, run_tests
 
     def on_result(event: TestEvent) -> None:
         if event.result.failed:

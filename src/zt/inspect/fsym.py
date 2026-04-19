@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from zt.compiler import Compiler, Word
-from zt.ir import cells_to_json
+from zt.compile.compiler import Compiler, Word
+from zt.compile.ir import cells_to_json
 
 
 FSYM_VERSION = 2

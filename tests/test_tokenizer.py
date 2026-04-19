@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.tokenizer import Token, TokenizeError, tokenize
+from zt.compile.tokenizer import Token, TokenizeError, tokenize
 
 
 def tok(value: str, kind: str = "word") -> tuple[str, str]:

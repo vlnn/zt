@@ -5,9 +5,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from zt.asm import Asm
-from zt.primitives import PRIMITIVES
-from zt.profile import ProfileReport, Profiler, build_word_ranges
+from zt.assemble.asm import Asm
+from zt.assemble.primitives import PRIMITIVES
+from zt.profile.core import ProfileReport, Profiler, build_word_ranges
 
 SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_FONT_BASE = 0x3D00

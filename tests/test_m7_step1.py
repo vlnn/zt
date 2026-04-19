@@ -5,8 +5,8 @@ import hashlib
 
 import pytest
 
-from zt.compiler import Compiler
-from zt.debug import SourceEntry
+from zt.compile.compiler import Compiler
+from zt.compile.source import SourceEntry
 
 
 def make_compiler() -> Compiler:
@@ -55,7 +55,7 @@ class TestWordSourceLocation:
 
 class TestColonBody:
     def test_body_contains_primitive_refs(self, compiler):
-        from zt.ir import PrimRef
+        from zt.compile.ir import PrimRef
         compiler.compile_source(": double dup + ;\n")
         w = compiler.words["double"]
         assert PrimRef("dup") in w.body, \
@@ -64,14 +64,14 @@ class TestColonBody:
             "double.body should contain a PrimRef for +"
 
     def test_body_contains_literal_cell(self, compiler):
-        from zt.ir import Literal
+        from zt.compile.ir import Literal
         compiler.compile_source(": five 5 ;\n")
         w = compiler.words["five"]
         assert Literal(5) in w.body, \
             "five.body should contain a Literal(5) cell"
 
     def test_body_ends_with_exit(self, compiler):
-        from zt.ir import PrimRef
+        from zt.compile.ir import PrimRef
         compiler.compile_source(": x 1 ;\n")
         assert compiler.words["x"].body[-1] == PrimRef("exit"), \
             "body of a colon word should end with a PrimRef(exit) cell"
@@ -86,7 +86,7 @@ class TestColonBody:
             "variables should have an empty body"
 
     def test_nested_definitions_keep_separate_bodies(self, compiler):
-        from zt.ir import Literal
+        from zt.compile.ir import Literal
         compiler.compile_source(": a 5 ;\n: b 7 ;\n")
         a_body = compiler.words["a"].body
         b_body = compiler.words["b"].body

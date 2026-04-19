@@ -5,10 +5,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from zt.asm import Asm
-from zt.debug import SourceEntry
-from zt.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef
-from zt.tokenizer import Token
+from zt.assemble.asm import Asm
+from zt.compile.source import SourceEntry
+from zt.compile.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef
+from zt.compile.tokenizer import Token
 
 
 class CodeEmitter:

@@ -3,8 +3,8 @@ Tests for `StringPool`: sequential label allocation, flush order, clearing on fl
 """
 import pytest
 
-from zt.asm import Asm
-from zt.string_pool import StringPool
+from zt.assemble.asm import Asm
+from zt.compile.string_pool import StringPool
 
 
 @pytest.fixture

@@ -8,7 +8,7 @@ from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
-from zt.compiler import Compiler
+from zt.compile.compiler import Compiler
 
 
 STDLIB_DIR = Path(__file__).resolve().parent.parent.parent / "stdlib"

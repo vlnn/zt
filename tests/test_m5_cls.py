@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compiler import Compiler, compile_and_run_with_output
+from zt.compile.compiler import Compiler, compile_and_run_with_output
 from zt.sim import ForthMachine, SPECTRUM_ATTR_BASE, SPECTRUM_SCREEN_BASE
 
 

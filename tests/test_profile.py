@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.profile import (
+from zt.profile.core import (
     ProfileReport,
     Profiler,
     UNKNOWN,

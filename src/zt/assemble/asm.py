@@ -116,7 +116,7 @@ class Asm:
 
 
 def _install_opcode_methods() -> None:
-    from zt.opcodes import OPCODES
+    from zt.assemble.opcodes import OPCODES
     for spec in OPCODES:
         setattr(Asm, spec.mnemonic, _method_for(spec))
 

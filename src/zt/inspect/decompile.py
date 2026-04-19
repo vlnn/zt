@@ -4,7 +4,7 @@ Decompiler: reconstructs structured Forth source (`: word ... ;`, `if/else/then`
 from dataclasses import dataclass, field
 from typing import Any
 
-from zt.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef, cells_from_json
+from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef, cells_from_json
 
 
 DOCOL_CALL_SIZE = 3

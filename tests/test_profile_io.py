@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from zt.profile import ProfileEntry, ProfileReport
-from zt.profile_io import (
+from zt.profile.core import ProfileEntry, ProfileReport
+from zt.profile.io import (
     DiffEntry,
     ZPROF_VERSION,
     diff_reports,

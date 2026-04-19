@@ -7,8 +7,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from zt.asm import Asm
-from zt.ir import Cell, Literal as LiteralCell, PrimRef
+from zt.assemble.asm import Asm
+from zt.compile.ir import Cell, Literal as LiteralCell, PrimRef
 
 
 CREATE_PREFIX = "create_"
