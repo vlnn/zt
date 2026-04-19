@@ -912,6 +912,130 @@ def create_reset_cursor(a: Asm) -> None:
     a.ld_ind_nn_a("_emit_cursor_col")
     a.dispatch()
 
+def create_scroll_attr(a: Asm) -> None:
+    a.label("SCROLL_ATTR")
+    a.alias("scroll-attr", "SCROLL_ATTR")
+
+    a.ld_de_nn(24)
+
+    a.label("_sa_nd_neg")
+    a.bit_7_h()
+    a.jr_z_to("_sa_nd_neg_done")
+    a.add_hl_de()
+    a.jr_to("_sa_nd_neg")
+    a.label("_sa_nd_neg_done")
+
+    a.label("_sa_nd_pos")
+    a.or_a()
+    a.sbc_hl_de()
+    a.jr_nc_to("_sa_nd_pos")
+    a.add_hl_de()
+
+    a.ld_a_l()
+    a.ld_ind_nn_a("_sa_dy")
+
+    a.pop_de()
+    a.ld_a_e()
+    a.and_n(31)
+    a.ld_ind_nn_a("_sa_dx")
+    a.ld_l_a()
+    a.ld_a_n(32)
+    a.sub_l()
+    a.ld_ind_nn_a("_sa_kx")
+
+    a.pop_hl()
+    a.push_hl()
+
+
+    a.ld_a_ind_nn("_sa_dx")
+    a.or_a()
+    a.jp_z("_sa_after_h")
+
+    a.ld_a_n(24)
+    a.ld_ind_nn_a("_sa_rows")
+    a.ld_hl_nn(0x5800)
+
+    a.label("_sa_h_row")
+    a.push_hl()
+
+    a.ld_de_nn("_sa_scratch")
+    a.ld_a_ind_nn("_sa_dx")
+    a.ld_c_a()
+    a.ld_b_n(0)
+    a.ldir()
+
+    a.pop_de()
+    a.push_de()
+    a.ld_a_ind_nn("_sa_kx")
+    a.ld_c_a()
+    a.ld_b_n(0)
+    a.ldir()
+
+    a.ld_hl_nn("_sa_scratch")
+    a.ld_a_ind_nn("_sa_dx")
+    a.ld_c_a()
+    a.ld_b_n(0)
+    a.ldir()
+
+    a.pop_hl()
+    a.ld_de_nn(32)
+    a.add_hl_de()
+
+    a.ld_a_ind_nn("_sa_rows")
+    a.dec_a()
+    a.ld_ind_nn_a("_sa_rows")
+    a.jp_nz("_sa_h_row")
+
+    a.label("_sa_after_h")
+
+    a.ld_a_ind_nn("_sa_dy")
+    a.or_a()
+    a.jp_z("_sa_done")
+
+    a.label("_sa_v_pass")
+    a.ld_hl_nn(0x5800)
+    a.ld_de_nn("_sa_scratch")
+    a.ld_bc_nn(32)
+    a.ldir()
+
+    a.ld_hl_nn(0x5820)
+    a.ld_de_nn(0x5800)
+    a.ld_bc_nn(23 * 32)
+    a.ldir()
+
+    a.ld_hl_nn("_sa_scratch")
+    a.ld_de_nn(0x5AE0)
+    a.ld_bc_nn(32)
+    a.ldir()
+
+    a.ld_a_ind_nn("_sa_dy")
+    a.dec_a()
+    a.ld_ind_nn_a("_sa_dy")
+    a.jp_nz("_sa_v_pass")
+
+    a.label("_sa_done")
+    a.pop_hl()
+    a.dispatch()
+
+    a.label("_sa_dx")
+    a.byte(0)
+    a.label("_sa_dy")
+    a.byte(0)
+    a.label("_sa_kx")
+    a.byte(0)
+    a.label("_sa_rows")
+    a.byte(0)
+    a.label("_sa_scratch")
+    for _ in range(32):
+        a.byte(0)
+
+def create_wait_frame(a: Asm) -> None:
+    a.label("WAIT_FRAME")
+    a.alias("wait-frame", "WAIT_FRAME")
+    a.ei()
+    a.halt()
+    a.di()
+    a.dispatch()
 
 PRIMITIVES = [
     create_next, create_docol, create_exit,
@@ -947,4 +1071,6 @@ PRIMITIVES = [
     create_key,
     create_key_query,
     create_reset_cursor,
+    create_scroll_attr,
+    create_wait_frame,
 ]

@@ -73,12 +73,17 @@ class Asm:
         self.rel_fixups.append((len(self.code), target))
         self.code.append(0x00)
 
+
     def jr_to(self, target: str) -> None:       self._emit_jr(0x18, target)
     def jr_nz_to(self, target: str) -> None:    self._emit_jr(0x20, target)
     def jr_z_to(self, target: str) -> None:     self._emit_jr(0x28, target)
     def jr_nc_to(self, target: str) -> None:    self._emit_jr(0x30, target)
     def jr_c_to(self, target: str) -> None:     self._emit_jr(0x38, target)
     def djnz_to(self, target: str) -> None:     self._emit_jr(0x10, target)
+    def ld_c_a(self):    self.code.append(0x4F)
+    def sub_e(self):     self.code.append(0x93)
+    def dec_a(self):     self.code.append(0x3D)
+    def jp_nz(self, target): self.code.append(0xC2); self.word(target)
 
     def resolve(self) -> bytes:
         for offset, name in self.fixups:
