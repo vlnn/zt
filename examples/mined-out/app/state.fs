@@ -6,11 +6,12 @@ variable score
 variable level-no
 variable ti
 variable max-level-reached
+variable initial-bonus-pending
 
-create level-paper    6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c, 6 c,
-create level-border   0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 2 c,
-create level-mines   50 c, 60 c, 70 c, 80 c, 90 c, 100 c, 20 c, 50 c,
-create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 ,
+create level-paper    6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c, 6 c, 5 c,
+create level-border   0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 2 c, 2 c,
+create level-mines   50 c, 60 c, 70 c, 80 c, 90 c, 100 c, 20 c, 50 c, 82 c,
+create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 , 5000 ,
 
 : lx             ( -- i )        level-no @ 1- ;
 
@@ -22,9 +23,10 @@ create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 ,
 : level>=?       ( n -- flag )   level-no @ swap < 0= ;
 : has-bill?      ( -- flag )     9 level>=? ;
 : has-damsels?   ( -- flag )     2 level>=?  has-bill? 0=  and ;
-: has-spreader?  ( -- flag )     3 level>=? ;
+: has-spreader?  ( -- flag )     3 level>=?  has-bill? 0=  and ;
 : has-bug?       ( -- flag )     4 level>=? ;
-: has-map-blow?  ( -- flag )     5 level>=? ;
+: has-map-blow?  ( -- flag )     5 level>=?  has-bill? 0=  and ;
+: has-closed-gap? ( -- flag )    level-no @ 8 = ;
 
 : reset-ti            ( -- )        0 ti ! ;
 : map-blow-threshold  ( -- n )      level-paper@ 260 * 70 + ;
@@ -39,6 +41,8 @@ create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 ,
     level-no @ 1+ 9 min level-no !
     bump-max-level ;
 
+: contrast-ink   ( paper -- ink )   4 <  if 7 else 0 then ;
+
 : apply-level-colors  ( -- )
-    level-paper@ 0 cls
+    level-paper@ dup contrast-ink cls
     level-border@ border ;

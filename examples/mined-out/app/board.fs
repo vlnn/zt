@@ -54,10 +54,17 @@ create board-buf  704 allot
 
 : gap?           ( col -- flag )      dup gap-left = swap gap-right = or ;
 
-: place-fence-at-col  ( col row -- )
-    over gap? if 2drop exit then
+: place-fence-cell  ( col row -- )
     2dup t-fence -rot tile!
     fence-at ;
+
+: erase-cell        ( col row -- )
+    2dup t-empty -rot tile!
+    erase-at ;
+
+: place-fence-at-col  ( col row -- )
+    over gap? if 2drop exit then
+    place-fence-cell ;
 
 : fence-row      ( row -- )
     board-cols 0 do  i over place-fence-at-col  loop drop ;
@@ -92,3 +99,15 @@ create board-buf  704 allot
 
 : hide-all-mines ( -- )
     board-rows 0 do i hide-mines-in-row loop ;
+
+: gap-open?      ( -- flag )
+    gap-left top-fence-row empty?
+    gap-right top-fence-row empty?  and ;
+
+: close-top-gap  ( -- )
+    gap-left  top-fence-row place-fence-cell
+    gap-right top-fence-row place-fence-cell ;
+
+: open-top-gap   ( -- )
+    gap-left  top-fence-row erase-cell
+    gap-right top-fence-row erase-cell ;

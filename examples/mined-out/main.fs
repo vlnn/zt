@@ -12,6 +12,7 @@ require app/mined.fs
 
 : main
     init-game
+    show-intro
     begin
         init-level
         play-loop

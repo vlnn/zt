@@ -9,6 +9,7 @@ require trail.fs
 require state.fs
 require sounds.fs
 require board.fs
+require cheat.fs
 
 variable prow   variable pcol
 variable prev-row variable prev-col
@@ -30,16 +31,28 @@ variable prev-row variable prev-col
 57 constant k-up
 56 constant k-down
 
-: setup-keys     ( -- )        k-left k-right k-up k-down set-keys! ;
-: read-dx        ( -- dx )     key-right? key-left? - ;
-: read-dy        ( -- dy )     key-down?  key-up?   - ;
+0 constant k-caps
+
+: caps?          ( -- 0|1 )    k-caps pressed? ;
+: plain-key?     ( code -- 0|1 )   pressed? caps? 0= and ;
+: shifted-key?   ( code -- 0|1 )   pressed? caps? and ;
+
+: move-left?     ( -- 0|1 )    k-left  plain-key?   53 shifted-key?   or ;
+: move-right?    ( -- 0|1 )    k-right plain-key?   56 shifted-key?   or ;
+: move-up?       ( -- 0|1 )    k-up    plain-key?   55 shifted-key?   or ;
+: move-down?     ( -- 0|1 )    k-down  plain-key?   54 shifted-key?   or ;
+
+: read-dx        ( -- dx )     move-right? move-left? - ;
+: read-dy        ( -- dy )     move-down?  move-up?   - ;
 
 : clamp-col      ( n -- n )    0 max board-cols 1- min ;
 : clamp-row      ( n -- n )    0 max board-rows 1- min ;
 
 : apply-input    ( -- )
-    pcol @ read-dx + clamp-col pcol !
-    prow @ read-dy + clamp-row prow ! ;
+    read-dx read-dy
+    2dup cheat-observe
+    prow @ + clamp-row prow !
+    pcol @ + clamp-col pcol ! ;
 
 : try-move       ( -- moved? )   apply-input moved? ;
 
@@ -78,6 +91,8 @@ variable damsels-alive
 
 variable spreader-col   variable spreader-row   variable spreader-active
 
+3 constant spreader-drop-odds
+
 : maybe-spawn-spreader  ( -- )
     has-spreader? 0= if exit then
     spreader-active @ if exit then
@@ -87,16 +102,35 @@ variable spreader-col   variable spreader-row   variable spreader-active
         1 spreader-active !
     then ;
 
+: clamp-interior-row   ( row -- row' )
+    top-fence-row 1+ max
+    bottom-fence-row 1- min ;
+
 : spreader-row-jitter  ( -- -1|0|1 )  3 random 1- ;
-: spreader-trail-row   ( -- row )     spreader-row-jitter spreader-row @ + ;
+
+: spreader-trail-row   ( -- row )
+    spreader-row-jitter spreader-row @ + clamp-interior-row ;
+
+: spreader-drop-mine?  ( -- flag )    spreader-drop-odds one-in ;
+
+: spreader-maybe-drop  ( -- )
+    spreader-drop-mine? if
+        spreader-col @ spreader-trail-row try-place-mine
+    then ;
+
+: spreader-despawn     ( -- )         0 spreader-active ! ;
+
+: spreader-at-edge?    ( -- flag )    spreader-col @ 30 > ;
+
+: spreader-blocked?    ( -- flag )    spreader-col @ spreader-row @ empty? 0= ;
 
 : spreader-step  ( -- )
     spreader-active @ 0= if exit then
     spreader-col @ spreader-row @ erase-at
-    spreader-col @ spreader-trail-row try-place-mine
+    spreader-maybe-drop
     spreader-col @ 1+ spreader-col !
-    spreader-col @ 30 > if 0 spreader-active ! exit then
-    spreader-col @ spreader-row @ empty? 0= if 0 spreader-active ! exit then
+    spreader-at-edge? if spreader-despawn exit then
+    spreader-blocked? if spreader-despawn exit then
     spreader-col @ spreader-row @ spreader-at ;
 
 variable bug-col  variable bug-row  variable bug-prev-col  variable bug-prev-row
@@ -136,20 +170,21 @@ variable bill-col
 
 : pick-bill      ( -- )   11 random 6 +  5 +  bill-col ! ;
 
-: place-chamber-cell  ( col row -- )
-    2dup t-fence -rot tile!
-    fence-at ;
-
-: draw-chamber-bar-at-row  ( row -- )
+: draw-chamber-wall-row  ( row -- )
     >r
-    bill-col @ 1-  r@ place-chamber-cell
-    bill-col @     r@ place-chamber-cell
-    bill-col @ 1+  r@ place-chamber-cell
+    bill-col @ 1-  r@ place-fence-cell
+    bill-col @ 1+  r@ place-fence-cell
     r> drop ;
 
+: draw-chamber-walls  ( -- )
+    13 4 do  i bill-row =  0= if i draw-chamber-wall-row then  loop ;
+
+: place-hidden-bill-mine  ( -- )
+    bill-col @ bill-row 3 +  try-place-mine ;
+
 : draw-chamber   ( -- )
-    7 draw-chamber-bar-at-row
-    9 draw-chamber-bar-at-row ;
+    draw-chamber-walls
+    place-hidden-bill-mine ;
 
 : place-bill     ( -- )
     t-empty bill-col @ bill-row tile!

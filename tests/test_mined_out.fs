@@ -2,6 +2,9 @@ include test-lib.fs
 require core.fs
 require ../examples/mined-out/app/mined.fs
 
+variable _bad-count
+variable _out-of-bounds
+
 
 \ -----------------------------------------------------------------------------
 \ state.fs — level tables
@@ -353,16 +356,6 @@ require ../examples/mined-out/app/mined.fs
 
 : test-win-sets-alive-zero   1 alive !  1 level-no !  0 score !  win  alive @  0 assert-eq ;
 
-: test-win-awards-level-bonus-plus-100
-    1 alive !   2 level-no !   0 score !
-    win
-    score @  350 assert-eq ;   \ level-2 bonus 250 + the flat 100
-
-: test-award-bonus-level-5
-    5 level-no !   0 score !
-    award-bonus
-    score @  2200 assert-eq ;
-
 
 \ -----------------------------------------------------------------------------
 \ game.fs — hiscore integration
@@ -452,15 +445,25 @@ require ../examples/mined-out/app/mined.fs
             11 >  if 1 _result ! then
     loop ;
 
-\ a mine-behind-the-spreader must land in { row-1, row, row+1 } of the
-\ spreader-row it occupied before advancing
-: test-spreader-step-lays-mine-in-jitter-range
+\ every mine the spreader drops during a run must land within the jitter
+\ band of { row-1, row, row+1 } for the row it occupied that step
+: test-spreader-mines-stay-in-jitter-band
     board-init
     1 seed!
-    1 spreader-active !   5 spreader-col !   10 spreader-row !
-    spreader-step
-    5  9 mine?   5 10 mine?  or   5 11 mine?  or
-    assert-true ;
+    1 spreader-active !   3 spreader-col !   10 spreader-row !
+    30 0 do
+        spreader-active @ 0= if leave then
+        spreader-step
+    loop
+    0 _bad-count !
+    board-rows 0 do
+        i 9 <  i 11 >  or if
+            board-cols 0 do
+                i j mine? if 1 _bad-count +! then
+            loop
+        then
+    loop
+    _bad-count @  0 assert-eq ;
 
 
 \ -----------------------------------------------------------------------------
@@ -582,11 +585,6 @@ require ../examples/mined-out/app/mined.fs
     9 level-no !   17 bill-col !
     18 pcol !  bill-row prow !
     won?  assert-false ;
-
-: test-reward-level-adds-bonus-and-100
-    3 level-no !   0 score !
-    reward-level
-    score @  850 assert-eq ;       \ level-3 bonus 750 + 100
 
 : test-reward-bill-adds-flat-2000
     0 score !
@@ -710,7 +708,8 @@ require ../examples/mined-out/app/mined.fs
 
 
 \ -----------------------------------------------------------------------------
-\ actors.fs — chamber walls frame Bill on rows 7 and 9
+\ actors.fs — L9 chamber per BASIC lines 9300/9340: bars with center gap,
+\ side walls top and bottom, hidden mine inside the lower chamber
 \ -----------------------------------------------------------------------------
 
 : test-chamber-top-bar-left
@@ -718,15 +717,15 @@ require ../examples/mined-out/app/mined.fs
     draw-chamber
     16 7 fence?  assert-true ;
 
-: test-chamber-top-bar-center
-    board-init  17 bill-col !
-    draw-chamber
-    17 7 fence?  assert-true ;
-
 : test-chamber-top-bar-right
     board-init  17 bill-col !
     draw-chamber
     18 7 fence?  assert-true ;
+
+: test-chamber-top-bar-has-gap-at-bill-col
+    board-init  17 bill-col !
+    draw-chamber
+    17 7 empty?  assert-true ;
 
 : test-chamber-bottom-bar-left
     board-init  17 bill-col !
@@ -738,6 +737,11 @@ require ../examples/mined-out/app/mined.fs
     draw-chamber
     18 9 fence?  assert-true ;
 
+: test-chamber-bottom-bar-has-gap-at-bill-col
+    board-init  17 bill-col !
+    draw-chamber
+    17 9 empty?  assert-true ;
+
 : test-chamber-row-8-is-open-at-bill
     board-init  17 bill-col !
     draw-chamber
@@ -748,14 +752,365 @@ require ../examples/mined-out/app/mined.fs
     draw-chamber
     16 8 empty?  assert-true ;
 
-: test-place-bill-draws-chamber-top-bar
+\ Side walls at rows 4-6 (upper chamber) and 10-12 (lower chamber),
+\ cols bill-col-1 and bill-col+1.
+: test-chamber-upper-side-wall-top-left     board-init 17 bill-col ! draw-chamber   16  4 fence?  assert-true ;
+: test-chamber-upper-side-wall-top-right    board-init 17 bill-col ! draw-chamber   18  4 fence?  assert-true ;
+: test-chamber-upper-side-wall-middle-left  board-init 17 bill-col ! draw-chamber   16  5 fence?  assert-true ;
+: test-chamber-upper-side-wall-bottom-left  board-init 17 bill-col ! draw-chamber   16  6 fence?  assert-true ;
+: test-chamber-lower-side-wall-top-left     board-init 17 bill-col ! draw-chamber   16 10 fence?  assert-true ;
+: test-chamber-lower-side-wall-bottom-right board-init 17 bill-col ! draw-chamber   18 12 fence?  assert-true ;
+
+\ Hidden mine at (bill-col, bill-row + 3) = (bill-col, 11) per BASIC line 9340.
+: test-chamber-has-hidden-mine
+    board-init  17 bill-col !
+    draw-chamber
+    17 11 mine?  assert-true ;
+
+: test-place-bill-draws-chamber-top-bar-left
     board-init
     1 seed!
     pick-bill  place-bill
-    bill-col @ 7 fence?  assert-true ;
+    bill-col @ 1-  7 fence?  assert-true ;
 
 : test-place-bill-keeps-bill-cell-empty
     board-init
     1 seed!
     pick-bill  place-bill
     bill-col @ bill-row empty?  assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — speed-score bonus from BASIC line 3000
+\ -----------------------------------------------------------------------------
+
+: test-speed-bonus-ti-0-level-1     1 level-no !     0 ti !  speed-bonus   200 assert-eq ;
+: test-speed-bonus-ti-100-level-1   1 level-no !   100 ti !  speed-bonus   190 assert-eq ;
+: test-speed-bonus-ti-1000-level-1  1 level-no !  1000 ti !  speed-bonus   100 assert-eq ;
+: test-speed-bonus-clamps-at-50     1 level-no !  3000 ti !  speed-bonus    50 assert-eq ;
+: test-speed-bonus-scales-by-level  3 level-no !   100 ti !  speed-bonus   570 assert-eq ;
+: test-speed-bonus-level-8-fast     8 level-no !     0 ti !  speed-bonus  1600 assert-eq ;
+
+: test-reward-level-adds-speed-bonus
+    2 level-no !   0 ti !   0 score !
+    reward-level
+    score @  400 assert-eq ;     \ ti=0 lvl=2 → 200 * 2
+
+: test-win-on-level-2-pays-speed-bonus
+    1 alive !   2 level-no !   0 ti !   0 score !
+    win
+    score @  400 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs / menu.fs / hud.fs — initial-bonus carry from level-select
+\ -----------------------------------------------------------------------------
+
+: test-apply-level-select-stashes-bonus-for-display
+    0 initial-bonus-pending !
+    5 apply-level-select
+    initial-bonus-pending @  2200 assert-eq ;
+
+: test-apply-level-1-leaves-pending-at-zero
+    99 initial-bonus-pending !
+    1 apply-level-select
+    initial-bonus-pending @  0 assert-eq ;
+
+: test-show-initial-bonus-clears-pending
+    5000 initial-bonus-pending !
+    show-initial-bonus
+    initial-bonus-pending @  0 assert-eq ;
+
+: test-init-game-zeroes-initial-bonus-pending
+    77 initial-bonus-pending !
+    init-game
+    initial-bonus-pending @  0 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs / board.fs / game.fs — L8 gap-closed mechanic per BASIC 480 + 570
+\ -----------------------------------------------------------------------------
+
+: test-has-closed-gap-level-7-false   7 level-no !  has-closed-gap?  assert-false ;
+: test-has-closed-gap-level-8-true    8 level-no !  has-closed-gap?  assert-true  ;
+: test-has-closed-gap-level-9-false   9 level-no !  has-closed-gap?  assert-false ;
+
+: test-close-top-gap-fills-left
+    board-init build-fences
+    close-top-gap
+    gap-left top-fence-row fence?  assert-true ;
+
+: test-close-top-gap-fills-right
+    board-init build-fences
+    close-top-gap
+    gap-right top-fence-row fence?  assert-true ;
+
+: test-gap-open-true-when-both-empty
+    board-init build-fences
+    gap-open?  assert-true ;
+
+: test-gap-open-false-when-sealed
+    board-init build-fences
+    close-top-gap
+    gap-open?  assert-false ;
+
+: test-open-top-gap-clears-sealed-gap
+    board-init build-fences close-top-gap
+    open-top-gap
+    gap-open?  assert-true ;
+
+\ maybe-open-gap combines the level gate, the already-open gate, and the
+\ adjacency condition.  Tested via its visible side effect on gap-open?.
+
+: test-maybe-open-gap-opens-on-L8-when-adj-equals-3
+    board-init build-fences close-top-gap
+    8 level-no !   5 pcol !  10 prow !
+    4 10 try-place-mine
+    6 10 try-place-mine
+    5  9 try-place-mine
+    maybe-open-gap
+    gap-open?  assert-true ;
+
+: test-maybe-open-gap-noop-on-L7
+    board-init build-fences close-top-gap
+    7 level-no !   5 pcol !  10 prow !
+    4 10 try-place-mine
+    6 10 try-place-mine
+    5  9 try-place-mine
+    maybe-open-gap
+    gap-open?  assert-false ;
+
+: test-maybe-open-gap-noop-when-adj-is-2
+    board-init build-fences close-top-gap
+    8 level-no !   5 pcol !  10 prow !
+    4 10 try-place-mine
+    6 10 try-place-mine
+    maybe-open-gap
+    gap-open?  assert-false ;
+
+: test-init-level-seals-gap-on-level-8
+    8 level-no !   1 seed!
+    init-level
+    gap-open?  assert-false ;
+
+: test-init-level-leaves-gap-open-on-level-7
+    7 level-no !   1 seed!
+    init-level
+    gap-open?  assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ cheat.fs — hidden LR cheat reveals all mines; re-arms on map-blown
+\ -----------------------------------------------------------------------------
+
+: test-cheat-reset-enables-watching   cheat-reset  cheat-watching?  assert-true ;
+: test-cheat-reset-not-fired          cheat-reset  cheat-fired?     assert-false ;
+: test-cheat-reset-not-locked         cheat-reset  cheat-locked?    assert-false ;
+
+: test-cheat-target-is-2              cheat-target  2 assert-eq ;
+
+: test-cheat-vertical-move-locks
+    cheat-reset
+    1 1 cheat-observe
+    cheat-locked?  assert-true ;
+
+: test-cheat-same-direction-twice-locks
+    cheat-reset
+    1 0 cheat-observe
+    1 0 cheat-observe
+    cheat-locked?  assert-true ;
+
+: test-cheat-one-move-not-yet-fired
+    cheat-reset
+    -1 0 cheat-observe
+    cheat-fired?  assert-false ;
+
+: test-cheat-left-then-right-fires
+    cheat-reset
+    -1 0 cheat-observe
+     1 0 cheat-observe
+    cheat-fired?  assert-true ;
+
+: test-cheat-right-then-left-fires
+    cheat-reset
+     1 0 cheat-observe
+    -1 0 cheat-observe
+    cheat-fired?  assert-true ;
+
+: test-cheat-no-motion-does-not-lock
+    cheat-reset
+    0 0 cheat-observe
+    cheat-watching?  assert-true ;
+
+: test-cheat-no-motion-does-not-advance
+    cheat-reset
+    0 0 cheat-observe
+    cheat-state @  0 assert-eq ;
+
+: test-cheat-after-lock-ignores-further-input
+    cheat-reset
+    1 1 cheat-observe
+    -1 0 cheat-observe
+     1 0 cheat-observe
+    cheat-fired?  assert-false ;
+
+: test-cheat-after-fire-state-stays-fired
+    cheat-reset
+    -1 0 cheat-observe  1 0 cheat-observe
+    -1 0 cheat-observe  1 0 cheat-observe
+    cheat-fired?  assert-true ;
+
+: test-blow-map-away-rearms-cheat
+    cheat-reset
+    -1 0 cheat-observe   1 0 cheat-observe
+    cheat-fired?  assert-true
+    board-init build-fences
+    5 level-no !
+    blow-map-away
+    cheat-watching?  assert-true ;
+
+: test-blow-map-away-lets-cheat-re-fire
+    cheat-reset
+    -1 0 cheat-observe   1 0 cheat-observe
+    board-init build-fences
+    5 level-no !
+    blow-map-away
+     1 0 cheat-observe  -1 0 cheat-observe
+    cheat-fired?  assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ menu.fs — I/i keys at the retry prompt route back to the instructions screen
+\ -----------------------------------------------------------------------------
+
+: test-intro-key-uppercase-i   73 intro-key?   assert-true  ;
+: test-intro-key-lowercase-i  105 intro-key?   assert-true  ;
+: test-intro-key-other-letter  65 intro-key?   assert-false ;
+: test-intro-key-digit-1       49 intro-key?   assert-false ;
+: test-intro-key-space         32 intro-key?   assert-false ;
+
+
+\ -----------------------------------------------------------------------------
+\ actors.fs — spreader: trail row clamped to interior, mines dropped sparsely
+\ -----------------------------------------------------------------------------
+
+: test-clamp-interior-row-below-min    1 clamp-interior-row   2 assert-eq ;
+: test-clamp-interior-row-at-min       2 clamp-interior-row   2 assert-eq ;
+: test-clamp-interior-row-mid         10 clamp-interior-row  10 assert-eq ;
+: test-clamp-interior-row-at-max      19 clamp-interior-row  19 assert-eq ;
+: test-clamp-interior-row-above-max   20 clamp-interior-row  19 assert-eq ;
+: test-clamp-interior-row-waaay-above 99 clamp-interior-row  19 assert-eq ;
+
+: count-trail-row-hits-fence  ( n -- count )
+    0 _out-of-bounds !
+    0 do
+        spreader-trail-row
+        dup top-fence-row = if 1 _out-of-bounds +! then
+        bottom-fence-row = if 1 _out-of-bounds +! then
+    loop
+    _out-of-bounds @ ;
+
+: test-spreader-trail-at-top-row-never-hits-fence
+    1 seed!
+    2 spreader-row !
+    200 count-trail-row-hits-fence  0 assert-eq ;
+
+: test-spreader-trail-at-bottom-row-never-hits-fence
+    1 seed!
+    19 spreader-row !
+    200 count-trail-row-hits-fence  0 assert-eq ;
+
+: count-trail-row-outside-interior  ( n -- count )
+    0 _out-of-bounds !
+    0 do
+        spreader-trail-row
+        dup top-fence-row 1+ < if 1 _out-of-bounds +! then
+        bottom-fence-row 1- > if 1 _out-of-bounds +! then
+    loop
+    _out-of-bounds @ ;
+
+: test-spreader-trail-row-always-in-interior
+    1 seed!
+    10 spreader-row !
+    100 count-trail-row-outside-interior  0 assert-eq ;
+
+: run-full-spreader  ( -- )
+    30 0 do
+        spreader-active @ 0= if leave then
+        spreader-step
+    loop ;
+
+: count-board-mines  ( -- n )
+    0
+    board-rows 0 do
+        board-cols 0 do
+            i j mine? if 1+ then
+        loop
+    loop ;
+
+: test-spreader-run-drops-far-fewer-than-27-mines
+    1 seed!
+    board-init build-fences
+    10 spreader-row !   3 spreader-col !   1 spreader-active !
+    run-full-spreader
+    count-board-mines  20 <  assert-true ;
+
+: test-spreader-run-drops-at-least-one-mine
+    1 seed!
+    board-init build-fences
+    10 spreader-row !   3 spreader-col !   1 spreader-active !
+    run-full-spreader
+    count-board-mines  0 >  assert-true ;
+
+: test-spreader-never-seals-top-gap
+    1 seed!
+    board-init build-fences
+    2 spreader-row !   3 spreader-col !   1 spreader-active !
+    run-full-spreader
+    gap-open?  assert-true ;
+
+: test-spreader-never-seals-bottom-gap
+    1 seed!
+    board-init build-fences
+    19 spreader-row !  3 spreader-col !   1 spreader-active !
+    run-full-spreader
+    gap-left  bottom-fence-row empty?
+    gap-right bottom-fence-row empty?  and
+    assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs — contrast-ink picks a readable ink (like BASIC's INK 9)
+\ -----------------------------------------------------------------------------
+
+: test-contrast-ink-paper-0-black      0 contrast-ink  7 assert-eq ;
+: test-contrast-ink-paper-1-blue       1 contrast-ink  7 assert-eq ;
+: test-contrast-ink-paper-2-red        2 contrast-ink  7 assert-eq ;
+: test-contrast-ink-paper-3-magenta    3 contrast-ink  7 assert-eq ;
+: test-contrast-ink-paper-4-green      4 contrast-ink  0 assert-eq ;
+: test-contrast-ink-paper-5-cyan       5 contrast-ink  0 assert-eq ;
+: test-contrast-ink-paper-6-yellow     6 contrast-ink  0 assert-eq ;
+: test-contrast-ink-paper-7-white      7 contrast-ink  0 assert-eq ;
+
+: test-level-7-ink-is-white
+    7 level-no !
+    level-paper@ contrast-ink
+    7 assert-eq ;
+
+: test-level-1-ink-is-black
+    1 level-no !
+    level-paper@ contrast-ink
+    0 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs — level 9 entries (BASIC damsels=9)
+\ -----------------------------------------------------------------------------
+
+: test-level-paper-9                9 level-no !  level-paper@    5 assert-eq ;
+: test-level-border-9               9 level-no !  level-border@   2 assert-eq ;
+: test-level-mines-9                9 level-no !  level-mines@   82 assert-eq ;
+: test-level-bonus-9                9 level-no !  level-bonus@ 5000 assert-eq ;
+: test-has-spreader-level-9-false   9 level-no !  has-spreader?  assert-false ;
+: test-has-map-blow-level-9-false   9 level-no !  has-map-blow?  assert-false ;
+: test-has-bill-level-9             9 level-no !  has-bill?      assert-true ;

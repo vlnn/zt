@@ -34,9 +34,11 @@ class TestMinedOutLayout:
         "app/state.fs",
         "app/sounds.fs",
         "app/board.fs",
+        "app/cheat.fs",
         "app/actors.fs",
         "app/hud.fs",
         "app/menu.fs",
+        "app/title.fs",
         "app/game.fs",
     ])
     def test_example_files_exist(self, relpath):
@@ -56,12 +58,14 @@ class TestMinedOutCompiles:
 class TestMinedOutWordsByModule:
 
     @pytest.mark.parametrize("word", [
-        "score", "level-no", "ti", "max-level-reached",
+        "score", "level-no", "ti", "max-level-reached", "initial-bonus-pending",
         "level-paper", "level-border", "level-mines", "level-bonus",
         "level-paper@", "level-border@", "level-mines@", "level-bonus@",
         "has-damsels?", "has-spreader?", "has-bug?", "has-map-blow?", "has-bill?",
+        "has-closed-gap?",
         "map-blow-threshold", "map-blow-due?", "reset-ti",
         "advance-level", "bump-max-level", "apply-level-colors",
+        "contrast-ink",
     ])
     def test_state_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -82,8 +86,10 @@ class TestMinedOutWordsByModule:
         "erase-at", "fence-at", "mine-at", "player-at",
         "damsel-at", "spreader-at", "bug-at", "bill-at",
         "gap?", "fence-row", "build-fences",
+        "place-fence-cell", "erase-cell",
         "try-place-mine", "scatter-mines",
         "show-all-mines", "hide-all-mines",
+        "close-top-gap", "open-top-gap", "gap-open?",
     ])
     def test_board_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -93,6 +99,9 @@ class TestMinedOutWordsByModule:
     @pytest.mark.parametrize("word", [
         "player-xy", "player-xy!", "player-reset", "snapshot-pos", "moved?",
         "apply-input", "try-move",
+        "caps?", "plain-key?", "shifted-key?",
+        "move-left?", "move-right?", "move-up?", "move-down?",
+        "read-dx", "read-dy",
         "pick-damsels", "rescue-damsel", "maybe-rescue",
         "maybe-spawn-spreader", "spreader-step",
         "spreader-row-jitter", "spreader-trail-row",
@@ -108,6 +117,8 @@ class TestMinedOutWordsByModule:
     @pytest.mark.parametrize("word", [
         "adj-count", "draw-hud", "update-hud",
         "trail-setup", "record-step", "action-replay",
+        "show-initial-bonus", "show-level-intro", "clear-banner-row",
+        "slow-held?", "end-held?", "replay-frames",
     ])
     def test_hud_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -115,8 +126,18 @@ class TestMinedOutWordsByModule:
         )
 
     @pytest.mark.parametrize("word", [
+        "cheat-reset", "cheat-observe", "cheat-fired?",
+        "cheat-watching?", "cheat-locked?", "cheat-target",
+    ])
+    def test_cheat_module_words(self, built_compiler, word):
+        assert word in built_compiler.words, (
+            f"app/cheat.fs should define '{word}'"
+        )
+
+    @pytest.mark.parametrize("word", [
         "valid-level-key?", "key->level", "apply-level-select",
-        "read-valid-level", "select-level",
+        "read-valid-level", "select-level", "intro-key?",
+        "wait-real-key",
     ])
     def test_menu_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -124,14 +145,26 @@ class TestMinedOutWordsByModule:
         )
 
     @pytest.mark.parametrize("word", [
+        "press-any-key",
+        "quicksilva-banner", "title-card", "instructions",
+        "show-intro",
+    ])
+    def test_title_module_words(self, built_compiler, word):
+        assert word in built_compiler.words, (
+            f"app/title.fs should define '{word}'"
+        )
+
+    @pytest.mark.parametrize("word", [
         "init-game", "init-level", "end-of-level",
+        "tick-world", "after-player-move",
         "step-once", "play-loop",
         "won?", "die", "win",
-        "reward-level", "reward-bill",
+        "reward-level", "reward-bill", "speed-bonus",
         "check-hiscore", "record-hiscore",
         "continue-or-restart", "reset-for-new-game",
         "should-select-level?",
         "blow-map-away", "bill-banner", "bill-rescued",
+        "maybe-open-gap",
     ])
     def test_game_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (

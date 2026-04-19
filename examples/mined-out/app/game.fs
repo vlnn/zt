@@ -16,9 +16,10 @@ variable alive
 
 : die            ( -- )   explosion  0 alive ! ;
 
-: award-bonus    ( -- )   level-bonus@ score +! ;
+: speed-bonus    ( -- n )
+    2000 ti @ -  50 /  5 *   50 max   level-no @ * ;
 
-: reward-level   ( -- )   award-bonus   100 score +! ;
+: reward-level   ( -- )   speed-bonus score +! ;
 : reward-bill    ( -- )   2000 score +! ;
 
 : win            ( -- )
@@ -41,27 +42,40 @@ variable alive
 : blow-map-away  ( -- )
     map-blown-banner
     hide-all-mines
+    cheat-reset
     reset-ti ;
 
-: step-once      ( -- )
-    wait-frame
+: maybe-open-gap  ( -- )
+    has-closed-gap? 0= if exit then
+    gap-open?          if exit then
+    adj-count 3 = if open-top-gap gap-chirp then ;
+
+: tick-world     ( -- )
     1 ti +!
     map-blow-due? if blow-map-away then
     maybe-spawn-spreader
-    spreader-step
-    try-move 0= if exit then
+    spreader-step ;
+
+: after-player-move  ( -- )
     click
     old-xy erase-at
     maybe-rescue
     player-xy empty? 0= if handle-collision exit then
     player-xy player-at
     update-hud
+    maybe-open-gap
     won? if win exit then
     snapshot-pos
     record-step
     bug-step
-    player-hit-bug? if die exit then
-    4 throttle ;
+    player-hit-bug? if die exit then ;
+
+: step-once      ( -- )
+    wait-frame
+    tick-world
+    try-move 0= if exit then
+    after-player-move
+    alive @ if 4 throttle then ;
 
 : play-loop      ( -- )
     1 alive !
@@ -74,15 +88,22 @@ variable alive
     apply-level-colors
     board-init
     build-fences
+    has-closed-gap? if close-top-gap then
     level-mines@ scatter-mines
     place-actors-for-level
+
     bug-reset
     0 spreader-active !
     reset-ti
+    cheat-reset
+
     player-reset
     trail-setup
+
     draw-hud
-    player-xy player-at ;
+    player-xy player-at
+    show-level-intro
+    show-initial-bonus ;
 
 : end-of-level   ( -- )
     show-all-mines
@@ -104,6 +125,7 @@ variable alive
 : should-select-level?  ( -- flag )   max-level-reached @ 2 < 0= ;
 
 : continue-or-restart ( -- )
+    drain-keys
     won? if
         has-bill? if bill-rescued exit then
         advance-level exit
@@ -113,9 +135,9 @@ variable alive
     should-select-level? if select-level then ;
 
 : init-game      ( -- )
-    setup-keys
     hi-reset
     1 max-level-reached !
+    0 initial-bonus-pending !
     0 score !
     1 level-no !
     1 seed! ;
