@@ -209,3 +209,78 @@ def _run_one_sample() -> ProfileReport:
     p = Profiler([WordRange(name="main", start=0x8000, end=0x8010)])
     p.sample(0x8000)
     return p.report()
+
+
+class TestProfilerCostParameter:
+
+    @pytest.fixture
+    def ranges(self):
+        return [
+            WordRange(name="a", start=0x8000, end=0x8010),
+            WordRange(name="b", start=0x8010, end=0x8020),
+        ]
+
+    def test_default_cost_is_one(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000)
+        entry = _by_word(p.report())["a"]
+        assert entry.t_states == 1, "sample() with no cost should default to cost=1"
+
+    def test_cost_accumulates_per_sample(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=4)
+        p.sample(0x8000, cost=7)
+        entry = _by_word(p.report())["a"]
+        assert entry.t_states == 11, "t_states should accumulate the cost arguments"
+
+    def test_cost_and_tick_counters_are_independent(self, ranges):
+        p = Profiler(ranges)
+        for _ in range(3):
+            p.sample(0x8000, cost=10)
+        entry = _by_word(p.report())["a"]
+        assert entry.ticks == 3, "ticks should count samples regardless of cost"
+        assert entry.t_states == 30, "t_states should sum the cost values"
+
+    def test_per_word_cost_partition(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=4)
+        p.sample(0x8010, cost=11)
+        p.sample(0x8010, cost=7)
+        by = _by_word(p.report())
+        assert by["a"].t_states == 4, "a should receive its sample cost"
+        assert by["b"].t_states == 18, "b should receive the sum of its two sample costs"
+
+    def test_report_total_t_states(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=4)
+        p.sample(0x8010, cost=11)
+        p.sample(0x9000, cost=5)
+        assert p.report().total_t_states == 20, (
+            "total_t_states should sum costs across all words including <unknown>"
+        )
+
+    def test_unknown_pc_receives_cost_too(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x9000, cost=8)
+        entry = _by_word(p.report())[UNKNOWN]
+        assert entry.t_states == 8, "<unknown> PCs should still accumulate cost"
+
+
+class TestFormatReportWithTStates:
+
+    def test_header_mentions_t_states(self):
+        report = _run_one_sample()
+        text = format_report(report)
+        assert "T-states" in text, "report header should include a T-states column"
+
+    def test_t_state_percentage_reflects_cost_share(self):
+        ranges = [
+            WordRange(name="a", start=0x8000, end=0x8010),
+            WordRange(name="b", start=0x8010, end=0x8020),
+        ]
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=30)
+        p.sample(0x8010, cost=10)
+        text = format_report(p.report())
+        assert "75.0" in text, "a with 30/40 cost should show 75.0% of T-states"
+        assert "25.0" in text, "b with 10/40 cost should show 25.0% of T-states"

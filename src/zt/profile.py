@@ -19,12 +19,14 @@ class ProfileEntry:
     word: str
     calls: int
     ticks: int
+    t_states: int = 0
 
 
 @dataclass(frozen=True)
 class ProfileReport:
     entries: tuple[ProfileEntry, ...]
     total_ticks: int
+    total_t_states: int = 0
 
 
 def build_word_ranges(
@@ -66,25 +68,36 @@ class Profiler:
         self._ranges = sorted(ranges, key=lambda r: r.start)
         self._starts = [r.start for r in self._ranges]
         self._ticks: dict[str, int] = {}
+        self._t_states: dict[str, int] = {}
         self._calls: dict[str, int] = {}
         self._current: str | None = None
         self._stack: list[str] = []
 
-    def sample(self, pc: int) -> None:
+    def sample(self, pc: int, cost: int = 1) -> None:
         word = self._resolve(pc)
         self._ticks[word] = self._ticks.get(word, 0) + 1
+        self._t_states[word] = self._t_states.get(word, 0) + cost
         if word != self._current:
             self._on_transition(word)
             self._current = word
 
     def report(self) -> ProfileReport:
         entries = tuple(
-            ProfileEntry(word=name, calls=self._calls.get(name, 0), ticks=ticks)
+            ProfileEntry(
+                word=name,
+                calls=self._calls.get(name, 0),
+                ticks=ticks,
+                t_states=self._t_states.get(name, 0),
+            )
             for name, ticks in sorted(
                 self._ticks.items(), key=lambda item: -item[1],
             )
         )
-        return ProfileReport(entries=entries, total_ticks=sum(self._ticks.values()))
+        return ProfileReport(
+            entries=entries,
+            total_ticks=sum(self._ticks.values()),
+            total_t_states=sum(self._t_states.values()),
+        )
 
     def _resolve(self, pc: int) -> str:
         if not self._ranges:
@@ -105,14 +118,21 @@ class Profiler:
 
 
 def format_report(report: ProfileReport) -> str:
-    header = f"{'Word':<20} {'Calls':>8} {'Ticks':>10} {'Avg':>10} {'%':>6}"
+    header = (
+        f"{'Word':<20} {'Calls':>8} {'Ticks':>10} {'Avg':>10} {'%':>6}"
+        f" {'T-states':>12} {'T%':>6}"
+    )
     lines = [header, "-" * len(header)]
     for e in report.entries:
-        lines.append(_format_row(e, report.total_ticks))
+        lines.append(_format_row(e, report.total_ticks, report.total_t_states))
     return "\n".join(lines)
 
 
-def _format_row(e: ProfileEntry, total: int) -> str:
+def _format_row(e: ProfileEntry, total_ticks: int, total_t_states: int) -> str:
     avg = e.ticks // e.calls if e.calls else 0
-    pct = (100.0 * e.ticks / total) if total else 0.0
-    return f"{e.word:<20} {e.calls:>8} {e.ticks:>10} {avg:>10} {pct:>5.1f}"
+    pct = (100.0 * e.ticks / total_ticks) if total_ticks else 0.0
+    t_pct = (100.0 * e.t_states / total_t_states) if total_t_states else 0.0
+    return (
+        f"{e.word:<20} {e.calls:>8} {e.ticks:>10} {avg:>10} {pct:>5.1f}"
+        f" {e.t_states:>12} {t_pct:>5.1f}"
+    )

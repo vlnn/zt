@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 from zt.asm import Asm
 from zt.primitives import PRIMITIVES
+from zt.profile import ProfileReport, Profiler, build_word_ranges
 
 SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_FONT_BASE = 0x3D00
@@ -67,6 +68,7 @@ class ForthResult:
     data_stack: list[int]
     border_writes: list[int] = field(default_factory=list)
     chars_out: bytes = b""
+    profile: ProfileReport | None = None
 
 
 class Z80:
@@ -201,10 +203,12 @@ class Z80:
         self._ticks = 0
         self._t_states = 0
         while not self.halted and self._ticks < max_ticks:
-            if profiler is not None:
-                profiler.sample(self.pc)
+            pc = self.pc
+            prev_t_states = self._t_states
             self._step()
             self._ticks += 1
+            if profiler is not None:
+                profiler.sample(pc, self._t_states - prev_t_states)
 
     def _step(self) -> None:
         op = self._fetch()
@@ -694,10 +698,12 @@ class ForthMachine:
         initial_stack: list[int] | None = None,
         max_ticks: int = DEFAULT_MAX_TICKS,
         input_buffer: bytes = b"",
+        profile: bool = False,
     ) -> ForthResult:
-        body_bytes, body_addr = self._build_body(cells)
+        body_bytes, body_addr, local_labels = self._build_body(cells)
         return self._execute(
             body_bytes, body_addr, initial_stack or [], max_ticks, input_buffer,
+            local_labels=local_labels, profile=profile,
         )
 
     def run_colon(
@@ -706,15 +712,19 @@ class ForthMachine:
         main_cells: list[str | int],
         max_ticks: int = DEFAULT_MAX_TICKS,
         input_buffer: bytes = b"",
+        profile: bool = False,
     ) -> ForthResult:
         cells: list = [("call_docol", "DOUBLE")]
         cells.extend(body_cells)
         cells.append(("main_start",))
         cells.extend(main_cells)
-        body_bytes, body_addr = self._build_body(cells)
-        return self._execute(body_bytes, body_addr, [], max_ticks, input_buffer)
+        body_bytes, body_addr, local_labels = self._build_body(cells)
+        return self._execute(
+            body_bytes, body_addr, [], max_ticks, input_buffer,
+            local_labels=local_labels, profile=profile,
+        )
 
-    def _build_body(self, cells: list) -> tuple[bytes, int]:
+    def _build_body(self, cells: list) -> tuple[bytes, int, dict[str, int]]:
         prim_labels = self._prim_asm.labels
         local_labels: dict[str, int] = {}
         addr = self._body_base
@@ -752,7 +762,7 @@ class ForthMachine:
             else:
                 buf.extend([entry & 0xFF, (entry >> 8) & 0xFF])
 
-        return bytes(buf), body_start
+        return bytes(buf), body_start, local_labels
 
     def _execute(
         self,
@@ -761,6 +771,8 @@ class ForthMachine:
         initial_stack: list[int],
         max_ticks: int,
         input_buffer: bytes = b"",
+        local_labels: dict[str, int] | None = None,
+        profile: bool = False,
     ) -> ForthResult:
         m = Z80()
         m.load(self.origin, self._prim_code)
@@ -772,8 +784,10 @@ class ForthMachine:
         startup = self._emit_startup(body_addr, initial_stack, startup_addr)
         m.load(startup_addr, startup)
 
+        profiler = self._make_profiler(body_bytes, local_labels) if profile else None
+
         m.pc = startup_addr
-        m.run(max_ticks)
+        m.run(max_ticks, profiler=profiler)
 
         self._last_m = m
 
@@ -786,7 +800,18 @@ class ForthMachine:
             data_stack=_read_data_stack(m, self.data_stack_top, bool(initial_stack)),
             border_writes=border_writes,
             chars_out=self._extract_chars_out(m),
+            profile=profiler.report() if profiler is not None else None,
         )
+
+    def _make_profiler(
+        self,
+        body_bytes: bytes,
+        local_labels: dict[str, int] | None,
+    ) -> Profiler:
+        labels = {**self._prim_asm.labels, **(local_labels or {})}
+        code_end = self._body_base + len(body_bytes)
+        ranges = build_word_ranges(labels, code_end=code_end)
+        return Profiler(ranges)
 
     def _extract_chars_out(self, m: Z80) -> bytes:
         row_addr = self._prim_asm.labels.get("_emit_cursor_row")

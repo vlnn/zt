@@ -324,3 +324,77 @@ class TestEdgeCases:
                 ("label", "LOOP"),
                 fm.label("BRANCH"), "LOOP",
             ])
+
+
+class TestProfile:
+
+    def test_profile_default_off_returns_none(self, fm):
+        result = _run(fm, "LIT", 3, "LIT", 4, "PLUS")
+        assert result.profile is None, "profile should default to None when not requested"
+
+    def test_profile_true_returns_report(self, fm):
+        result = fm.run(_words(fm, "LIT", 3, "LIT", 4, "PLUS"), profile=True)
+        assert result.profile is not None, "profile=True should attach a report"
+        assert result.profile.entries, "profile report should contain at least one entry"
+
+    def test_profile_total_t_states_matches_machine_t_states(self, fm):
+        result = fm.run(_words(fm, "LIT", 3, "LIT", 4, "PLUS"), profile=True)
+        assert result.profile.total_t_states == fm._last_m._t_states, (
+            "profile's total_t_states should equal the CPU's accumulated T-states"
+        )
+
+    def test_profile_total_ticks_matches_machine_ticks(self, fm):
+        result = fm.run(_words(fm, "LIT", 3, "LIT", 4, "PLUS"), profile=True)
+        assert result.profile.total_ticks == fm._last_m._ticks, (
+            "profile's total_ticks should equal the CPU's instruction count"
+        )
+
+    def test_profile_names_reach_primitives(self, fm):
+        result = fm.run(_words(fm, "LIT", 3, "LIT", 4, "PLUS"), profile=True)
+        words = {e.word for e in result.profile.entries}
+        assert "PLUS" in words, "PLUS primitive should appear as a word in the profile"
+        assert "LIT" in words, "LIT primitive should appear as a word in the profile"
+
+    def test_profile_per_word_t_states_positive(self, fm):
+        result = fm.run(_words(fm, "LIT", 3, "LIT", 4, "PLUS"), profile=True)
+        for entry in result.profile.entries:
+            assert entry.t_states > 0, (
+                f"profile entry for {entry.word!r} should have positive T-states"
+            )
+
+    def test_profile_includes_colon_word_body(self, fm):
+        result = fm.run_colon(
+            body_cells=["DUP", "PLUS", "EXIT"],
+            main_cells=["LIT", 10, "DOUBLE"],
+            profile=True,
+        )
+        words = {e.word for e in result.profile.entries}
+        assert "DOUBLE" in words, (
+            "user-defined colon word DOUBLE should be resolved in the profile"
+        )
+
+    def test_profile_colon_word_t_states_accumulate(self, fm):
+        r1 = fm.run_colon(
+            body_cells=["DUP", "PLUS", "EXIT"],
+            main_cells=["LIT", 10, "DOUBLE"],
+            profile=True,
+        )
+        r2 = fm.run_colon(
+            body_cells=["DUP", "PLUS", "EXIT"],
+            main_cells=["LIT", 10, "DOUBLE", "DOUBLE"],
+            profile=True,
+        )
+        assert r2.profile.total_t_states > r1.profile.total_t_states, (
+            "running DOUBLE twice should take more T-states than running it once"
+        )
+
+    def test_profile_entries_sorted_by_ticks_desc(self, fm):
+        result = fm.run_colon(
+            body_cells=["DUP", "PLUS", "EXIT"],
+            main_cells=["LIT", 10, "DOUBLE", "DOUBLE"],
+            profile=True,
+        )
+        ticks = [e.ticks for e in result.profile.entries]
+        assert ticks == sorted(ticks, reverse=True), (
+            "profile entries should be sorted by ticks descending"
+        )
