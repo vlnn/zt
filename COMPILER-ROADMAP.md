@@ -114,11 +114,13 @@ result.stack == [16]
    script per-frame input changes (`keys_by_frame=[b"A", b"", b"B"]`) for
    multi-frame tests.
 
-3. **T-state-accurate cycle counting.** Opt-in flag
-   (`WordHarness(cycle_accurate=True)`). Retrofit a T-states-per-opcode
-   table into the simulator's dispatch. This unblocks testing anything
-   whose correctness is a timing property: `BEEP`, border-race effects,
-   any primitive that must fit in an interrupt window.
+3. **T-state-accurate cycle counting.** *(shipped)* Per-opcode cost table
+   in `Z80._build_ops_table` with variable-cost handling for (HL)-indirect,
+   branch-taken vs. not-taken, and LDIR per-iteration. `Z80._t_states` is
+   the cycle counter; `Profiler.sample(pc, cost)` attributes it per word.
+   What's still open: retrofitting `WordHarness(cycle_accurate=True)` so
+   cycle counts surface through the word-level testing facade when it
+   lands. The underlying data is already there.
 
 4. **Synthesized interrupts.** When `iff=True` and cycle-accurate mode is
    on, the simulator raises an interrupt every 69,888 T-states (one 50 Hz
@@ -266,14 +268,13 @@ Tag each control-stack entry (`"if"`, `"begin"`, `"do"`). On pop, assert the
 tag matches what the closing word expects. Surface the token location in the
 error.
 
-### 2.5 Profiler integration in the CLI
+### 2.5 Profiler integration in the CLI  *(shipped)*
 
-**Impact:** medium. `profile.py` exists but isn't reachable from `zt`.
-**Difficulty:** low. Wire it into the simulator + CLI.
-
-Add `zt profile source.fs --ticks 1000000` that runs the compiled image in
-the simulator, samples the PC, and prints a word-level profile report.
-Cheap wall-clock win because `profile.py` already does the hard part.
+Shipped. `zt profile --source file.fs [--words ...] [--baseline prev.zprof]
+[--save snap] [--fail-if-slower PCT] [--json]` runs a compiled image and
+reports per-word T-states (self and inclusive), with diff-against-baseline
+and CI regression gating. Accepts `--source` for .fs or `--image` for .sna.
+See the "Profiling" section of README.md for a walkthrough.
 
 ---
 

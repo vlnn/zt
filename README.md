@@ -110,10 +110,10 @@ area at `$5800–$5AFF`, producing the scrolling colour plasma.
 
 ### The development loop
 
-TBD 
+Two main feedback loops.
 
-For now the simulator runs the
-same compiled bytes the `.sna` contains, and exposes screen memory, border
+**Unit tests in pytest.** The simulator is importable as `zt.sim` and runs
+the same compiled bytes the `.sna` contains, exposing screen memory, border
 writes, and stdin as Python attributes:
 
 ```python
@@ -128,6 +128,45 @@ def test_plasma_writes_attrs(tmp_path):
 When something misbehaves, `zt inspect --symbols out.fsym` decompiles the
 image back to a threaded-code listing with Forth word names, so "why is
 `draw` 18 bytes longer than I expected" becomes answerable.
+
+**Profiling.** The simulator counts real Z80 T-states per instruction, and
+the `zt profile` subcommand turns that into a word-level report:
+
+```
+$ zt profile --source examples/hello.fs --max-ticks 100000 --words emit,cr,type
+
+Word                  Calls     Self   Self%       Incl   Incl%      Avg
+------------------------------------------------------------------------
+type                     49    68546    6.4     920986   86.1    18795
+emit                    978   524477   49.0     919005   85.9      939
+cr                       48      816    0.1     909782   85.1    18953
+
+Total: 1069450 T-states across 100000 instructions
+```
+
+`Self` is T-states executed directly in the word's body. `Incl` adds the
+T-states spent in everything that word called. In the example above, `CR`'s
+self time is trivial (0.1 %), but its *inclusive* time dominates because it
+drives `EMIT`, and `EMIT` is where the cycles actually go — 49 % of the
+whole program spent directly inside it.
+
+Typical workflow for optimization:
+
+```
+zt profile --source prog.fs --save baseline        # snapshot before
+# edit prog.fs, change a primitive, try an inlining
+zt profile --source prog.fs --baseline baseline.zprof --words HOT-WORD
+```
+
+The diff mode prints base/current/Δ/Δ% columns sorted by absolute delta, so
+you see at a glance whether the change helped, regressed, or moved nothing.
+For CI, `--fail-if-slower 5` returns exit 1 if any selected word regressed
+by more than 5 %; wire it into a `make bench` step and you've got
+regression-gated performance tests.
+
+Both `--source file.fs` (compile-then-run) and `--image file.sna` (with a
+sibling `.map`) are accepted; `--json` emits the same data for scripting.
+See `zt profile --help` for the full flag list.
 
 ---
 
@@ -260,16 +299,30 @@ it's line 23 of `plasma.fs`.
 
 `src/zt/sim.py` is a purpose-built Z80 emulator — not a general one. It only
 implements the opcodes the primitives use (~120 distinct instructions) and
-trades away instruction-accurate cycle counts, most flag side-effects, and
-undocumented opcodes. In exchange it's a few hundred lines, runs fast enough
-that a full test suite passes in a second, and exposes cleanly hookable
-inputs (`input_buffer`) and outputs (`_outputs`, screen memory).
+trades away most undocumented flag side-effects and undocumented opcodes. In
+exchange it's a thousand-odd lines, runs fast enough that a full test suite
+passes in under half a minute, and exposes cleanly hookable inputs
+(`input_buffer`) and outputs (`_outputs`, screen memory).
+
+Two counters run alongside each step. `_ticks` is a Python-side instruction
+count used as the `max_ticks` safety budget for bounded runs. `_t_states` is
+the real Z80 cycle count, accumulated from a per-opcode cost table that
+handles the variable cases — (HL)-indirect operands, taken vs. not-taken
+branches, LDIR's per-iteration loop. The `Profiler` samples both axes per
+instruction, which is what lets `zt profile` show inclusive T-state timing
+per word.
+
+Dispatch is table-driven: 256 opcode slots populated at `Z80.__init__`, each
+a bound method plus a base T-state cost. This replaced the original elif
+ladder and is both faster (one list index vs. walking a chain of comparisons)
+and easier to extend — adding a new opcode is one `reg(op, handler, cost)`
+line in `_build_ops_table`.
 
 The simulator hooks `CALL $15E6` and `CALL $15E9` to synthesize `KEY` and
 `KEY?` behaviour. This is a convenient shortcut for tests but a real-hardware
 hazard: those two addresses are arbitrary ROM offsets and calling them on a
-48K will do something between "nothing useful" and "lock up." See doc #2 for
-the fix.
+48K will do something between "nothing useful" and "lock up." See
+`COMPILER-ROADMAP.md` §1.1 for the fix.
 
 ### Limitations worth knowing about
 

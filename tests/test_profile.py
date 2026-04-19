@@ -284,3 +284,64 @@ class TestFormatReportWithTStates:
         text = format_report(p.report())
         assert "75.0" in text, "a with 30/40 cost should show 75.0% of T-states"
         assert "25.0" in text, "b with 10/40 cost should show 25.0% of T-states"
+
+
+class TestInclusiveTStates:
+
+    @pytest.fixture
+    def ranges(self):
+        return [
+            WordRange(name="main",  start=0x8000, end=0x8010),
+            WordRange(name="outer", start=0x8010, end=0x8020),
+            WordRange(name="inner", start=0x8020, end=0x8030),
+        ]
+
+    def test_leaf_word_incl_equals_self(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=5)
+        by = _by_word(p.report())
+        assert by["main"].incl_t_states == by["main"].t_states, (
+            "a word with no callees should have incl_t_states equal to self t_states"
+        )
+
+    def test_caller_incl_covers_callee_time(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=3)
+        p.sample(0x8010, cost=7)
+        p.sample(0x8000, cost=2)
+        by = _by_word(p.report())
+        assert by["main"].t_states == 5, "main self should be 3+2=5"
+        assert by["outer"].t_states == 7, "outer self should be 7"
+        assert by["main"].incl_t_states == 12, (
+            "main inclusive should be its own time plus outer's time (3+7+2)"
+        )
+        assert by["outer"].incl_t_states == 7, (
+            "outer inclusive should be its own time only (no callees invoked)"
+        )
+
+    def test_deeply_nested_incl_times(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=1)
+        p.sample(0x8010, cost=2)
+        p.sample(0x8020, cost=4)
+        p.sample(0x8010, cost=8)
+        p.sample(0x8000, cost=16)
+        by = _by_word(p.report())
+        assert by["inner"].incl_t_states == 4, "inner inclusive is its own 4"
+        assert by["outer"].incl_t_states == 2 + 4 + 8, (
+            "outer inclusive covers outer-body plus inner's 4"
+        )
+        assert by["main"].incl_t_states == 1 + 2 + 4 + 8 + 16, (
+            "main inclusive covers everything from its span"
+        )
+
+    def test_recursion_does_not_double_count(self, ranges):
+        p = Profiler(ranges)
+        p.sample(0x8000, cost=2)
+        p.sample(0x8010, cost=3)
+        p.sample(0x8000, cost=5)
+        p.sample(0x8010, cost=7)
+        by = _by_word(p.report())
+        assert by["main"].incl_t_states == 2 + 3 + 5 + 7, (
+            "re-entering main via outer should not double-count the cost"
+        )

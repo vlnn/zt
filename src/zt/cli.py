@@ -8,6 +8,7 @@ from zt.compiler import Compiler, CompileError
 from zt.fsym import load_fsym, write_fsym
 from zt.inspect import decompile
 from zt.mapfile import FUSE, ZESARUX, write_map
+from zt.profile_cli import args_from_namespace, register_profile, run_profile_command
 from zt.sld import write_sld
 from zt.sna import build_sna
 
@@ -22,6 +23,7 @@ def main() -> None:
     _register_build(sub)
     _register_inspect(sub)
     _register_test(sub)
+    register_profile(sub)
 
     args = parser.parse_args()
     if args.command == "build":
@@ -33,6 +35,8 @@ def main() -> None:
     if args.command == "test":
         _do_test(args)
         return
+    if args.command == "profile":
+        sys.exit(run_profile_command(args_from_namespace(args), sys.stdout, sys.stderr))
     parser.print_help()
 
 

@@ -20,6 +20,7 @@ class ProfileEntry:
     calls: int
     ticks: int
     t_states: int = 0
+    incl_t_states: int = 0
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ class Profiler:
         self._starts = [r.start for r in self._ranges]
         self._ticks: dict[str, int] = {}
         self._t_states: dict[str, int] = {}
+        self._incl_t_states: dict[str, int] = {}
         self._calls: dict[str, int] = {}
         self._current: str | None = None
         self._stack: list[str] = []
@@ -80,6 +82,8 @@ class Profiler:
         if word != self._current:
             self._on_transition(word)
             self._current = word
+        for ancestor in {word, *self._stack}:
+            self._incl_t_states[ancestor] = self._incl_t_states.get(ancestor, 0) + cost
 
     def report(self) -> ProfileReport:
         entries = tuple(
@@ -88,6 +92,7 @@ class Profiler:
                 calls=self._calls.get(name, 0),
                 ticks=ticks,
                 t_states=self._t_states.get(name, 0),
+                incl_t_states=self._incl_t_states.get(name, 0),
             )
             for name, ticks in sorted(
                 self._ticks.items(), key=lambda item: -item[1],
