@@ -215,19 +215,20 @@ def test_abs_contains_negate_body():
     assert negate_seq in out, "ABS should contain the NEGATE sequence"
 
 
-def test_min_uses_jr_c():
-    out = _compile_primitive(create_min)
-    assert out[0] == 0xD1, "MIN should start with POP DE"
-    assert out[1] == 0xB7, "MIN should OR A to clear carry"
-    assert out[2:4] == bytes([0xED, 0x52]), "MIN should SBC HL,DE"
-    assert out[4] == 0x19, "MIN should ADD HL,DE to restore"
-    assert out[5] == 0x38, "MIN should use JR C to skip EX DE,HL"
-
-
-def test_max_uses_jr_nc():
-    out = _compile_primitive(create_max)
-    assert out[0] == 0xD1, "MAX should start with POP DE"
-    assert out[5] == 0x30, "MAX should use JR NC to skip EX DE,HL"
+@pytest.mark.parametrize("creator,op_name,branch_byte,branch_mnemonic", [
+    (create_min, "MIN", 0xFA, "JP M"),
+    (create_max, "MAX", 0xF2, "JP P"),
+])
+def test_min_max_use_signed_branch(creator, op_name, branch_byte, branch_mnemonic):
+    out = _compile_primitive(creator)
+    assert out[0] == 0xD1, f"{op_name} should start with POP DE"
+    assert out[1] == 0xB7, f"{op_name} should OR A to clear carry"
+    assert out[2:4] == bytes([0xED, 0x52]), f"{op_name} should SBC HL,DE"
+    assert out[4] == 0x19, f"{op_name} should ADD HL,DE to restore HL"
+    assert out[5] == branch_byte, (
+        f"{op_name} should use {branch_mnemonic} (signed branch) after the "
+        "SBC+ADD pair to honor the S flag preserved by ADD HL,DE"
+    )
 
 
 def test_and_byte_sequence():

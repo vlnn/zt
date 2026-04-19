@@ -27,6 +27,7 @@ require rand.fs
 63 constant ch-damsel
 37 constant ch-spreader
 64 constant ch-bug
+66 constant ch-bill
 
 create board-buf  704 allot
 
@@ -49,6 +50,7 @@ create board-buf  704 allot
 : damsel-at      ( col row -- )       ch-damsel   -rot put-char ;
 : spreader-at    ( col row -- )       ch-spreader -rot put-char ;
 : bug-at         ( col row -- )       ch-bug      -rot put-char ;
+: bill-at        ( col row -- )       ch-bill     -rot put-char ;
 
 : gap?           ( col -- flag )      dup gap-left = swap gap-right = or ;
 
@@ -87,3 +89,12 @@ variable _mr
 
 : show-all-mines ( -- )
     board-rows 0 do i reveal-row loop ;
+
+: hide-mines-in-row  ( row -- )
+    _mr !
+    board-cols 0 do
+        i _mr @ mine? if i _mr @ erase-at then
+    loop ;
+
+: hide-all-mines ( -- )
+    board-rows 0 do i hide-mines-in-row loop ;

@@ -10,20 +10,20 @@ require state.fs
 require sounds.fs
 require board.fs
 
-variable px   variable py
-variable oldx variable oldy
+variable prow   variable pcol
+variable prev-row variable prev-col
 
-: player-xy      ( -- col row )   py @ px @ ;
-: old-xy         ( -- col row )   oldy @ oldx @ ;
-: player-xy!     ( col row -- )   px ! py ! ;
-: snapshot-pos   ( -- )           px @ oldx !   py @ oldy ! ;
+: player-xy      ( -- col row )   pcol @ prow @ ;
+: old-xy         ( -- col row )   prev-col @ prev-row @ ;
+: player-xy!     ( col row -- )   prow ! pcol ! ;
+: snapshot-pos   ( -- )           prow @ prev-row !   pcol @ prev-col ! ;
 
 : player-reset   ( -- )
     start-col start-row player-xy!
     snapshot-pos ;
 
 : moved?         ( -- flag )
-    px @ oldx @ <>  py @ oldy @ <> or ;
+    prow @ prev-row @ <>  pcol @ prev-col @ <> or ;
 
 54 constant k-left
 55 constant k-right
@@ -38,8 +38,8 @@ variable oldx variable oldy
 : clamp-row      ( n -- n )    0 max board-rows 1- min ;
 
 : apply-input    ( -- )
-    py @ read-dx + clamp-col py !
-    px @ read-dy + clamp-row px ! ;
+    pcol @ read-dx + clamp-col pcol !
+    prow @ read-dy + clamp-row prow ! ;
 
 : try-move       ( -- moved? )   apply-input moved? ;
 
@@ -87,10 +87,13 @@ variable spreader-col   variable spreader-row   variable spreader-active
         1 spreader-active !
     then ;
 
+: spreader-row-jitter  ( -- -1|0|1 )  3 random 1- ;
+: spreader-trail-row   ( -- row )     spreader-row-jitter spreader-row @ + ;
+
 : spreader-step  ( -- )
     spreader-active @ 0= if exit then
     spreader-col @ spreader-row @ erase-at
-    spreader-col @ spreader-row @ try-place-mine
+    spreader-col @ spreader-trail-row try-place-mine
     spreader-col @ 1+ spreader-col !
     spreader-col @ 30 > if 0 spreader-active ! exit then
     spreader-col @ spreader-row @ empty? 0= if 0 spreader-active ! exit then
@@ -126,4 +129,16 @@ variable bug-active
 
 : player-hit-bug?  ( -- flag )
     bug-active @ 0= if 0 exit then
-    py @ bug-col @ =  px @ bug-row @ =  and ;
+    pcol @ bug-col @ =  prow @ bug-row @ =  and ;
+
+variable bill-col
+8 constant bill-row
+
+: pick-bill      ( -- )   11 random 6 +  5 +  bill-col ! ;
+
+: place-bill     ( -- )
+    t-empty bill-col @ bill-row tile!
+    bill-col @ bill-row bill-at ;
+
+: bill?          ( col row -- flag )
+    bill-row = swap bill-col @ = and ;

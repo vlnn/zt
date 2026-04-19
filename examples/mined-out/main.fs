@@ -16,5 +16,5 @@ require app/mined.fs
         init-level
         play-loop
         end-of-level
-        won? if advance-level then
+        continue-or-restart
     again ;

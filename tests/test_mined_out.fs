@@ -62,7 +62,6 @@ require ../examples/mined-out/app/mined.fs
 
 : test-advance-level-1-to-2   1 level-no !  advance-level   level-no @   2 assert-eq ;
 : test-advance-level-7-to-8   7 level-no !  advance-level   level-no @   8 assert-eq ;
-: test-advance-level-8-clamps 8 level-no !  advance-level   level-no @   8 assert-eq ;
 
 
 \ -----------------------------------------------------------------------------
@@ -132,34 +131,33 @@ require ../examples/mined-out/app/mined.fs
 \ actors.fs — player movement and position
 \ -----------------------------------------------------------------------------
 
-\ NOTE: px stores the ROW and py stores the COLUMN in this port (inverted
-\ from what the variable names suggest — see apply-input, which adds
-\ read-dx to py and read-dy to px).
+\ player-reset drops the player at (start-col, start-row).  prow / pcol are
+\ inlined into player-xy / player-xy! in the natural col-row order.
 
-: test-player-reset-col       player-reset   py @  start-col  assert-eq ;
-: test-player-reset-row       player-reset   px @  start-row  assert-eq ;
+: test-player-reset-col       player-reset   pcol @  start-col  assert-eq ;
+: test-player-reset-row       player-reset   prow @  start-row  assert-eq ;
 
 : test-snapshot-matches-current
     player-reset
-    7 px !  3 py !
+    7 prow !  3 pcol !
     snapshot-pos
-    oldx @ 7 assert-eq ;
+    prev-row @ 7 assert-eq ;
 
 : test-moved-false-after-snapshot
     player-reset
-    7 px !  3 py !  snapshot-pos
+    7 prow !  3 pcol !  snapshot-pos
     moved? assert-false ;
 
-: test-moved-true-when-px-changes
+: test-moved-true-when-prow-changes
     player-reset
-    7 px !  3 py !  snapshot-pos
-    8 px !
+    7 prow !  3 pcol !  snapshot-pos
+    8 prow !
     moved? assert-true ;
 
-: test-moved-true-when-py-changes
+: test-moved-true-when-pcol-changes
     player-reset
-    7 px !  3 py !  snapshot-pos
-    4 py !
+    7 prow !  3 pcol !  snapshot-pos
+    4 pcol !
     moved? assert-true ;
 
 
@@ -172,14 +170,11 @@ require ../examples/mined-out/app/mined.fs
 : test-clamp-col-at-max          31 clamp-col  31 assert-eq ;
 : test-clamp-col-above-max       99 clamp-col  31 assert-eq ;
 
-\ KNOWN QUIRK: stdlib `max` is unsigned, so a negative `n` (e.g. -5 = $FFFB)
-\ clamps to board-cols-1 instead of 0. Stepping off col 0 leftward wraps to
-\ col 31 in-game. Pin the current behavior until the MAX primitive is fixed.
-: test-clamp-col-negative-wraps  -5 clamp-col  31 assert-eq ;
+: test-clamp-col-negative         -5 clamp-col   0 assert-eq ;
 
 : test-clamp-row-at-max          21 clamp-row  21 assert-eq ;
 : test-clamp-row-above-max       99 clamp-row  21 assert-eq ;
-: test-clamp-row-negative-wraps  -5 clamp-row  21 assert-eq ;
+: test-clamp-row-negative         -5 clamp-row   0 assert-eq ;
 
 
 \ -----------------------------------------------------------------------------
@@ -188,38 +183,38 @@ require ../examples/mined-out/app/mined.fs
 
 : test-adj-count-isolated
     board-init
-    10 py !  10 px !
+    10 pcol !  10 prow !
     adj-count  0 assert-eq ;
 
 : test-adj-count-one-north
     board-init
-    10 py !  10 px !
+    10 pcol !  10 prow !
     10  9 try-place-mine
     adj-count  1 assert-eq ;
 
 : test-adj-count-all-four
     board-init
-    10 py !  10 px !
+    10 pcol !  10 prow !
     10  9 try-place-mine   10 11 try-place-mine
      9 10 try-place-mine   11 10 try-place-mine
     adj-count  4 assert-eq ;
 
 : test-adj-count-ignores-diagonal
     board-init
-    10 py !  10 px !
+    10 pcol !  10 prow !
      9  9 try-place-mine   11  9 try-place-mine
      9 11 try-place-mine   11 11 try-place-mine
     adj-count  0 assert-eq ;
 
 : test-adj-count-damsel-counts
     board-init
-    10 py !  10 px !
+    10 pcol !  10 prow !
     10  9 place-damsel
     adj-count  1 assert-eq ;
 
 : test-adj-count-fence-counts
     board-init build-fences
-    2 py !  2 px !           \ col 2, row 2 — one below the top fence
+    2 pcol !  2 prow !           \ col 2, row 2 — one below the top fence
     adj-count  1 assert-eq ;
 
 
@@ -252,7 +247,7 @@ require ../examples/mined-out/app/mined.fs
     board-init
     2 level-no !             \ enable damsels
     2 damsels-alive !   0 score !
-    5 py !  5 px !           \ empty cell
+    5 pcol !  5 prow !           \ empty cell
     maybe-rescue
     score @  0 assert-eq ;
 
@@ -261,7 +256,7 @@ require ../examples/mined-out/app/mined.fs
     2 level-no !
     2 damsels-alive !   0 score !
     5 10 place-damsel
-    5 py !  10 px !          \ py=col, px=row — player stands on the damsel
+    5 pcol !  10 prow !          \ pcol=col, prow=row — player stands on the damsel
     maybe-rescue
     score @  100 assert-eq ;
 
@@ -270,7 +265,7 @@ require ../examples/mined-out/app/mined.fs
     1 level-no !             \ level 1 => has-damsels? false
     2 damsels-alive !   0 score !
     5 10 place-damsel
-    5 py !  10 px !
+    5 pcol !  10 prow !
     maybe-rescue
     score @  0 assert-eq ;
 
@@ -284,12 +279,6 @@ require ../examples/mined-out/app/mined.fs
     1 spreader-active !   5 spreader-col !   10 spreader-row !
     spreader-step
     spreader-col @  6 assert-eq ;
-
-: test-spreader-step-lays-mine-at-old-col
-    board-init
-    1 spreader-active !   5 spreader-col !   10 spreader-row !
-    spreader-step
-    5 10 mine?  assert-true ;
 
 : test-spreader-step-deactivates-past-col-30
     board-init
@@ -346,18 +335,19 @@ require ../examples/mined-out/app/mined.fs
     20 0 do  i i pack-xy trail-push  loop
     bug-index  8 assert-eq ;
 
-\ bug-index's low-end clamp is only reachable when bug-visible? is true
-\ (trail-len > follow-distance), so we don't test short trails directly —
-\ the clamp would trip the unsigned-max quirk described above.
+: test-bug-index-short-trail-clamps-to-zero
+    trail-setup
+    3 0 do  i i pack-xy trail-push  loop
+    bug-index  0 assert-eq ;
 
 
 \ -----------------------------------------------------------------------------
 \ game.fs — win condition and death
 \ -----------------------------------------------------------------------------
 
-: test-won-when-px-zero      0 px !  won?  assert-true ;
-: test-won-false-at-1        1 px !  won?  assert-false ;
-: test-won-false-at-start    start-row px !  won?  assert-false ;
+: test-won-when-prow-zero      0 prow !  won?  assert-true ;
+: test-won-false-at-1        1 prow !  won?  assert-false ;
+: test-won-false-at-start    start-row prow !  won?  assert-false ;
 
 : test-die-sets-alive-zero   1 alive !  die  alive @  0 assert-eq ;
 
@@ -372,3 +362,264 @@ require ../examples/mined-out/app/mined.fs
     5 level-no !   0 score !
     award-bonus
     score @  2200 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — hiscore integration
+\ -----------------------------------------------------------------------------
+
+: test-init-game-zeroes-hi-score
+    42 hi-score !
+    init-game
+    hi-score @  0 assert-eq ;
+
+: test-init-game-resets-initial-0
+    73 hi-name c!
+    init-game
+    hi-name c@  65 assert-eq ;       \ 'A'
+
+: test-init-game-resets-initial-1
+    73 hi-name 1+ c!
+    init-game
+    hi-name 1+ c@  65 assert-eq ;
+
+: test-init-game-resets-initial-2
+    73 hi-name 2 + c!
+    init-game
+    hi-name 2 + c@  65 assert-eq ;
+
+: test-check-hiscore-noop-when-below
+    hi-reset   500 hi-set-score   100 score !
+    check-hiscore
+    hi-score @  500 assert-eq ;
+
+: test-check-hiscore-noop-when-equal
+    hi-reset   500 hi-set-score   500 score !
+    check-hiscore
+    hi-score @  500 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — continue-or-restart branches on won?
+\ -----------------------------------------------------------------------------
+
+: test-continue-or-restart-advances-level-on-win
+    hi-reset   3 level-no !   500 score !   0 prow !
+    continue-or-restart
+    level-no @  4 assert-eq ;
+
+: test-continue-or-restart-preserves-score-on-win
+    hi-reset   3 level-no !   500 score !   0 prow !
+    continue-or-restart
+    score @  500 assert-eq ;
+
+: test-continue-or-restart-resets-score-on-death
+    hi-reset   999 hi-set-score   3 level-no !   100 score !   start-row prow !
+    continue-or-restart
+    score @  0 assert-eq ;
+
+: test-continue-or-restart-resets-level-on-death
+    hi-reset   999 hi-set-score   3 level-no !   100 score !   start-row prow !
+    continue-or-restart
+    level-no @  1 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ actors.fs — spreader jitters the mine's row by ±1 behind it
+\ -----------------------------------------------------------------------------
+
+: test-spreader-row-jitter-in-range
+    1 seed!
+    60 0 do
+        spreader-row-jitter
+        dup -1 <  if 1 _result ! then
+        1 >       if 1 _result ! then
+    loop ;
+
+: saw-value?  ( target -- flag )
+    0 60 0 do  over spreader-row-jitter =  or  loop  nip ;
+
+: test-spreader-jitter-yields-minus-one   1 seed!  -1 saw-value?  assert-true ;
+: test-spreader-jitter-yields-zero         1 seed!   0 saw-value?  assert-true ;
+: test-spreader-jitter-yields-plus-one     1 seed!   1 saw-value?  assert-true ;
+
+: test-spreader-trail-row-centered-on-row
+    10 spreader-row !
+    1 seed!
+    60 0 do
+        spreader-trail-row
+        dup 9  <  if 1 _result ! then
+            11 >  if 1 _result ! then
+    loop ;
+
+\ a mine-behind-the-spreader must land in { row-1, row, row+1 } of the
+\ spreader-row it occupied before advancing
+: test-spreader-step-lays-mine-in-jitter-range
+    board-init
+    1 seed!
+    1 spreader-active !   5 spreader-col !   10 spreader-row !
+    spreader-step
+    5  9 mine?   5 10 mine?  or   5 11 mine?  or
+    assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs — map-blown-away timer and level gate
+\ -----------------------------------------------------------------------------
+
+: test-reset-ti-zeros-ti                   99 ti !  reset-ti  ti @  0 assert-eq ;
+
+: test-has-map-blow-level-4-false           4 level-no !  has-map-blow?  assert-false ;
+: test-has-map-blow-level-5-true            5 level-no !  has-map-blow?  assert-true ;
+: test-has-map-blow-level-8-true            8 level-no !  has-map-blow?  assert-true ;
+
+: test-map-blow-threshold-level-5           5 level-no !  map-blow-threshold   590 assert-eq ;
+: test-map-blow-threshold-level-7           7 level-no !  map-blow-threshold    70 assert-eq ;
+: test-map-blow-threshold-level-8           8 level-no !  map-blow-threshold  1630 assert-eq ;
+
+: test-map-blow-due-false-below-level-5
+    4 level-no !  9999 ti !
+    map-blow-due?  assert-false ;
+
+: test-map-blow-due-false-below-threshold
+    5 level-no !  100 ti !                 \ threshold is 590 at level 5
+    map-blow-due?  assert-false ;
+
+: test-map-blow-due-true-above-threshold
+    5 level-no !  700 ti !
+    map-blow-due?  assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ board.fs — hide-all-mines leaves the shadow grid alone
+\ -----------------------------------------------------------------------------
+
+: test-hide-all-mines-preserves-shadow-grid
+    board-init
+    5 10 try-place-mine
+    hide-all-mines
+    5 10 mine?  assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — blow-map-away is self-resetting
+\ -----------------------------------------------------------------------------
+
+: test-blow-map-away-resets-ti
+    board-init
+    5 level-no !  700 ti !
+    blow-map-away
+    ti @  0 assert-eq ;
+
+: test-blow-map-away-preserves-mine
+    board-init
+    5 level-no !  700 ti !
+    5 10 try-place-mine
+    blow-map-away
+    5 10 mine?  assert-true ;
+
+
+\ -----------------------------------------------------------------------------
+\ state.fs — level 9 gating and progression
+\ -----------------------------------------------------------------------------
+
+: test-has-bill-level-8-false   8 level-no !  has-bill?  assert-false ;
+: test-has-bill-level-9-true    9 level-no !  has-bill?  assert-true ;
+
+: test-advance-level-8-to-9     8 level-no !  advance-level  level-no @  9 assert-eq ;
+: test-advance-level-9-clamps   9 level-no !  advance-level  level-no @  9 assert-eq ;
+
+
+\ -----------------------------------------------------------------------------
+\ actors.fs — bill placement and detection
+\ -----------------------------------------------------------------------------
+
+: test-bill-row-is-8                              bill-row  8 assert-eq ;
+
+: test-pick-bill-col-lower-bound
+    1 seed!
+    60 0 do
+        pick-bill  bill-col @
+        dup 11 <  if 1 _result ! then
+        drop
+    loop ;
+
+: test-pick-bill-col-upper-bound
+    1 seed!
+    60 0 do
+        pick-bill  bill-col @
+        dup 21 >  if 1 _result ! then
+        drop
+    loop ;
+
+: test-bill-predicate-at-bill-cell
+    17 bill-col !   17 bill-row bill?  assert-true ;
+
+: test-bill-predicate-one-col-off
+    17 bill-col !   18 bill-row bill?  assert-false ;
+
+: test-bill-predicate-one-row-off
+    17 bill-col !   17 bill-row 1+ bill?  assert-false ;
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — level-aware won? and win rewards
+\ -----------------------------------------------------------------------------
+
+: test-won-at-top-gap-on-level-5   5 level-no !  0 prow !  won?  assert-true ;
+
+: test-won-at-top-gap-NOT-on-level-9
+    9 level-no !   0 prow !
+    17 bill-col !   5 pcol !       \ player at (5, 0) — at top but not on Bill
+    won?  assert-false ;
+
+: test-won-on-level-9-at-bill
+    9 level-no !   17 bill-col !
+    17 pcol !  bill-row prow !
+    won?  assert-true ;
+
+: test-won-on-level-9-off-bill
+    9 level-no !   17 bill-col !
+    18 pcol !  bill-row prow !
+    won?  assert-false ;
+
+: test-reward-level-adds-bonus-and-100
+    3 level-no !   0 score !
+    reward-level
+    score @  850 assert-eq ;       \ level-3 bonus 750 + 100
+
+: test-reward-bill-adds-flat-2000
+    0 score !
+    reward-bill
+    score @  2000 assert-eq ;
+
+: test-win-on-level-9-pays-flat-2000
+    1 alive !   9 level-no !   0 score !
+    17 bill-col !   17 pcol !  bill-row prow !
+    win
+    score @  2000 assert-eq ;
+
+: test-win-on-level-9-does-not-award-level-bonus
+    1 alive !   9 level-no !   0 score !
+    17 bill-col !   17 pcol !  bill-row prow !
+    win
+    score @  2000 assert-eq ;       \ would be 2000+garbage if award-bonus ran
+
+
+\ -----------------------------------------------------------------------------
+\ game.fs — continue-or-restart recognizes Bill rescue
+\ -----------------------------------------------------------------------------
+
+: test-continue-or-restart-restarts-on-bill-rescue
+    hi-reset   5000 hi-set-score
+    9 level-no !   2500 score !
+    17 bill-col !   17 pcol !  bill-row prow !
+    continue-or-restart
+    level-no @  1 assert-eq ;
+
+: test-continue-or-restart-zeroes-score-on-bill-rescue
+    hi-reset   5000 hi-set-score
+    9 level-no !   2500 score !
+    17 bill-col !   17 pcol !  bill-row prow !
+    continue-or-restart
+    score @  0 assert-eq ;

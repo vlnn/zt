@@ -55,10 +55,11 @@ class TestMinedOutCompiles:
 class TestMinedOutWordsByModule:
 
     @pytest.mark.parametrize("word", [
-        "score", "level-no",
+        "score", "level-no", "ti",
         "level-paper", "level-border", "level-mines", "level-bonus",
         "level-paper@", "level-border@", "level-mines@", "level-bonus@",
-        "has-damsels?", "has-spreader?", "has-bug?",
+        "has-damsels?", "has-spreader?", "has-bug?", "has-map-blow?", "has-bill?",
+        "map-blow-threshold", "map-blow-due?", "reset-ti",
         "advance-level", "apply-level-colors",
     ])
     def test_state_module_words(self, built_compiler, word):
@@ -78,10 +79,10 @@ class TestMinedOutWordsByModule:
         "board-init", "tile!", "tile@",
         "empty?", "fence?", "mine?", "damsel?",
         "erase-at", "fence-at", "mine-at", "player-at",
-        "damsel-at", "spreader-at", "bug-at",
+        "damsel-at", "spreader-at", "bug-at", "bill-at",
         "gap?", "fence-row", "build-fences",
         "try-place-mine", "scatter-mines",
-        "show-all-mines",
+        "show-all-mines", "hide-all-mines",
     ])
     def test_board_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -93,7 +94,9 @@ class TestMinedOutWordsByModule:
         "apply-input", "try-move",
         "pick-damsels", "rescue-damsel", "maybe-rescue",
         "maybe-spawn-spreader", "spreader-step",
+        "spreader-row-jitter", "spreader-trail-row",
         "bug-step", "bug-reset", "player-hit-bug?",
+        "bill-col", "bill-row", "pick-bill", "place-bill", "bill?",
     ])
     def test_actors_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -113,6 +116,10 @@ class TestMinedOutWordsByModule:
         "init-game", "init-level", "end-of-level",
         "step-once", "play-loop",
         "won?", "die", "win",
+        "reward-level", "reward-bill",
+        "check-hiscore", "record-hiscore",
+        "continue-or-restart", "reset-for-new-game",
+        "blow-map-away", "bill-banner", "bill-rescued",
     ])
     def test_game_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (

@@ -273,14 +273,20 @@ def create_abs(a: Asm) -> None:
 
 
 def create_min(a: Asm) -> None:
-    """`MIN ( x1 x2 -- min )` — signed minimum."""
+    """`MIN ( x1 x2 -- min )` — signed minimum.
+
+    Flags after `SBC HL,DE` reflect `x2 - x1`; `ADD HL,DE` restores HL to x2
+    without touching S, so we can branch on S afterwards and keep the
+    "16-bit subtract preserves sign when there is no overflow" behavior
+    shared with `<` and `>`.
+    """
     a.label("MIN")
     a.alias("min", "MIN")
     a.pop_de()
     a.or_a()
     a.sbc_hl_de()
     a.add_hl_de()
-    a.jr_c_to("_min_done")
+    a.jp_m("_min_done")
     a.ex_de_hl()
     a.label("_min_done")
     a.dispatch()
@@ -294,7 +300,7 @@ def create_max(a: Asm) -> None:
     a.or_a()
     a.sbc_hl_de()
     a.add_hl_de()
-    a.jr_nc_to("_max_done")
+    a.jp_p("_max_done")
     a.ex_de_hl()
     a.label("_max_done")
     a.dispatch()

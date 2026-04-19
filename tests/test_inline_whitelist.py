@@ -153,10 +153,17 @@ class TestHasAbsoluteJumpInBody:
         assert not has_absolute_jump_in_body(create_rshift), \
             "rshift uses only relative jumps (jr_z_to, jr_nz_to) and must not be flagged"
 
-    def test_min_is_not_flagged(self):
+    def test_min_flagged_due_to_conditional_jp_m(self):
         from zt.assemble.primitives import create_min
-        assert not has_absolute_jump_in_body(create_min), \
-            "min uses only `jr_c_to` (relative) and must not be flagged"
+        assert has_absolute_jump_in_body(create_min), \
+            "min uses `jp_m _min_done` (absolute JP M,nn) for signed comparison " \
+            "after the SBC+ADD pair, and must be flagged as relocation-unsafe"
+
+    def test_max_flagged_due_to_conditional_jp_p(self):
+        from zt.assemble.primitives import create_max
+        assert has_absolute_jump_in_body(create_max), \
+            "max uses `jp_p _max_done` (absolute JP P,nn) for signed comparison " \
+            "and must be flagged as relocation-unsafe"
 
     def test_equals_is_not_flagged(self):
         from zt.assemble.primitives import create_equals
