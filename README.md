@@ -1,6 +1,5 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner2-direct.svg)](https://stand-with-ukraine.pp.ua)
 
-
 # zt — Z80 Forth cross-compiler for the ZX Spectrum
 
 A Python-hosted toolchain that takes a `.fs` Forth source file and emits a Spectrum
@@ -37,13 +36,11 @@ make examples        # build build/*.sna from every example
 
 ### Demo
 
-The plasma example, scrolling through the attribute area:
+The plasma at startup — plasma-init paints the full attribute area reacting to QAOP / 6789 keys, scrolled frame-by-frame through scroll-attr:
+<video src="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9" controls muted loop preload="metadata" width="350" height="280"></video>
 
-<video src="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9" controls muted loop height="280"></video>
-
-A short reaction clip of the redraw loop under load:
-
-<video src="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6" controls muted loop height="280"></video>
+Another demo is a simple reaction game — a random digit comes up, and after the user's keypress (hopefully with the same digit as requested) a small statistics line comes up:
+<video src="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6" controls muted loop preload="metadata" width="350" height="280"></video>
 
 ### Hello world
 
@@ -64,20 +61,26 @@ The `.map` is a Fuse-compatible symbol map so your debugger shows `greet` and
 ### Happy path: the plasma example
 
 `examples/plasma/` is the largest bundled example and exercises most of the
-pipeline — multi-file includes, attribute-memory manipulation, nested counted
-loops, and a tight redraw inner loop.
+pipeline — multi-file includes with path deduplication, attribute-memory
+manipulation, a precomputed phase buffer, per-frame timing, and keyboard
+input via `KEY-STATE`.
 
-The source is split across three files that wire together with `REQUIRE`:
+The source is split across four files that wire together with `REQUIRE`:
 
 ```
 examples/plasma/
-├── main.fs                    ← entry point; includes app/plasma.fs
+├── main.fs                    ← entry point; require app/plasma.fs
 ├── lib/
 │   ├── math.fs                ← : mod32 ( n -- n%32 ) 31 and ;
-│   └── screen.fs              ← attrs, attr-addr, attr!
+│   ├── screen.fs              ← attrs, row-addr, attr-addr, attr!
+│   └── timing.fs              ← ms-per-frame, frames>ms
 └── app/
-    └── plasma.fs              ← wave table, plasma-cell, draw, animate
+    └── plasma.fs              ← wave table, phased buffer, draw, animate
 ```
+
+Both `plasma.fs` and `screen.fs` `require math.fs`, but the file is loaded
+only once: `REQUIRE` canonicalises paths and dedups, so the include graph is
+a DAG rather than a tree.
 
 The core of it:
 
@@ -88,29 +91,59 @@ create wave
   \ ... 32 entries total, triangle wave
 
 variable phase
+create phased 32 allot
 
-: wave@        ( i -- n )      mod32 wave + c@ ;
-: plasma-cell  ( col row -- attr )
-    phase @ + wave@ swap
-    phase @ + wave@
-    xor
-    3 lshift 64 or ;
+: wave@       ( i -- n )        mod32 wave + c@ ;
+: phased@     ( i -- n )        phased + c@ ;
+: paper-attr  ( paper -- attr ) 3 lshift 64 or ;
 
-: draw         ( -- )
-    scr-rows 0 do
-        scr-cols 0 do
-            i j plasma-cell i j attr!
-        loop
+: rephase  ( -- )
+    scr-cols 0 do
+        i phase @ + wave@
+        phased i + c!
     loop ;
 
-: step         ( -- )          1 phase +! ;
-: animate      begin draw step again ;
+: draw-row  ( row -- )
+    dup phased@
+    swap row-addr
+    scr-cols 0 do
+        over i phased@ xor
+        paper-attr
+        over c!  1+
+    loop
+    2drop ;
+
+: draw          ( -- )  rephase  scr-rows 0 do i draw-row loop ;
+: plasma-init   ( -- )  0 phase !  draw ;
+
+\ QAOP / 6789 bindings read via KEY-STATE
+: dx            ( -- n )  right? left? - ;
+: dy            ( -- n )  down?  up?   - ;
+: react         ( -- )    dx dy scroll-attr ;
+
+: animate       ( -- )
+    plasma-init
+    begin wait-frame react again ;
 ```
 
-Every identifier here is a Forth word — no syntax, no types, just a stream of
-words that pushes and pops a parameter stack. `:` starts a definition, `;`
-ends it. `( ... )` is a stack-effect comment and produces no code. `create
-wave` followed by `c,` builds an inline byte array.
+The trick is `phased`: rather than calling `wave@` twice per cell (32 × 24 =
+768 cells × 2 lookups per frame), the 32 column-phase values are computed
+once into a small RAM buffer by `rephase`, and each row then XORs against
+that buffer column-by-column. Halves the table traffic inside the hot loop,
+which matters on a 3.5 MHz Z80.
+
+Every identifier here is a Forth word — no syntax, no types, just a stream
+of words that pushes and pops a parameter stack. `:` starts a definition,
+`;` ends it. `( ... )` is a stack-effect comment and produces no code.
+`create wave` followed by `c,` builds an inline byte array; `allot`
+reserves raw bytes for `phased` without initialising them.
+
+The `animate` loop is unusual: `plasma-init` paints the attribute area
+once, and then the frame loop is just `wait-frame react`. `react` reads the
+QAOP and 6789 keys via `KEY-STATE`, derives a `dx dy` direction, and calls
+`scroll-attr` to shift the attribute buffer that much. The plasma is never
+redrawn — you're looking at a static buffer being panned around by the
+player. That's what the second demo clip shows.
 
 Build it:
 
@@ -118,8 +151,9 @@ Build it:
 zt build examples/plasma/main.fs -o plasma.sna --map plasma.map
 ```
 
-You get a `.sna` that, when loaded, immediately starts mutating the attribute
-area at `$5800–$5AFF`, producing the scrolling colour plasma.
+You get a `.sna` that boots straight into the plasma drawn across the
+attribute area at `$5800–$5AFF`, then responds to QAOP (or Kempston-style
+6789) keys to pan it.
 
 ### The development loop
 
@@ -352,4 +386,4 @@ run unchanged on real hardware.
   in most dispatch paths. No frame-sync, no 50 Hz timer.
 - **48K only.** No `.tap`, no 128K banking, no AY support.
 
-Most of these are addressed in doc #2.
+Most of these are addressed in other docs.
