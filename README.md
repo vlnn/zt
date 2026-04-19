@@ -32,6 +32,30 @@ make test
 make examples        # build build/*.sna from every example
 ```
 
+### Demo
+
+The plasma example scrolling through the attribute area, and a short reaction
+clip of the redraw loop under load:
+
+<table>
+  <tr>
+    <td>
+      <video src="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9" controls muted loop height="300">
+        <a href="https://github.com/user-attachments/assets/8d94c131-63b9-4cdb-947b-1136e4accac9">plasma.mp4</a>
+      </video>
+    </td>
+    <td>
+      <video src="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6" controls muted loop height="300">
+        <a href="https://github.com/user-attachments/assets/210c49b6-2734-4e58-b51e-27babef91ff6">reaction.mp4</a>
+      </video>
+    </td>
+  </tr>
+  <tr>
+    <td align="center"><sub><code>examples/plasma</code></sub></td>
+    <td align="center"><sub>reaction loop</sub></td>
+  </tr>
+</table>
+
 ### Hello world
 
 ```forth
