@@ -1137,9 +1137,12 @@ def create_scroll_attr(a: Asm) -> None:
 def create_wait_frame(a: Asm) -> None:
     a.label("WAIT_FRAME")
     a.alias("wait-frame", "WAIT_FRAME")
+    a.push_iy()
+    a.ld_iy_nn(0x5C3A)
     a.ei()
     a.halt()
     a.di()
+    a.pop_iy()
     a.dispatch()
 
 PRIMITIVES = [

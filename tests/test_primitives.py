@@ -485,3 +485,22 @@ def test_u_mod_div_does_not_preserve_bc():
     assert 0xC5 not in out[:6], "U_MOD_DIV should not PUSH BC (BC is caller-clobber)"
 
 
+def test_wait_frame_saves_iy_around_halt():
+    from zt.assemble.primitives import create_wait_frame
+    out = _compile_primitive(create_wait_frame)
+    header = bytes([0xFD, 0xE5, 0xFD, 0x21, 0x3A, 0x5C])
+    assert out[:6] == header, (
+        "WAIT_FRAME must PUSH IY then LD IY,$5C3A before halting so the "
+        "Spectrum ROM's 50Hz interrupt handler writes system variables "
+        "into the ROM area instead of zt's return stack"
+    )
+    assert bytes([0xFB, 0x76, 0xF3]) in out, (
+        "WAIT_FRAME must still emit the ei; halt; di; sequence"
+    )
+    pop_iy_offset = out.index(bytes([0xFD, 0xE1]))
+    halt_offset = out.index(bytes([0xFB, 0x76, 0xF3]))
+    assert pop_iy_offset > halt_offset, (
+        "POP IY must come after di to restore zt's return stack pointer"
+    )
+
+

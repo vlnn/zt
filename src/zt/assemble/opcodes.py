@@ -157,6 +157,8 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _d ("ld_h_ix",      0xDD, 0x66),
 
     _nn("ld_iy_nn",     0xFD, 0x21),
+    _no("push_iy",      0xFD, 0xE5),
+    _no("pop_iy",       0xFD, 0xE1),
     _no("inc_iy",       0xFD, 0x23),
     _no("dec_iy",       0xFD, 0x2B),
     _d ("ld_e_iy",      0xFD, 0x5E),
