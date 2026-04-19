@@ -1,3 +1,6 @@
+"""
+Tests for the simulator's IO infrastructure: `screen_addr`, `decode_screen_cell`, `TEST_FONT`, the preloaded font, and `ForthResult.chars_out`.
+"""
 from __future__ import annotations
 
 import pytest

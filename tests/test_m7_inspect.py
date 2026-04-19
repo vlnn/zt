@@ -1,3 +1,6 @@
+"""
+Milestone-7 tests for `decompile`: basic colon words, literals, structured `begin`/`if`/`do` loops, early exit, and string literals with an image.
+"""
 import pytest
 
 from zt.compiler import Compiler

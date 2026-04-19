@@ -1,3 +1,6 @@
+"""
+Tests for the peephole rule engine (`find_match`, `rules_by_specificity`, `max_pattern_length`) and for fusion producing the expected primitive bytes.
+"""
 from __future__ import annotations
 
 import pytest

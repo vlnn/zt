@@ -1,3 +1,6 @@
+"""
+Tests for the sampling profiler: `Profiler` sampling and call counting, report shape, `build_word_ranges`, `resolve_word`, `format_report`, and inclusive t-states.
+"""
 from __future__ import annotations
 
 import pytest

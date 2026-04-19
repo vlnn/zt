@@ -1,3 +1,6 @@
+"""
+High-level image builders: assembles the `START` stub, small demo words, and `build_from_forth` which wires the compiler output into a full Z80 image.
+"""
 from __future__ import annotations
 
 from zt.asm import Asm

@@ -1,3 +1,6 @@
+"""
+`@immediate("name")` and `@directive("name")` method decorators plus `collected_immediates` / `collected_directives`, letting the compiler discover its handlers declaratively across base and subclasses.
+"""
 from __future__ import annotations
 
 from typing import Callable

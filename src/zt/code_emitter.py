@@ -1,3 +1,6 @@
+"""
+`CodeEmitter`: turns tokens and IR cells into Z80 bytes during compilation, and tracks the in-flight colon body, source map entries and branch-label placeholders.
+"""
 from __future__ import annotations
 
 from typing import Any

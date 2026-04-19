@@ -1,3 +1,4 @@
+"""Milestone-7 tests for compiler-emitted warnings when a user word is redefined."""
 import pytest
 
 from zt.compiler import Compiler

@@ -1,3 +1,6 @@
+"""
+Tests for `CodeEmitter`: cell emission, body capture, label allocation, branch placeholders, patching, and buffered emission.
+"""
 import pytest
 
 from zt.asm import Asm

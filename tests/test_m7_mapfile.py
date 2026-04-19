@@ -1,3 +1,4 @@
+"""Milestone-7 tests for `mapfile`: format auto-detection and Fuse / ZEsarUX rendering."""
 import pytest
 
 from zt.compiler import Compiler

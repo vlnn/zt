@@ -1,3 +1,6 @@
+"""
+Low-level per-opcode tests for the `Z80` simulator (loads, push/pop, exchange, inc/dec, `ADD HL,rr`, ...). The pinned `PINNED_DEVIATIONS` docstring catalogues current known deviations from the Z80 spec.
+"""
 from __future__ import annotations
 
 import pytest

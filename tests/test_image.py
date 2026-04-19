@@ -1,3 +1,6 @@
+"""
+Baseline tests for `build_image`: it produces non-empty bytes, resolves all labels, tolerates different origins, and survives full `.sna` packaging.
+"""
 import pytest
 
 from zt.image import build_image

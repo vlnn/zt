@@ -1,3 +1,6 @@
+"""
+Integration tests for the primitive-inliner: compile-time flag, image integrity, inspection preservation, orthogonality with other flags, and semantics.
+"""
 from __future__ import annotations
 
 import pytest

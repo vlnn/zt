@@ -1,3 +1,6 @@
+"""
+Decompiler: reconstructs structured Forth source (`: word ... ;`, `if/else/then`, `begin/until`, `do/loop`, string literals) from a loaded `.fsym` and optional image.
+"""
 from dataclasses import dataclass, field
 from typing import Any
 

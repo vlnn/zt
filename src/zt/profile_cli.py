@@ -1,3 +1,6 @@
+"""
+`zt profile` subcommand. Supports single-run and image-input modes, saving / diffing against a baseline `.zprof`, JSON output, and regression gating via `--fail-if-slower`.
+"""
 from __future__ import annotations
 
 import argparse

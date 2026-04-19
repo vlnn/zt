@@ -1,3 +1,6 @@
+"""
+Tests for `INLINABLE_PRIMITIVES` safety predicates (mid-body dispatch / absolute jumps / whitelist audit) and the expected shape of whitelisted primitive bodies.
+"""
 from __future__ import annotations
 
 import pytest

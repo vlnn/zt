@@ -1,3 +1,6 @@
+"""
+Compiler pipeline: tokenise → parse immediates/directives → emit IR → resolve to a Z80 image. Also defines the `Word` record and top-level `compile_*` helpers used by tests and the CLI.
+"""
 from __future__ import annotations
 
 import os

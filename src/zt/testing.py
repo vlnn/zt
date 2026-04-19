@@ -1,3 +1,6 @@
+"""
+Forth test runner behind `zt test`. Discovers `test-*` words in `.fs` files, compiles and runs each under the simulator, and aggregates `TestSummary` results.
+"""
 from __future__ import annotations
 
 import re

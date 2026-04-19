@@ -1,3 +1,6 @@
+"""
+Tests for `TokenStream`: empty behaviour, `advance` / `next`, `has_more`, `peek`, `lookahead`, `advance_by`, and in-place splice.
+"""
 import pytest
 
 from zt.token_stream import TokenStream, TokenStreamExhausted

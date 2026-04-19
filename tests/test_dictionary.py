@@ -1,3 +1,6 @@
+"""
+Tests for the `Dictionary` symbol table: register/lookup, primitive seeding, redefinition warnings, and iteration.
+"""
 import pytest
 
 from zt.asm import Asm

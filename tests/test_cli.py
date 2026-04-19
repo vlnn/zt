@@ -1,3 +1,6 @@
+"""
+Integration tests for `zt build` driven via subprocess: stdlib wiring, includes, map formats, profile output, and the inline-primitives flag.
+"""
 from __future__ import annotations
 
 import subprocess

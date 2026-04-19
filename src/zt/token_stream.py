@@ -1,3 +1,6 @@
+"""
+`TokenStream`: cursor over the token list exposing `peek` / `next` / `lookahead` and in-place `splice_in`, used by the compiler to expand `INCLUDE` inline.
+"""
 from __future__ import annotations
 
 from zt.tokenizer import Token

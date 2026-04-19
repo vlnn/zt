@@ -1,3 +1,6 @@
+"""
+Symbol-map writer. Emits either Fuse-style (`$ADDR name`) or ZEsarUX-style (`name = $ADDR`) maps, with format auto-detected from the output extension.
+"""
 from pathlib import Path
 
 from zt.compiler import Compiler, Word

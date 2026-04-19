@@ -1,3 +1,6 @@
+"""
+`INCLUDE` / `REQUIRE` path resolution: searches relative to the including file and then the configured include dirs, and deduplicates already-loaded sources.
+"""
 from __future__ import annotations
 
 from pathlib import Path

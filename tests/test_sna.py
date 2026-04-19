@@ -1,3 +1,6 @@
+"""
+Tests for `build_sna`: total size, header layout, stack pointer placement, border byte, code at origin, pushed PC, and range-error handling.
+"""
 import pytest
 
 from zt.sna import (

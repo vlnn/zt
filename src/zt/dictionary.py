@@ -1,3 +1,6 @@
+"""
+`Dictionary`: the compiler's symbol table (name → `Word`), wrapping a plain dict with the lookup / registration API the compiler uses.
+"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterator

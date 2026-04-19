@@ -1,3 +1,6 @@
+"""
+Builds `examples/plasma/main.fs` end-to-end and asserts the multi-file plasma example compiles cleanly.
+"""
 from __future__ import annotations
 
 from pathlib import Path

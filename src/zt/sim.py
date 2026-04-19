@@ -1,3 +1,6 @@
+"""
+Z80 simulator and `ForthMachine` wrapper. Interprets compiled images cycle-by-cycle with enough fidelity for pytest, and models the Spectrum screen / keyboard / border IO surface the primitives rely on.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

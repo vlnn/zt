@@ -1,3 +1,6 @@
+"""
+Milestone-5 tests for `TYPE`, `U/MOD`, `KEY`, `KEY?`, the underlying opcodes, and `EMIT`/`TYPE` interop.
+"""
 from __future__ import annotations
 
 import pytest

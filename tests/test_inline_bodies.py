@@ -1,3 +1,6 @@
+"""
+Tests for the lower-level inline helpers: `primitive_name`, `extract_inline_body`, and `build_inline_registry`.
+"""
 from __future__ import annotations
 
 import pytest

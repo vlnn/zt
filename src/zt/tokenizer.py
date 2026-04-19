@@ -1,3 +1,6 @@
+r"""
+Forth source tokenizer. Produces `Token(value, kind, line, col, source)` and recognises words, numbers (`$hex` / `%bin` / decimal), strings (`."`, `s"`) and both `\` line and `( )` block comments.
+"""
 from __future__ import annotations
 
 import re

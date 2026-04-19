@@ -1,3 +1,6 @@
+"""
+Declarative Z80 opcode table. Each `OpcodeSpec` pairs a mnemonic with its encoding and operand kind; `asm.Asm` auto-generates a method per entry, and `decode()` provides single-instruction disassembly.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

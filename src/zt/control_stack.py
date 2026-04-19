@@ -1,3 +1,6 @@
+"""
+Tagged control-flow stack used at compile time by `if/else/then`, `begin/until`, `begin/while/repeat` and `do/loop` to match structured control frames.
+"""
 from __future__ import annotations
 
 from typing import Any, Iterator

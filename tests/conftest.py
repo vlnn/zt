@@ -1,3 +1,6 @@
+"""
+Pytest plugin that collects Forth `test-*` words from `test_*.fs` files and runs each one as an individual pytest item via `zt.testing.compile_and_run_word`.
+"""
 from __future__ import annotations
 
 from pathlib import Path

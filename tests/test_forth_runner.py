@@ -1,3 +1,6 @@
+"""
+Tests for the standalone `forth_runner` helper: passing and failing assertions, plus runner plumbing.
+"""
 from __future__ import annotations
 
 import sys

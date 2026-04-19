@@ -1,3 +1,4 @@
+"""Tests for `cells_to_json` / `cells_from_json` round-trips over every cell kind."""
 import pytest
 
 from zt.ir import (

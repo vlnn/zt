@@ -1,3 +1,6 @@
+"""
+Hand-written Z80 bodies for all Forth primitives (`DUP`, `DROP`, `+`, `@`, `BRANCH`, `DO`, `KEY`, …). Each `create_*` function appends its primitive's code to an `Asm` and the registered set is exported as `PRIMITIVES`.
+"""
 from __future__ import annotations
 
 from zt.asm import Asm

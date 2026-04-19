@@ -1,3 +1,4 @@
+"""Milestone-5 end-to-end hello-world tests over the full compile-and-simulate path."""
 from __future__ import annotations
 
 from pathlib import Path

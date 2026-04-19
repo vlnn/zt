@@ -1,3 +1,6 @@
+"""
+Sampling profiler for the Z80 simulator. Bucketises PC samples into `WordRange`s, tracks calls / ticks / t-states per word, and renders a textual `ProfileReport`.
+"""
 from __future__ import annotations
 
 from bisect import bisect_right

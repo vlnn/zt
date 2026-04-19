@@ -1,3 +1,6 @@
+"""
+Tests for `run_profile_command`: single-run mode, image mode, word matching, JSON output, save / diff, and regression gating.
+"""
 from __future__ import annotations
 
 import io

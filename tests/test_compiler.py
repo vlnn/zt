@@ -1,3 +1,6 @@
+"""
+Unit tests for `Compiler`: primitive registration, number parsing, colon bodies, variables, constants, `CREATE`, data addresses, `BEGIN / AGAIN`.
+"""
 from __future__ import annotations
 
 import pytest

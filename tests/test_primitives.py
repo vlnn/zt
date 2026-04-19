@@ -1,3 +1,6 @@
+"""
+Byte-for-byte tests that each `create_*` primitive in `zt.primitives` compiles to its expected exact Z80 byte sequence.
+"""
 import pytest
 
 from zt.asm import Asm

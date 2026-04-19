@@ -1,3 +1,6 @@
+"""
+Primitive-body inliner. Decides which primitives (`INLINABLE_PRIMITIVES`) and colon definitions are safe to splice into their callers, and emits the raw Z80 bytes for a resolved inline plan.
+"""
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence

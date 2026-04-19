@@ -1,3 +1,6 @@
+"""
+Milestone-7 tests for SLD output: header, `|T` trace lines, `|L` label lines, and `write_sld`.
+"""
 import pytest
 
 from zt.compiler import Compiler

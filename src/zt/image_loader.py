@@ -1,3 +1,6 @@
+"""
+Load-side counterpart to `sna`/`mapfile`. Reads a `.sna` snapshot back into a 64K byte array and parses Fuse / ZEsarUX symbol-map files into a `name → address` dict.
+"""
 from __future__ import annotations
 
 import re

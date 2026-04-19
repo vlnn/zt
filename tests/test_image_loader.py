@@ -1,3 +1,4 @@
+"""Tests for `load_sna`, `read_map`, and `default_map_path` from `image_loader`."""
 from __future__ import annotations
 
 from pathlib import Path

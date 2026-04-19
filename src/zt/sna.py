@@ -1,3 +1,6 @@
+"""
+`.sna` snapshot builder: produces the 27-byte header and 48K RAM image with the stack pointer, pushed PC, border colour, and compiled code payload placed correctly.
+"""
 from __future__ import annotations
 
 SNA_HEADER_SIZE = 27

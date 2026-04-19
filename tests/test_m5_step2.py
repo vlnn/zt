@@ -1,3 +1,6 @@
+"""
+Milestone-5 step-2 tests covering the newly-added asm opcodes, sim opcodes, and `EMIT` / cursor behaviour.
+"""
 from __future__ import annotations
 
 import pytest

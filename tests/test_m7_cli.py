@@ -1,3 +1,6 @@
+"""
+Milestone-7 tests for `zt build` / `zt inspect`: produced artifacts, map formats, error reporting, and image-stability under debug flags.
+"""
 import json
 import sys
 from pathlib import Path

@@ -1,3 +1,6 @@
+"""
+Tests for the `.zprof` on-disk format: `write_zprof`, `read_zprof`, `diff_reports`, and `regressions`.
+"""
 from __future__ import annotations
 
 import json

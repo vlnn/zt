@@ -1,3 +1,6 @@
+"""
+zt symbol-table (`.fsym`) reader/writer. Serialises the compiler's words, origin, body cells and string labels to versioned JSON for downstream tooling (inspect, tests).
+"""
 import json
 from pathlib import Path
 from typing import Any

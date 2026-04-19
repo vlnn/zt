@@ -1,3 +1,6 @@
+"""
+Sjasmplus-style SLD (source-level debug) writer. Emits the version/device header plus `|T` trace lines from the compiler source map and `|L` label lines for each word.
+"""
 from pathlib import Path
 
 from zt.compiler import Compiler, Word

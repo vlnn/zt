@@ -1,3 +1,6 @@
+"""
+Tests for `tokenize`: words, case-insensitivity, number forms, line/block comments, string literals, source tracking, edge cases, and realistic source snippets.
+"""
 from __future__ import annotations
 
 import pytest

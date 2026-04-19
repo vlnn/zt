@@ -1,3 +1,6 @@
+"""
+End-to-end tests for `INCLUDE` / `REQUIRE` via the compiler: relative resolution, include-dir fallback, error reporting, and dedupe semantics.
+"""
 from __future__ import annotations
 
 from pathlib import Path

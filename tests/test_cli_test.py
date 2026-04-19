@@ -1,3 +1,6 @@
+"""
+Integration tests for the `zt test` subcommand: exit codes, output, filters, verbose mode, and defaults.
+"""
 from __future__ import annotations
 
 import subprocess

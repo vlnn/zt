@@ -1,3 +1,6 @@
+"""
+Tests for `ControlStack`: push/pop LIFO, tag mismatch errors, underflow, peek, clear, iteration, and `find_innermost`.
+"""
 import pytest
 
 from zt.control_stack import ControlStack, ControlStackError

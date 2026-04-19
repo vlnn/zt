@@ -1,3 +1,6 @@
+"""
+`zt` command-line entry point. Parses the `build` / `inspect` / `test` / `profile` subcommands and dispatches them to the compiler, image loader and artifact writers.
+"""
 from __future__ import annotations
 
 import argparse

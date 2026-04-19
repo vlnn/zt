@@ -1,3 +1,6 @@
+"""
+Intermediate-representation cell types (`PrimRef`, `ColonRef`, `Literal`, `Label`, `Branch`, `StringRef`) plus `resolve()` which lowers a cell list to Z80 bytes and JSON round-trip helpers.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

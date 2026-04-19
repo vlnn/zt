@@ -1,3 +1,6 @@
+"""
+Unit tests for `IncludeResolver`: absolute paths, relative-to-source, search dirs, not-found errors, and dedupe.
+"""
 from pathlib import Path
 
 import pytest

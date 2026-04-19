@@ -1,3 +1,6 @@
+"""
+Tests for the `Asm` class: label registration, opcode method emission, fixup resolution, and alias handling.
+"""
 import pytest
 
 from zt.asm import Asm

@@ -1,3 +1,6 @@
+"""
+Tests for `zt.testing`: passing/failing assertions, extra include dirs, `discover_tests`, and `run_tests`.
+"""
 from __future__ import annotations
 
 from pathlib import Path

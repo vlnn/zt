@@ -1,3 +1,6 @@
+"""
+Tests for the `@immediate` / `@directive` decorators, deterministic collection order, inheritance, and duplicate-name detection.
+"""
 from __future__ import annotations
 
 import pytest

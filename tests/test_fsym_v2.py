@@ -1,3 +1,6 @@
+"""
+Tests for the fsym v2 schema (body cells + string labels), the v2 inspect path, and backward compatibility with v1 dumps.
+"""
 import pytest
 
 from zt.compiler import Compiler

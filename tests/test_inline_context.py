@@ -1,3 +1,6 @@
+"""
+Tests for `InlineContext.build` and the primitive-name-to-key mapping it derives from `PRIMITIVES`.
+"""
 from __future__ import annotations
 
 import pytest

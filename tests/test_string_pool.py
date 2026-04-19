@@ -1,3 +1,6 @@
+"""
+Tests for `StringPool`: sequential label allocation, flush order, clearing on flush, empty behaviour, and data preservation.
+"""
 import pytest
 
 from zt.asm import Asm

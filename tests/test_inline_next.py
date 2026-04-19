@@ -1,3 +1,6 @@
+"""
+Tests for inlining the `NEXT` dispatcher into primitive tails instead of emitting `jp NEXT`, covering asm wiring, image size, and end-to-end semantics.
+"""
 from __future__ import annotations
 
 import pytest

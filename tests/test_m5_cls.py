@@ -1,3 +1,6 @@
+"""
+Milestone-5 tests for the `cls` / `reset-cursor` primitive and its interaction with the hello-world pipeline.
+"""
 from __future__ import annotations
 
 import pytest

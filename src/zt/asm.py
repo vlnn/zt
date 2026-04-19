@@ -1,3 +1,6 @@
+"""
+Z80 assembler core. Defines the `Asm` class that tracks origin, emitted bytes, labels and fixups, and gains one method per entry in `opcodes.OPCODES`.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

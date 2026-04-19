@@ -1,3 +1,6 @@
+"""
+Tests for `plan_colon_inlining` / `is_colon_inlinable` / `emit_inline_plan`: which colon words qualify for inlining and the bytes the plan emits.
+"""
 from __future__ import annotations
 
 import pytest

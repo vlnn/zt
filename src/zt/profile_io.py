@@ -1,3 +1,6 @@
+"""
+On-disk profile format (`.zprof`). JSON round-trip for `ProfileReport` plus `diff_reports` and `regressions` used by CI-style regression checks.
+"""
 from __future__ import annotations
 
 import json

@@ -1,3 +1,6 @@
+"""
+Standalone helper for compiling and running a single Forth `test-*` word under the simulator, used by tests that exercise the test-runner plumbing itself.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

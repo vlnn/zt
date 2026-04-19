@@ -1,3 +1,6 @@
+"""
+Pending-string buffer. Allocates `_str_N` labels for `."` / `s"` literals during compilation and flushes them into the image after the dictionary.
+"""
 from __future__ import annotations
 
 from zt.asm import Asm

@@ -1,3 +1,6 @@
+"""
+Peephole optimisation rules and matcher. Fuses short patterns like `1 +` → `1+`, `dup @` → `dup@`, `swap drop` → `nip` at the IR-stream level before code emission.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass

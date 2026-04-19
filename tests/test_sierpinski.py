@@ -1,3 +1,6 @@
+"""
+Tests that the Sierpinski triangle example actually draws the expected attribute pattern when run in the Z80 simulator.
+"""
 import pytest
 
 from zt.compiler import Compiler

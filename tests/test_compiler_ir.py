@@ -1,3 +1,6 @@
+"""
+Tests that the compiler populates word body cells correctly and that IR resolution produces bytes matching the final image (including the `VERIFY_IR` env-var path).
+"""
 import os
 
 import pytest

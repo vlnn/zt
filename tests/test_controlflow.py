@@ -1,3 +1,6 @@
+"""
+End-to-end tests for compiled control flow: `0branch`, `if/else/then`, `begin/until`, `begin/while/repeat`, `do/loop`, `i`, `j`, and `unloop`.
+"""
 import pytest
 
 from zt.asm import Asm

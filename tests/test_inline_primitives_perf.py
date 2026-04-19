@@ -1,3 +1,6 @@
+"""
+Benchmarks asserting that the primitive inliner actually reduces tick counts for inlinable colons and leaves non-inlinable ones unchanged.
+"""
 from __future__ import annotations
 
 import pytest

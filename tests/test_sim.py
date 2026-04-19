@@ -1,3 +1,6 @@
+"""
+Tests for `ForthMachine`: expressions, stack manipulation, return stack, memory ops, comparisons, colon words, branching, border IO, and the initial stack.
+"""
 import pytest
 
 from zt.sim import ForthMachine

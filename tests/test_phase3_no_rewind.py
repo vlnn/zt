@@ -1,3 +1,6 @@
+"""
+Regression tests ensuring the Phase-3 inliner never shrinks or rewinds `asm.code` and that inlined and threaded colons produce identical runtime results.
+"""
 import pytest
 
 from zt.asm import Asm

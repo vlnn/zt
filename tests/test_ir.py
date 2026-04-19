@@ -1,3 +1,6 @@
+"""
+Tests for the IR cell dataclasses: field shape, frozen-ness, value validation, equality, and hashability.
+"""
 import pytest
 
 from zt.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef

@@ -1,3 +1,6 @@
+"""
+Milestone-5 tests for `."` and `s"` string literals, their use inside colon definitions, error cases, and storage layout.
+"""
 from __future__ import annotations
 
 import pytest

@@ -1,3 +1,6 @@
+"""
+Tests for the `OPCODES` table: `OpcodeSpec` fields, coverage parity with `Asm`, `decode()`, and encode/decode round-trip.
+"""
 from __future__ import annotations
 
 import inspect

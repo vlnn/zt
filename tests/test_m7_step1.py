@@ -1,3 +1,6 @@
+"""
+Milestone-7 step-1 tests for per-word source-location tracking, colon-body locations, source-map integrity, and image stability.
+"""
 import hashlib
 
 import pytest
