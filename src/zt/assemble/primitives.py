@@ -1126,7 +1126,6 @@ def create_scroll_attr(a: Asm) -> None:
     a.pop_hl()
     a.push_hl()
 
-
     a.ld_a_ind_nn("_sa_dx")
     a.or_a()
     a.jp_z("_sa_after_h")
@@ -1172,7 +1171,10 @@ def create_scroll_attr(a: Asm) -> None:
     a.or_a()
     a.jp_z("_sa_done")
 
-    a.label("_sa_v_pass")
+    a.cp_n(13)
+    a.jr_nc_to("_sa_v_flip")
+
+    a.label("_sa_v_up")
     a.ld_hl_nn(0x5800)
     a.ld_de_nn("_sa_scratch")
     a.ld_bc_nn(32)
@@ -1191,7 +1193,48 @@ def create_scroll_attr(a: Asm) -> None:
     a.ld_a_ind_nn("_sa_dy")
     a.dec_a()
     a.ld_ind_nn_a("_sa_dy")
-    a.jp_nz("_sa_v_pass")
+    a.jp_nz("_sa_v_up")
+    a.jp("_sa_done")
+
+    a.label("_sa_v_flip")
+    a.ld_l_a()
+    a.ld_a_n(24)
+    a.sub_l()
+    a.ld_ind_nn_a("_sa_dy")
+
+    a.label("_sa_v_down")
+    a.ld_hl_nn(0x5AE0)
+    a.ld_de_nn("_sa_scratch")
+    a.ld_bc_nn(32)
+    a.ldir()
+
+    a.ld_a_n(23)
+    a.ld_ind_nn_a("_sa_rows")
+    a.ld_hl_nn(0x5AC0)
+    a.ld_de_nn(0x5AE0)
+
+    a.label("_sa_v_down_row")
+    a.ld_bc_nn(32)
+    a.ldir()
+    a.ld_bc_nn(0xFFC0)
+    a.add_hl_bc()
+    a.ex_de_hl()
+    a.add_hl_bc()
+    a.ex_de_hl()
+    a.ld_a_ind_nn("_sa_rows")
+    a.dec_a()
+    a.ld_ind_nn_a("_sa_rows")
+    a.jp_nz("_sa_v_down_row")
+
+    a.ld_hl_nn("_sa_scratch")
+    a.ld_de_nn(0x5800)
+    a.ld_bc_nn(32)
+    a.ldir()
+
+    a.ld_a_ind_nn("_sa_dy")
+    a.dec_a()
+    a.ld_ind_nn_a("_sa_dy")
+    a.jp_nz("_sa_v_down")
 
     a.label("_sa_done")
     a.pop_hl()
