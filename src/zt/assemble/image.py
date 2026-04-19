@@ -11,6 +11,7 @@ SPECTRUM_ATTR_BASE = 0x5800
 
 
 def create_start(a: Asm, data_stack_top: int, return_stack_top: int) -> None:
+    """Emit the `START` stub that sets up SP, IY, IX and jumps into the threaded interpreter."""
     a.label("START")
     a.ld_sp_nn(data_stack_top)
     a.ld_iy_nn(return_stack_top)
@@ -19,6 +20,7 @@ def create_start(a: Asm, data_stack_top: int, return_stack_top: int) -> None:
 
 
 def create_demo_double(a: Asm) -> None:
+    """Emit a tiny demo colon word `: DOUBLE  DUP + ;` used by `build_image`."""
     a.label("DOUBLE")
     a.call("DOCOL")
     a.word("DUP")
@@ -27,6 +29,7 @@ def create_demo_double(a: Asm) -> None:
 
 
 def create_demo_main(a: Asm) -> None:
+    """Emit a demo `MAIN` loop that cycles border colour and writes it to attribute memory."""
     a.label("MAIN")
     a.word("LIT")
     a.word(0)
@@ -47,6 +50,7 @@ def create_demo_main(a: Asm) -> None:
 def build_image(origin: int = 0x8000,
                 data_stack_top: int = 0xFF00,
                 return_stack_top: int = 0xFE00) -> bytes:
+    """Assemble the legacy hand-written image: START stub, every primitive, and the DOUBLE/MAIN demo."""
     a = Asm(origin)
     create_start(a, data_stack_top, return_stack_top)
     for creator in PRIMITIVES:
@@ -62,5 +66,6 @@ COUNTER_FORTH = """\
 
 
 def build_from_forth(source: str = COUNTER_FORTH, **kwargs) -> bytes:
+    """Compile Forth `source` into a full Z80 image via the compiler pipeline."""
     image, _ = build_from_source(source, **kwargs)
     return image

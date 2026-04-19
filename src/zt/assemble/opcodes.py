@@ -17,6 +17,7 @@ class OpcodeSpec:
 
     @property
     def total_length(self) -> int:
+        """Size in bytes of a full instance of this opcode including its operand."""
         if self.operand is None:
             return len(self.encoding)
         if self.operand in ("n", "d"):
@@ -27,6 +28,7 @@ class OpcodeSpec:
 
 
 def _no(mnemonic: str, *encoding: int) -> OpcodeSpec:
+    """No operand"""
     return OpcodeSpec(mnemonic=mnemonic, encoding=tuple(encoding), operand=None)
 
 

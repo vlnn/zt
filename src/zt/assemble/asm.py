@@ -20,14 +20,17 @@ class Asm:
 
     @property
     def here(self) -> int:
+        """Current emission address: origin plus the number of bytes already emitted."""
         return self.origin + len(self.code)
 
     def label(self, name: str) -> None:
+        """Bind `name` to the current address; raises on duplicates."""
         if name in self.labels:
             raise ValueError(f"duplicate label: {name}")
         self.labels[name] = self.here
 
     def alias(self, name: str, target: str) -> None:
+        """Bind `name` to the same address as an already-defined label `target`."""
         if name in self.labels:
             raise ValueError(f"duplicate label: {name}")
         if target not in self.labels:
@@ -35,6 +38,7 @@ class Asm:
         self.labels[name] = self.labels[target]
 
     def word(self, value: Operand) -> None:
+        """Emit a little-endian 16-bit word; a string is recorded as a fixup and patched on `resolve`."""
         if isinstance(value, str):
             self.fixups.append((len(self.code), value))
             self.code.extend((0, 0))
@@ -69,6 +73,7 @@ class Asm:
         self.word(target)
 
     def _emit_jr(self, opcode: int, target: str) -> None:
+        """Emit a relative-jump opcode and reserve one byte for the displacement, recorded as a fixup."""
         self.code.append(opcode)
         self.rel_fixups.append((len(self.code), target))
         self.code.append(0x00)
@@ -86,6 +91,7 @@ class Asm:
     def jp_nz(self, target): self.code.append(0xC2); self.word(target)
 
     def resolve(self) -> bytes:
+        """Patch all recorded fixups with real label addresses and return the final code bytes."""
         for offset, name in self.fixups:
             if name not in self.labels:
                 raise KeyError(f"undefined label: {name}")
@@ -106,6 +112,7 @@ class Asm:
         return bytes(self.code)
 
     def emit_next_body(self) -> None:
+        """Emit the inline body of the threaded-interpreter NEXT routine (fetch, advance IX, jump)."""
         self.ld_e_ix(0)
         self.ld_d_ix(1)
         self.inc_ix()
@@ -114,6 +121,7 @@ class Asm:
         self.ret()
 
     def dispatch(self) -> None:
+        """Tail-call NEXT: either inlined directly or via `JP NEXT`, depending on `inline_next`."""
         if self.inline_next:
             self.emit_next_body()
         else:
@@ -121,12 +129,14 @@ class Asm:
 
 
 def _install_opcode_methods() -> None:
+    """Attach one `emit` method per `OpcodeSpec` to the `Asm` class."""
     from zt.assemble.opcodes import OPCODES
     for spec in OPCODES:
         setattr(Asm, spec.mnemonic, _method_for(spec))
 
 
 def _method_for(spec):
+    """Build the emitter closure for a single opcode spec, dispatched on its operand kind."""
     encoding = spec.encoding
     if spec.operand is None:
         def emit(self):
