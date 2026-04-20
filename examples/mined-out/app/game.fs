@@ -37,11 +37,10 @@ variable alive
     has-bill? if player-xy bill? else prow @ 0= then ;
 
 : map-blown-banner  ( -- )
-    0 21 at-xy  ." your map has blown away! (shame)" ;
+    0 banner-row at-xy  ." your map has blown away! (shame)" ;
 
 : blow-map-away  ( -- )
     map-blown-banner
-    hide-all-mines
     cheat-reset
     reset-ti ;
 
@@ -58,7 +57,7 @@ variable alive
 
 : after-player-move  ( -- )
     click
-    old-xy erase-at
+    old-xy trail-at
     maybe-rescue
     player-xy empty? 0= if handle-collision exit then
     player-xy player-at
@@ -68,13 +67,19 @@ variable alive
     snapshot-pos
     record-step
     bug-step
-    player-hit-bug? if die exit then ;
+    player-hit-bug?  if die exit then ;
+
+: tick-wind      ( -- )
+    wind-due? 0= if exit then
+    wind-step
+    player-hit-by-wind? if die then ;
 
 : step-once      ( -- )
     wait-frame
     tick-world
-    try-move 0= if exit then
-    after-player-move
+    try-move if after-player-move then
+    alive @ 0= if exit then
+    tick-wind
     alive @ if 4 throttle then ;
 
 : play-loop      ( -- )
@@ -93,6 +98,7 @@ variable alive
     place-actors-for-level
 
     bug-reset
+    wind-reset
     0 spreader-active !
     reset-ti
     cheat-reset
@@ -115,7 +121,7 @@ variable alive
 
 : reset-for-new-game  ( -- )   0 score !  1 level-no ! ;
 
-: bill-banner         ( -- )   0 21 at-xy  ." rescued bill! +2000 points     " ;
+: bill-banner         ( -- )   0 banner-row at-xy  ." rescued bill! +2000 points     " ;
 
 : bill-rescued        ( -- )
     bill-banner

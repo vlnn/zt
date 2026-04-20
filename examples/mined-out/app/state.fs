@@ -27,12 +27,15 @@ create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 , 5000 ,
 : has-bug?       ( -- flag )     4 level>=? ;
 : has-map-blow?  ( -- flag )     5 level>=?  has-bill? 0=  and ;
 : has-closed-gap? ( -- flag )    level-no @ 8 = ;
+: has-wind?       ( -- flag )    4 level>=?  has-bill? 0=  and ;
 
 : reset-ti            ( -- )        0 ti ! ;
 : map-blow-threshold  ( -- n )      level-paper@ 260 * 70 + ;
 : map-blow-due?       ( -- flag )
     has-map-blow? 0= if 0 exit then
     ti @ map-blow-threshold > ;
+
+: wind-period         ( -- n )      level-paper@ 3 * 1+ ;
 
 : bump-max-level ( -- )
     level-no @ max-level-reached @ max  max-level-reached ! ;

@@ -6,14 +6,17 @@ require grid.fs
 require rand.fs
 
 32 constant board-cols
-22 constant board-rows
+23 constant board-rows
 
 15 constant gap-left
 16 constant gap-right
+0  constant left-wall-col
+31 constant right-wall-col
 1  constant top-fence-row
 20 constant bottom-fence-row
 21 constant start-row
 15 constant start-col
+22 constant banner-row
 
 0 constant t-empty
 1 constant t-mine
@@ -28,8 +31,9 @@ require rand.fs
 37 constant ch-spreader
 64 constant ch-bug
 66 constant ch-bill
+126 constant ch-wind
 
-create board-buf  704 allot
+create board-buf  736 allot
 
 : board-init     ( -- )
     board-buf board-cols board-rows grid-set!
@@ -52,6 +56,17 @@ create board-buf  704 allot
 : bug-at         ( col row -- )       ch-bug      -rot put-char ;
 : bill-at        ( col row -- )       ch-bill     -rot put-char ;
 
+56  constant trail-attr
+248 constant wind-attr
+
+: trail-at       ( col row -- )
+    2dup erase-at
+    trail-attr -rot attr! ;
+
+: wind-at        ( col row -- )
+    2dup ch-wind -rot put-char
+    wind-attr -rot attr! ;
+
 : gap?           ( col -- flag )      dup gap-left = swap gap-right = or ;
 
 : place-fence-cell  ( col row -- )
@@ -69,9 +84,17 @@ create board-buf  704 allot
 : fence-row      ( row -- )
     board-cols 0 do  i over place-fence-at-col  loop drop ;
 
+: side-wall-row  ( row -- )
+    dup  left-wall-col  swap place-fence-cell
+        right-wall-col  swap place-fence-cell ;
+
+: build-side-walls  ( -- )
+    bottom-fence-row top-fence-row 1+ do i side-wall-row loop ;
+
 : build-fences   ( -- )
     top-fence-row fence-row
-    bottom-fence-row fence-row ;
+    bottom-fence-row fence-row
+    build-side-walls ;
 
 : rand-col       ( -- col )   board-cols random ;
 : rand-interior  ( -- row )   18 random 2 + ;

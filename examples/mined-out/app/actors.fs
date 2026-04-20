@@ -46,7 +46,7 @@ variable prev-row variable prev-col
 : read-dy        ( -- dy )     move-down?  move-up?   - ;
 
 : clamp-col      ( n -- n )    0 max board-cols 1- min ;
-: clamp-row      ( n -- n )    0 max board-rows 1- min ;
+: clamp-row      ( n -- n )    0 max start-row min ;
 
 : apply-input    ( -- )
     read-dx read-dy
@@ -114,9 +114,10 @@ variable spreader-col   variable spreader-row   variable spreader-active
 : spreader-drop-mine?  ( -- flag )    spreader-drop-odds one-in ;
 
 : spreader-maybe-drop  ( -- )
-    spreader-drop-mine? if
-        spreader-col @ spreader-trail-row try-place-mine
-    then ;
+    spreader-drop-mine? 0= if exit then
+    spreader-col @ spreader-trail-row       ( col row )
+    2dup try-place-mine
+    reveal-cell-if-mine ;
 
 : spreader-despawn     ( -- )         0 spreader-active ! ;
 
@@ -148,7 +149,7 @@ variable bug-active
     has-bug? 0= if exit then
     bug-visible? 0= if exit then
     bug-active @ if
-        bug-prev-col @ bug-prev-row @ erase-at
+        bug-prev-col @ bug-prev-row @ trail-at
     then
     1 bug-active !
     bug-index trail@ unpack-xy 2dup bug-row ! bug-col !
@@ -164,6 +165,50 @@ variable bug-active
 : player-hit-bug?  ( -- flag )
     bug-active @ 0= if 0 exit then
     pcol @ bug-col @ =  prow @ bug-row @ =  and ;
+
+variable wind-col  variable wind-row
+variable wind-prev-col  variable wind-prev-row
+variable wind-idx  variable wind-active
+
+: wind-reset     ( -- )
+    0 wind-idx !  0 wind-active !
+    0 wind-col !  0 wind-row !
+    0 wind-prev-col !  0 wind-prev-row ! ;
+
+: wind-due?      ( -- flag )
+    has-wind? 0= if 0 exit then
+    ti @ map-blow-threshold > 0= if 0 exit then
+    ti @ wind-period mod 0= ;
+
+: wind-has-trail?  ( -- flag )   wind-idx @ trail-len@ < ;
+
+: wind-read-position  ( -- )
+    wind-idx @ trail@ unpack-xy
+    wind-row !  wind-col ! ;
+
+: wind-erase-previous  ( -- )
+    wind-active @ 0= if exit then
+    wind-prev-col @ wind-prev-row @ trail-at ;
+
+: wind-remember-position  ( -- )
+    wind-col @ wind-prev-col !
+    wind-row @ wind-prev-row ! ;
+
+: wind-draw      ( -- )
+    1 wind-active !
+    wind-col @ wind-row @ wind-at
+    wind-remember-position ;
+
+: wind-step      ( -- )
+    wind-has-trail? 0= if exit then
+    wind-erase-previous
+    wind-read-position
+    wind-idx @ 1+ wind-idx !
+    wind-draw ;
+
+: player-hit-by-wind?  ( -- flag )
+    wind-active @ 0= if 0 exit then
+    pcol @ wind-col @ =  prow @ wind-row @ =  and ;
 
 variable bill-col
 8 constant bill-row

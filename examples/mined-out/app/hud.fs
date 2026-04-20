@@ -42,7 +42,7 @@ create trail-buf  2048 allot
     trail@ unpack-xy 2dup player-at replay-delay erase-at ;
 
 : replay-banner  ( -- )
-    0 21 at-xy  ." replay (S=slow E=end)         " ;
+    0 banner-row at-xy  ." replay (S=slow E=end)         " ;
 
 : action-replay  ( -- )
     replay-banner
@@ -52,14 +52,14 @@ create trail-buf  2048 allot
     loop ;
 
 : clear-banner-row  ( -- )
-    0 21 at-xy  32 0 do space loop ;
+    0 banner-row at-xy  32 0 do space loop ;
 
-: intro-level-2  ( -- )   0 21 at-xy  ." rescue the damsels!" ;
-: intro-level-3  ( -- )   0 21 at-xy  ." watch out - spreaders!" ;
-: intro-level-4  ( -- )   0 21 at-xy  ." a bug stalks your trail" ;
-: intro-level-5  ( -- )   0 21 at-xy  ." your map may blow away" ;
-: intro-level-8  ( -- )   0 21 at-xy  ." gap is closed - hug three mines" ;
-: intro-level-9  ( -- )   0 21 at-xy  ." rescue bill from the chamber" ;
+: intro-level-2  ( -- )   0 banner-row at-xy  ." rescue the damsels!" ;
+: intro-level-3  ( -- )   0 banner-row at-xy  ." watch out - spreaders!" ;
+: intro-level-4  ( -- )   0 banner-row at-xy  ." a bug stalks your trail" ;
+: intro-level-5  ( -- )   0 banner-row at-xy  ." your map may blow away" ;
+: intro-level-8  ( -- )   0 banner-row at-xy  ." gap is closed - hug three mines" ;
+: intro-level-9  ( -- )   0 banner-row at-xy  ." rescue bill from the chamber" ;
 
 : show-level-intro  ( -- )
     initial-bonus-pending @ if exit then
@@ -75,5 +75,5 @@ create trail-buf  2048 allot
 
 : show-initial-bonus  ( -- )
     initial-bonus-pending @ dup 0= if drop exit then
-    0 21 at-xy  ." initial bonus = "  .
+    0 banner-row at-xy  ." initial bonus = "  .
     0 initial-bonus-pending ! ;
