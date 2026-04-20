@@ -34,15 +34,18 @@ create trail-buf  2048 allot
 : slow-held?     ( -- flag )   83 pressed? ;
 : end-held?      ( -- flag )   69 pressed? ;
 
-: replay-frames  ( -- n )      slow-held? if 10 else 3 then ;
-: replay-delay   ( -- )        replay-frames 0 do wait-frame loop ;
 : throttle       ( frames -- ) 0 do wait-frame loop ;
+
+: replay-frames  ( -- n )      slow-held? if 10 else 3 then ;
+: replay-delay   ( -- )        replay-frames throttle ;
 
 : replay-step    ( i -- )
     trail@ unpack-xy 2dup player-at replay-delay erase-at ;
 
+: at-banner      ( -- )        0 banner-row at-xy ;
+
 : replay-banner  ( -- )
-    0 banner-row at-xy  ." replay (S=slow E=end)         " ;
+    at-banner  ." replay (S=slow E=end)         " ;
 
 : action-replay  ( -- )
     replay-banner
@@ -52,14 +55,14 @@ create trail-buf  2048 allot
     loop ;
 
 : clear-banner-row  ( -- )
-    0 banner-row at-xy  32 0 do space loop ;
+    at-banner  32 0 do space loop ;
 
-: intro-level-2  ( -- )   0 banner-row at-xy  ." rescue the damsels!" ;
-: intro-level-3  ( -- )   0 banner-row at-xy  ." watch out - spreaders!" ;
-: intro-level-4  ( -- )   0 banner-row at-xy  ." a bug stalks your trail" ;
-: intro-level-5  ( -- )   0 banner-row at-xy  ." your map may blow away" ;
-: intro-level-8  ( -- )   0 banner-row at-xy  ." gap is closed - hug three mines" ;
-: intro-level-9  ( -- )   0 banner-row at-xy  ." rescue bill from the chamber" ;
+: intro-level-2  ( -- )   at-banner  ." rescue the damsels!" ;
+: intro-level-3  ( -- )   at-banner  ." watch out - spreaders!" ;
+: intro-level-4  ( -- )   at-banner  ." a bug stalks your trail" ;
+: intro-level-5  ( -- )   at-banner  ." your map may blow away" ;
+: intro-level-8  ( -- )   at-banner  ." gap is closed - hug three mines" ;
+: intro-level-9  ( -- )   at-banner  ." rescue bill from the chamber" ;
 
 : show-level-intro  ( -- )
     initial-bonus-pending @ if exit then
@@ -75,5 +78,5 @@ create trail-buf  2048 allot
 
 : show-initial-bonus  ( -- )
     initial-bonus-pending @ dup 0= if drop exit then
-    0 banner-row at-xy  ." initial bonus = "  .
+    at-banner  ." initial bonus = "  .
     0 initial-bonus-pending ! ;

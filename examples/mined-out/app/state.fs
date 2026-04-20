@@ -22,12 +22,13 @@ create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 , 5000 ,
 
 : level>=?       ( n -- flag )   level-no @ swap < 0= ;
 : has-bill?      ( -- flag )     9 level>=? ;
-: has-damsels?   ( -- flag )     2 level>=?  has-bill? 0=  and ;
-: has-spreader?  ( -- flag )     3 level>=?  has-bill? 0=  and ;
+: pre-bill?      ( -- flag )     has-bill? 0= ;
+: has-damsels?   ( -- flag )     2 level>=?  pre-bill?  and ;
+: has-spreader?  ( -- flag )     3 level>=?  pre-bill?  and ;
 : has-bug?       ( -- flag )     4 level>=? ;
-: has-map-blow?  ( -- flag )     5 level>=?  has-bill? 0=  and ;
+: has-map-blow?  ( -- flag )     5 level>=?  pre-bill?  and ;
 : has-closed-gap? ( -- flag )    level-no @ 8 = ;
-: has-wind?       ( -- flag )    4 level>=?  has-bill? 0=  and ;
+: has-wind?       ( -- flag )    4 level>=?  pre-bill?  and ;
 
 : reset-ti            ( -- )        0 ti ! ;
 : map-blow-threshold  ( -- n )      level-paper@ 260 * 70 + ;

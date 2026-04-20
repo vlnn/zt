@@ -123,14 +123,17 @@ create board-buf  736 allot
 : hide-all-mines ( -- )
     board-rows 0 do i hide-mines-in-row loop ;
 
+: top-gap-left-cell   ( -- col row )   gap-left  top-fence-row ;
+: top-gap-right-cell  ( -- col row )   gap-right top-fence-row ;
+
 : gap-open?      ( -- flag )
-    gap-left top-fence-row empty?
-    gap-right top-fence-row empty?  and ;
+    top-gap-left-cell  empty?
+    top-gap-right-cell empty?  and ;
 
 : close-top-gap  ( -- )
-    gap-left  top-fence-row place-fence-cell
-    gap-right top-fence-row place-fence-cell ;
+    top-gap-left-cell  place-fence-cell
+    top-gap-right-cell place-fence-cell ;
 
 : open-top-gap   ( -- )
-    gap-left  top-fence-row erase-cell
-    gap-right top-fence-row erase-cell ;
+    top-gap-left-cell  erase-cell
+    top-gap-right-cell erase-cell ;

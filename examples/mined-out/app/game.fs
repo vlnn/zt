@@ -28,7 +28,7 @@ variable alive
     0 alive ! ;
 
 : reveal-player-cell  ( -- )
-    player-xy fence? 0= if player-xy mine-at then ;
+    player-xy  2dup fence? if 2drop else mine-at then ;
 
 : handle-collision  ( -- )
     reveal-player-cell die ;

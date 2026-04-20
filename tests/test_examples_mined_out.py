@@ -62,7 +62,7 @@ class TestMinedOutWordsByModule:
         "level-paper", "level-border", "level-mines", "level-bonus",
         "level-paper@", "level-border@", "level-mines@", "level-bonus@",
         "has-damsels?", "has-spreader?", "has-bug?", "has-map-blow?", "has-bill?",
-        "has-closed-gap?", "has-wind?",
+        "has-closed-gap?", "has-wind?", "pre-bill?", "pre-bill?",
         "map-blow-threshold", "map-blow-due?", "wind-period", "reset-ti",
         "advance-level", "bump-max-level", "apply-level-colors",
         "contrast-ink",
@@ -89,9 +89,11 @@ class TestMinedOutWordsByModule:
         "gap?", "fence-row", "build-fences", "build-side-walls", "side-wall-row",
         "left-wall-col", "right-wall-col", "banner-row",
         "place-fence-cell", "erase-cell",
+        "top-gap-left-cell", "top-gap-right-cell",
         "try-place-mine", "scatter-mines",
         "show-all-mines", "hide-all-mines",
         "close-top-gap", "open-top-gap", "gap-open?",
+        "top-gap-left-cell", "top-gap-right-cell",
     ])
     def test_board_module_words(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -108,9 +110,11 @@ class TestMinedOutWordsByModule:
         "maybe-spawn-spreader", "spreader-step",
         "spreader-row-jitter", "spreader-trail-row",
         "bug-step", "bug-reset", "player-hit-bug?",
+        "bug-xy!", "bug-prev-xy!", "bug-prev-xy",
         "wind-reset", "wind-step", "wind-due?", "player-hit-by-wind?",
         "wind-col", "wind-row", "wind-idx", "wind-active",
-        "bill-col", "bill-row", "pick-bill", "place-bill", "bill?",
+        "player-at?", "spreader-xy",
+        "bill-col", "bill-row", "bill-xy", "pick-bill", "place-bill", "bill?",
         "draw-chamber",
     ])
     def test_actors_module_words(self, built_compiler, word):
@@ -122,6 +126,7 @@ class TestMinedOutWordsByModule:
         "adj-count", "draw-hud", "update-hud",
         "trail-setup", "record-step", "action-replay",
         "show-initial-bonus", "show-level-intro", "clear-banner-row",
+        "at-banner",
         "slow-held?", "end-held?", "replay-frames",
     ])
     def test_hud_module_words(self, built_compiler, word):
@@ -149,8 +154,11 @@ class TestMinedOutWordsByModule:
         )
 
     @pytest.mark.parametrize("word", [
-        "press-any-key",
-        "quicksilva-banner", "title-card", "instructions",
+        "press-any-key", "press-key-prompt",
+        "at-row", "mine-bar",
+        "quicksilva-screen", "mission-screen", "tips-screen",
+        "draw-mine-frame", "title-in-frame", "tagline",
+        "init-bill-scroll", "scroll-bill-row", "bill-scroll-frame", "bill-scroll-buf",
         "show-intro",
     ])
     def test_title_module_words(self, built_compiler, word):

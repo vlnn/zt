@@ -14,11 +14,12 @@ variable cheat-last-dx
 
 : cheat-reset      ( -- )        0 cheat-state !  0 cheat-last-dx ! ;
 
-: cheat-watching?  ( -- flag )
-    cheat-state @ 0 <  0=  cheat-state @ cheat-target <  and ;
-
 : cheat-fired?     ( -- flag )   cheat-state @ cheat-target = ;
 : cheat-locked?    ( -- flag )   cheat-state @ 0 < ;
+
+: cheat-watching?  ( -- flag )
+    cheat-state @  dup 0 <  0=
+                   swap cheat-target <  and ;
 
 : cheat-fire       ( -- )        show-all-mines  cheat-target cheat-state ! ;
 : cheat-lock       ( -- )        -1 cheat-state ! ;
@@ -29,10 +30,12 @@ variable cheat-last-dx
 
 : cheat-step-horizontal  ( dx -- )
     dup 0= if drop exit then
-    dup cheat-last-dx @ = if drop cheat-lock exit then
-    dup cheat-last-dx !
-    drop
-    cheat-state @ 1+ cheat-advance-to ;
+    dup cheat-last-dx @ = if
+        drop cheat-lock
+    else
+        cheat-last-dx !
+        cheat-state @ 1+ cheat-advance-to
+    then ;
 
 : cheat-observe    ( dx dy -- )
     cheat-watching? 0= if 2drop exit then

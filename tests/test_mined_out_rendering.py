@@ -133,3 +133,39 @@ class TestSpreaderMineVisibility:
         assert visible > 0, (
             "spreader-dropped mines stay visible with cheat fired as well"
         )
+
+
+BILL_SCROLL_HARNESS = """
+require app/mined.fs
+
+: main
+    intro-colors
+    init-bill-scroll
+    0 6 bill-scroll-frame
+    10 6 bill-scroll-frame
+    15 6 bill-scroll-frame
+    halt ;
+"""
+
+
+class TestBillScrollAnimation:
+
+    def _run_and_read_row_top(self, row: int, length: int = 32) -> bytes:
+        _, m = _run(BILL_SCROLL_HARNESS)
+        out = bytearray()
+        for col in range(length):
+            out.append(m.mem[screen_addr(row, col, 0)])
+        return bytes(out)
+
+    def test_bill_scroll_frame_places_player_glyph_somewhere(self):
+        row6 = self._run_and_read_row_top(6, 32)
+        assert 0x4f in row6, (
+            "after sequential bill-scroll-frame calls ending at offset 10, "
+            "the player glyph 0x4f should appear somewhere on row 6"
+        )
+
+    def test_bill_scroll_frame_places_bug_glyph_somewhere(self):
+        row6 = self._run_and_read_row_top(6, 32)
+        assert 0x40 in row6, (
+            "bug glyph 0x40 should appear on row 6 after scroll frames advance"
+        )
