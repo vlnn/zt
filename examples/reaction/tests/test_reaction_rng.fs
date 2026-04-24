@@ -1,5 +1,5 @@
 include test-lib.fs
-require ../examples/reaction/lib/rng.fs
+require ../lib/rng.fs
 
 : test-seed-persists
     42 seed!  rnd-seed @  42 assert-eq ;

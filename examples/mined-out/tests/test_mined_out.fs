@@ -1,6 +1,6 @@
 include test-lib.fs
 require core.fs
-require ../examples/mined-out/app/mined.fs
+require ../app/mined.fs
 
 variable _bad-count
 variable _out-of-bounds

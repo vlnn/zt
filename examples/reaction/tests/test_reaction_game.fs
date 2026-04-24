@@ -1,7 +1,7 @@
 include test-lib.fs
 require core.fs
-require ../examples/reaction/lib/timing.fs
-require ../examples/reaction/app/reaction.fs
+require ../lib/timing.fs
+require ../app/reaction.fs
 
 : test-ms-per-frame-is-20   ms-per-frame  20 assert-eq ;
 

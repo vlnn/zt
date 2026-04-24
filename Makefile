@@ -6,8 +6,13 @@ BUILD_DIR    := build
 SINGLE_SOURCES := $(wildcard $(EXAMPLES_DIR)/*.fs)
 SINGLE_SNAS    := $(patsubst $(EXAMPLES_DIR)/%.fs,$(BUILD_DIR)/%.sna,$(SINGLE_SOURCES))
 
-MULTIFILE_ROOTS := sierpinski plasma mined-out
-MULTIFILE_SNAS  := $(patsubst %,$(BUILD_DIR)/%.sna,$(MULTIFILE_ROOTS))
+MULTIFILE_DIRS := $(patsubst $(EXAMPLES_DIR)/%/main.fs,%,$(wildcard $(EXAMPLES_DIR)/*/main.fs))
+MULTIFILE_SNAS := $(patsubst %,$(BUILD_DIR)/%.sna,$(MULTIFILE_DIRS))
+
+BUILD_FLAGS_bank-rotator := --target 128k
+BUILD_FLAGS_bank-table   := --target 128k
+BUILD_FLAGS_shadow-flip  := --target 128k
+BUILD_FLAGS_plasma-128k  := --target 128k --include-dir $(EXAMPLES_DIR)
 
 .PHONY: all examples test clean help
 
@@ -24,24 +29,14 @@ examples: $(SINGLE_SNAS) $(MULTIFILE_SNAS)
 $(BUILD_DIR)/%.sna: $(EXAMPLES_DIR)/%.fs | $(BUILD_DIR)
 	$(ZT) build $< -o $@ --map $(@:.sna=.map)
 
-$(BUILD_DIR)/sierpinski.sna: \
-        $(EXAMPLES_DIR)/sierpinski/main.fs \
-        $(wildcard $(EXAMPLES_DIR)/sierpinski/lib/*.fs) \
-        | $(BUILD_DIR)
-	$(ZT) build $< -o $@ --map $(@:.sna=.map)
+define MULTIFILE_RULE
+$$(BUILD_DIR)/$(1).sna: $$(EXAMPLES_DIR)/$(1)/main.fs \
+    $$(shell find $$(EXAMPLES_DIR)/$(1) -name '*.fs' -not -path '*/tests/*') \
+    | $$(BUILD_DIR)
+	$$(ZT) build $$< -o $$@ --map $$(@:.sna=.map) $$(BUILD_FLAGS_$(1))
+endef
 
-$(BUILD_DIR)/plasma.sna: \
-        $(EXAMPLES_DIR)/plasma/main.fs \
-        $(wildcard $(EXAMPLES_DIR)/plasma/lib/*.fs) \
-        $(wildcard $(EXAMPLES_DIR)/plasma/app/*.fs) \
-        | $(BUILD_DIR)
-	$(ZT) build $< -o $@ --map $(@:.sna=.map)
-
-$(BUILD_DIR)/mined-out.sna: \
-        $(EXAMPLES_DIR)/mined-out/main.fs \
-        $(wildcard $(EXAMPLES_DIR)/mined-out/app/*.fs) \
-        | $(BUILD_DIR)
-	$(ZT) build $< -o $@ --map $(@:.sna=.map)
+$(foreach d,$(MULTIFILE_DIRS),$(eval $(call MULTIFILE_RULE,$(d))))
 
 $(BUILD_DIR):
 	mkdir -p $@
