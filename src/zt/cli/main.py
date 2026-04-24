@@ -13,11 +13,12 @@ from zt.inspect.decompile import decompile
 from zt.format.mapfile import FUSE, ZESARUX, write_map
 from zt.cli.profile import args_from_namespace, register_profile, run_profile_command
 from zt.format.sld import write_sld
-from zt.format.sna import build_sna
+from zt.format.sna import BANK_SIZE, build_sna, build_sna_128
+from zt.format.z80 import build_z80_v3
 
 
-SUPPORTED_FORMATS = ("sna", "bin")
-FORMAT_BY_EXTENSION = {".sna": "sna", ".bin": "bin", ".tap": "tap"}
+SUPPORTED_FORMATS = ("sna", "z80", "bin")
+FORMAT_BY_EXTENSION = {".sna": "sna", ".z80": "z80", ".bin": "bin", ".tap": "tap"}
 
 
 def main() -> None:
@@ -50,8 +51,15 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
     build.add_argument("--format", choices=SUPPORTED_FORMATS, default=None,
                        help="output format (auto-detected from extension if omitted)")
     build.add_argument("--origin", type=lambda s: int(s, 0), default=0x8000)
-    build.add_argument("--dstack", type=lambda s: int(s, 0), default=0xFF00)
-    build.add_argument("--rstack", type=lambda s: int(s, 0), default=0xFE00)
+    build.add_argument("--dstack", type=lambda s: int(s, 0), default=None,
+                       help="data stack top (48k default $FF00, 128k default $BF00)")
+    build.add_argument("--rstack", type=lambda s: int(s, 0), default=None,
+                       help="return stack top (48k default $FE00, 128k default $BE00)")
+    build.add_argument("--target", choices=("48k", "128k"), default="48k",
+                       help="target model (default: 48k)")
+    build.add_argument("--paged-bank", type=lambda s: int(s, 0), default=None,
+                       dest="paged_bank",
+                       help="initial bank at $C000 for 128k target (0..7, default 7 — ensures display wiring is ready on Pentagon/ZX128 at load time)")
     build.add_argument("--border", type=int, default=7, choices=range(8))
     build.add_argument("--include-dir", action="append", type=Path, default=[],
                        dest="include_dirs", metavar="PATH",
@@ -105,6 +113,61 @@ def _register_inspect(sub: argparse._SubParsersAction) -> None:
                                           "reconstructing string literals")
 
 
+PAGED_SLOT_START = 0xC000
+DEFAULT_DSTACK_48K = 0xFF00
+DEFAULT_RSTACK_48K = 0xFE00
+DEFAULT_DSTACK_128K = 0xBF00
+DEFAULT_RSTACK_128K = 0xBE00
+
+
+def _resolve_stack_defaults(args: argparse.Namespace) -> None:
+    if args.dstack is None:
+        args.dstack = DEFAULT_DSTACK_128K if args.target == "128k" else DEFAULT_DSTACK_48K
+    if args.rstack is None:
+        args.rstack = DEFAULT_RSTACK_128K if args.target == "128k" else DEFAULT_RSTACK_48K
+
+
+def _validate_128k_config(args: argparse.Namespace) -> None:
+    if args.paged_bank is None:
+        args.paged_bank = 7
+    if not (0 <= args.paged_bank <= 7):
+        print(
+            f"error: --paged-bank {args.paged_bank} must be in range 0..7",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if args.dstack >= PAGED_SLOT_START:
+        print(
+            f"error: --dstack {args.dstack:#06x} lands in the paged slot "
+            f"(${PAGED_SLOT_START:04X}+); 128k stacks must live in bank 2",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if args.rstack >= PAGED_SLOT_START:
+        print(
+            f"error: --rstack {args.rstack:#06x} lands in the paged slot "
+            f"(${PAGED_SLOT_START:04X}+); 128k stacks must live in bank 2",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if args.origin >= PAGED_SLOT_START:
+        print(
+            f"error: --origin {args.origin:#06x} lands in the paged slot; "
+            f"128k code must live in bank 2 or bank 5",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
+def _validate_48k_config(args: argparse.Namespace) -> None:
+    if args.paged_bank is not None:
+        print(
+            "error: --paged-bank requires --target 128k",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+
 def _do_build(args: argparse.Namespace) -> None:
     if not args.source.exists():
         print(f"error: {args.source} not found", file=sys.stderr)
@@ -114,6 +177,12 @@ def _do_build(args: argparse.Namespace) -> None:
     if fmt not in SUPPORTED_FORMATS:
         print(f"error: unsupported output format '{fmt}'", file=sys.stderr)
         sys.exit(1)
+
+    _resolve_stack_defaults(args)
+    if args.target == "128k":
+        _validate_128k_config(args)
+    else:
+        _validate_48k_config(args)
 
     try:
         compiler = _build_compiler(args)
@@ -213,8 +282,66 @@ def _detect_format(output_path: Path) -> str:
     return fmt
 
 
+def _image_to_banks(image: bytes, origin: int) -> dict[int, bytes]:
+    if 0x4000 <= origin < 0x8000:
+        bank_id, base = 5, 0x4000
+    elif 0x8000 <= origin < 0xC000:
+        bank_id, base = 2, 0x8000
+    else:
+        raise ValueError(
+            f"origin {origin:#06x} must live in bank 5 ($4000-$7FFF) "
+            f"or bank 2 ($8000-$BFFF) for --target 128k"
+        )
+    offset = origin - base
+    if offset + len(image) > BANK_SIZE:
+        raise ValueError(
+            f"image of {len(image)} bytes at origin {origin:#06x} overflows bank "
+            f"{bank_id}; cross-bank code placement is not yet supported"
+        )
+    return {bank_id: bytes(offset) + image}
+
+
 def _write_output(image: bytes, args: argparse.Namespace,
                   compiler: Compiler, fmt: str) -> None:
+    if fmt == "z80" and args.target == "48k":
+        print(
+            "error: --format z80 requires --target 128k "
+            "(48k .z80 output is not supported)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if fmt == "z80":
+        try:
+            banks = _image_to_banks(image, args.origin)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+        banks.update(compiler.banks())
+        z80 = build_z80_v3(
+            banks,
+            entry=compiler.words["_start"].address,
+            paged_bank=args.paged_bank,
+            data_stack_top=args.dstack,
+            border=args.border,
+        )
+        args.output.write_bytes(z80)
+        return
+    if fmt == "sna" and args.target == "128k":
+        try:
+            banks = _image_to_banks(image, args.origin)
+        except ValueError as e:
+            print(f"error: {e}", file=sys.stderr)
+            sys.exit(1)
+        banks.update(compiler.banks())
+        sna = build_sna_128(
+            banks,
+            entry=compiler.words["_start"].address,
+            paged_bank=args.paged_bank,
+            data_stack_top=args.dstack,
+            border=args.border,
+        )
+        args.output.write_bytes(sna)
+        return
     if fmt == "sna":
         sna = build_sna(image, args.origin, args.dstack,
                         border=args.border,

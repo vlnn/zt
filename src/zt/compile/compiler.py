@@ -117,6 +117,9 @@ class Compiler:
         self.inline_primitives: bool = inline_primitives
         self._inline_context: InlineContext | None = None
         self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
+        self._main_asm: Asm = outer_asm
+        self._bank_asms: dict[int, Asm] = {}
+        self._active_bank: int | None = None
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
@@ -335,14 +338,14 @@ class Compiler:
         return code_addr
 
     def _emit_variable_shim(self) -> tuple[int, int]:
-        code_addr = self.asm.here
-        self.asm.push_hl()
-        self.asm.ld_hl_nn(0)
-        fixup = len(self.asm.code) - 2
-        self.asm.jp("NEXT")
+        code_addr = self._main_asm.here
+        self._main_asm.push_hl()
+        self._main_asm.ld_hl_nn(0)
+        fixup = len(self._main_asm.code) - 2
+        self._main_asm.jp("NEXT")
         data_addr = self.asm.here
-        self.asm.code[fixup] = data_addr & 0xFF
-        self.asm.code[fixup + 1] = (data_addr >> 8) & 0xFF
+        self._main_asm.code[fixup] = data_addr & 0xFF
+        self._main_asm.code[fixup + 1] = (data_addr >> 8) & 0xFF
         return code_addr, data_addr
 
     # --- directives ---
@@ -393,6 +396,41 @@ class Compiler:
         count = self._host_pop(tok)
         for _ in range(count):
             self.asm.byte(0)
+
+    @directive("in-bank")
+    def _directive_in_bank(self, _compiler: Compiler, tok: Token) -> None:
+        bank = self._host_pop(tok)
+        if bank not in range(8):
+            raise CompileError(
+                f"in-bank: bank {bank} must be in range 0..7", tok,
+            )
+        self._activate_bank(bank)
+
+    @directive("end-bank")
+    def _directive_end_bank(self, _compiler: Compiler, tok: Token) -> None:
+        if self._active_bank is None:
+            raise CompileError(
+                "end-bank without a matching in-bank", tok,
+            )
+        self._deactivate_bank()
+
+    def _activate_bank(self, bank: int) -> None:
+        if bank not in self._bank_asms:
+            self._bank_asms[bank] = Asm(0xC000, inline_next=self.inline_next)
+        self._active_bank = bank
+        self.emitter.asm = self._bank_asms[bank]
+
+    def _deactivate_bank(self) -> None:
+        self._active_bank = None
+        self.emitter.asm = self._main_asm
+
+    def bank_image(self, bank: int) -> bytes:
+        if bank not in self._bank_asms:
+            return b""
+        return bytes(self._bank_asms[bank].code)
+
+    def banks(self) -> dict[int, bytes]:
+        return {b: bytes(a.code) for b, a in self._bank_asms.items() if a.code}
 
     # --- control stack helpers ---
 

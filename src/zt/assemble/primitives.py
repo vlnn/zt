@@ -9,6 +9,11 @@ SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_KEYBOARD_PORT_LOW = 0xFE
 EMIT_FONT_BASE_MINUS_0X100 = 0x3C00
 
+BANKM_ADDR = 0x5B5C
+PORT_7FFD = 0x7FFD
+PAGE_MASK = 0x07
+UPPER_MASK = 0xF8
+
 
 def create_next(a: Asm) -> None:
     """Emit `NEXT` — the threaded-interpreter dispatcher targeted by every primitive tail."""
@@ -1318,6 +1323,88 @@ def create_wait_frame(a: Asm) -> None:
     a.pop_iy()
     a.dispatch()
 
+def create_bank_store(a: Asm) -> None:
+    """`BANK! ( n -- )` — page RAM bank (n & 7) into slot 3, preserving upper shadow bits."""
+    a.label("BANK!")
+    a.alias("bank!", "BANK!")
+    a.ld_a_l()
+    a.and_n(PAGE_MASK)
+    a.ld_b_a()
+    a.ld_a_ind_nn(BANKM_ADDR)
+    a.and_n(UPPER_MASK)
+    a.or_b()
+    a.ld_ind_nn_a(BANKM_ADDR)
+    a.ld_bc_nn(PORT_7FFD)
+    a.out_c_a()
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_bank_fetch(a: Asm) -> None:
+    """`BANK@ ( -- n )` — return the currently paged bank (low 3 bits of the shadow)."""
+    a.label("BANK@")
+    a.alias("bank@", "BANK@")
+    a.push_hl()
+    a.ld_a_ind_nn(BANKM_ADDR)
+    a.and_n(PAGE_MASK)
+    a.ld_l_a()
+    a.ld_h_n(0)
+    a.dispatch()
+
+
+def create_raw_bank_store(a: Asm) -> None:
+    """`RAW-BANK! ( n -- )` — write the full byte n to port $7FFD without masking."""
+    a.label("RAW-BANK!")
+    a.alias("raw-bank!", "RAW-BANK!")
+    a.ld_a_l()
+    a.ld_ind_nn_a(BANKM_ADDR)
+    a.ld_bc_nn(PORT_7FFD)
+    a.out_c_a()
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_128k_query(a: Asm) -> None:
+    """`128K? ( -- flag )` — detect banking via write-then-observe; destructive to $C000 in banks 0 and 1."""
+    a.label("128K?")
+    a.alias("128k?", "128K?")
+    a.push_hl()
+
+    a.ld_a_ind_nn(BANKM_ADDR)
+    a.ld_e_a()
+    a.ld_bc_nn(PORT_7FFD)
+
+    a.and_n(UPPER_MASK)
+    a.out_c_a()
+    a.ld_a_n(0xA5)
+    a.ld_ind_nn_a(0xC000)
+
+    a.ld_a_e()
+    a.and_n(UPPER_MASK)
+    a.or_n(0x01)
+    a.out_c_a()
+    a.ld_a_n(0x5A)
+    a.ld_ind_nn_a(0xC000)
+
+    a.ld_a_e()
+    a.and_n(UPPER_MASK)
+    a.out_c_a()
+    a.ld_a_ind_nn(0xC000)
+    a.cp_n(0xA5)
+
+    a.push_af()
+    a.ld_a_e()
+    a.ld_ind_nn_a(BANKM_ADDR)
+    a.out_c_a()
+    a.pop_af()
+
+    a.ld_hl_nn(0xFFFF)
+    a.jr_z_to("_128k_done")
+    a.ld_hl_nn(0x0000)
+    a.label("_128k_done")
+    a.dispatch()
+
+
 PRIMITIVES = [
     create_next, create_docol, create_exit,
     create_dup, create_drop, create_swap, create_over,
@@ -1357,4 +1444,6 @@ PRIMITIVES = [
     create_at_xy,
     create_beep,
     create_wait_frame,
+    create_bank_store, create_bank_fetch,
+    create_raw_bank_store, create_128k_query,
 ]

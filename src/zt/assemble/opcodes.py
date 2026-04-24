@@ -206,6 +206,7 @@ OPCODES: tuple[OpcodeSpec, ...] = (
 
     _n ("out_n_a",      0xD3),
     _n ("in_a_n",       0xDB),
+    _no("out_c_a",      0xED, 0x79),
 )
 
 

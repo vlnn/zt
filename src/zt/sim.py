@@ -15,6 +15,26 @@ SPECTRUM_SCREEN_BASE = 0x4000
 SPECTRUM_ATTR_BASE = 0x5800
 SPECTRUM_KEYBOARD_PORT_LOW = 0xFE
 
+BANK_SIZE = 0x4000
+PAGED_SLOT_START = 0xC000
+PAGED_SLOT_END = 0x10000
+BANK_FIVE_SLOT = slice(0x4000, 0x8000)
+BANK_TWO_SLOT = slice(0x8000, 0xC000)
+PAGED_SLOT = slice(PAGED_SLOT_START, PAGED_SLOT_END)
+FIXED_SLOT_OF_BANK = {5: BANK_FIVE_SLOT, 2: BANK_TWO_SLOT}
+PORT_7FFD_DECODE_MASK = 0x8002
+PORT_7FFD_PAGE_MASK = 0x07
+PORT_7FFD_SCREEN_BIT = 0x08
+PORT_7FFD_LOCK_BIT = 0x20
+NORMAL_SCREEN_BANK = 5
+SHADOW_SCREEN_BANK = 7
+SCREEN_BITMAP_SIZE = 6144
+SCREEN_ATTRS_SIZE = 768
+
+
+def is_7ffd_write(port: int) -> bool:
+    return (port & PORT_7FFD_DECODE_MASK) == 0
+
 SPECTRUM_KEY_LAYOUT: dict[int, tuple[int, int]] = {
     0x01: (0, 0), ord("Z"): (0, 1), ord("X"): (0, 2), ord("C"): (0, 3), ord("V"): (0, 4),
     ord("A"): (1, 0), ord("S"): (1, 1), ord("D"): (1, 2), ord("F"): (1, 3), ord("G"): (1, 4),
@@ -50,6 +70,8 @@ def _keyboard_port_byte(pressed_keys: set[int], high_byte: int) -> int:
 DEFAULT_ORIGIN = 0x8000
 DEFAULT_DATA_STACK_TOP = 0xFF00
 DEFAULT_RETURN_STACK_TOP = 0xFE00
+DEFAULT_DATA_STACK_TOP_128K = 0xBF00
+DEFAULT_RETURN_STACK_TOP_128K = 0xBE00
 DEFAULT_MAX_TICKS = 10_000_000
 
 FLAG_C = 0x01
@@ -101,6 +123,7 @@ def decode_screen_text(mem: bytearray, cursor_row: int, cursor_col: int) -> byte
 class ForthResult:
     data_stack: list[int]
     border_writes: list[int] = field(default_factory=list)
+    page_writes: list[int] = field(default_factory=list)
     chars_out: bytes = b""
     profile: ProfileReport | None = None
 
@@ -111,9 +134,13 @@ class Z80:
         "ix", "iy", "halted", "iff", "_outputs", "_ticks", "_t_states",
         "input_buffer", "_input_pos", "_ops", "_op_costs",
         "pressed_keys", "_port_reads_at_pos",
+        "mode", "_banks", "port_7ffd",
     )
 
-    def __init__(self) -> None:
+    def __init__(self, mode: str = "48k") -> None:
+        if mode not in ("48k", "128k"):
+            raise ValueError(f"mode must be '48k' or '128k', got {mode!r}")
+        self.mode = mode
         self.mem = bytearray(65536)
         self.pc = self.sp = 0
         self.a = self.f = 0
@@ -128,6 +155,10 @@ class Z80:
         self._input_pos: int = 0
         self.pressed_keys: set[int] = set()
         self._port_reads_at_pos: int = 0
+        self._banks: list[bytearray] | None = None
+        self.port_7ffd: int = 0
+        if mode == "128k":
+            self._banks = [bytearray(BANK_SIZE) for _ in range(8)]
         self._ops, self._op_costs = self._build_ops_table()
 
     @property
@@ -152,6 +183,84 @@ class Z80:
 
     def load(self, addr: int, data: bytes) -> None:
         self.mem[addr:addr + len(data)] = data
+
+    def mem_bank(self, bank: int) -> bytearray:
+        self._require_128k("mem_bank")
+        if bank not in range(8):
+            raise ValueError(f"bank {bank} must be in range 0..7")
+        if bank in FIXED_SLOT_OF_BANK:
+            return bytearray(self.mem[FIXED_SLOT_OF_BANK[bank]])
+        if bank == self.port_7ffd & PORT_7FFD_PAGE_MASK:
+            return bytearray(self.mem[PAGED_SLOT])
+        return bytearray(self._banks[bank])
+
+    def load_bank(self, bank: int, data: bytes) -> None:
+        self._require_128k("load_bank")
+        if bank not in range(8):
+            raise ValueError(f"bank {bank} must be in range 0..7")
+        padded = bytes(data) + bytes(BANK_SIZE - len(data))
+        if bank in FIXED_SLOT_OF_BANK:
+            self.mem[FIXED_SLOT_OF_BANK[bank]] = padded
+            return
+        if bank == self.port_7ffd & PORT_7FFD_PAGE_MASK:
+            self.mem[PAGED_SLOT] = padded
+            return
+        self._banks[bank][:] = padded
+
+    def page_bank(self, bank: int) -> None:
+        self._require_128k("page_bank")
+        if bank not in range(8):
+            raise ValueError(f"bank {bank} must be in range 0..7")
+        self._write_port_7ffd((self.port_7ffd & ~PORT_7FFD_PAGE_MASK) | bank)
+
+    def displayed_screen_bank(self) -> int:
+        self._require_128k("displayed_screen_bank")
+        return SHADOW_SCREEN_BANK if self.port_7ffd & PORT_7FFD_SCREEN_BIT else NORMAL_SCREEN_BANK
+
+    def displayed_screen(self) -> tuple[bytes, bytes]:
+        self._require_128k("displayed_screen")
+        bank = self.mem_bank(self.displayed_screen_bank())
+        return bytes(bank[:SCREEN_BITMAP_SIZE]), bytes(bank[SCREEN_BITMAP_SIZE:SCREEN_BITMAP_SIZE + SCREEN_ATTRS_SIZE])
+
+    def _require_128k(self, method_name: str) -> None:
+        if self.mode != "128k":
+            raise RuntimeError(
+                f"{method_name} is only available in 128k mode; got mode={self.mode!r}"
+            )
+
+    def _maybe_handle_7ffd(self, port: int, value: int) -> None:
+        if self.mode != "128k":
+            return
+        if not is_7ffd_write(port):
+            return
+        self._write_port_7ffd(value)
+
+    def _write_port_7ffd(self, value: int) -> None:
+        value &= 0xFF
+        if self.port_7ffd & PORT_7FFD_LOCK_BIT:
+            return
+        old_paged = self.port_7ffd & PORT_7FFD_PAGE_MASK
+        new_paged = value & PORT_7FFD_PAGE_MASK
+        self.port_7ffd = value
+        if new_paged == old_paged:
+            return
+        self._save_paged_slot(old_paged)
+        self._load_paged_slot(new_paged)
+
+    def _save_paged_slot(self, old_paged: int) -> None:
+        paged_contents = bytes(self.mem[PAGED_SLOT])
+        fixed_slot = FIXED_SLOT_OF_BANK.get(old_paged)
+        if fixed_slot is not None:
+            self.mem[fixed_slot] = paged_contents
+        else:
+            self._banks[old_paged][:] = paged_contents
+
+    def _load_paged_slot(self, new_paged: int) -> None:
+        fixed_slot = FIXED_SLOT_OF_BANK.get(new_paged)
+        if fixed_slot is not None:
+            self.mem[PAGED_SLOT] = bytes(self.mem[fixed_slot])
+        else:
+            self.mem[PAGED_SLOT] = self._banks[new_paged]
 
     def _rb(self, addr: int) -> int:
         return self.mem[addr & 0xFFFF]
@@ -574,7 +683,9 @@ class Z80:
 
     def _op_out_n_a(self, op: int) -> None:
         port = self._fetch()
-        self._outputs.append((port | (self.a << 8), self.a))
+        full_port = port | (self.a << 8)
+        self._outputs.append((full_port, self.a))
+        self._maybe_handle_7ffd(full_port, self.a)
 
     def _op_in_a_n(self, op: int) -> None:
         n = self._fetch()
@@ -737,6 +848,10 @@ class Z80:
                 self.bc = (self.bc - 1) & 0xFFFF
                 self._t_states += 16 if self.bc == 0 else 21
             self.f &= ~(FLAG_H | FLAG_PV | FLAG_N)
+        elif op == 0x79:
+            self._outputs.append((self.bc, self.a))
+            self._maybe_handle_7ffd(self.bc, self.a)
+            self._t_states += 12
         else:
             raise RuntimeError(f"unimplemented ED opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}")
 
@@ -745,17 +860,31 @@ def _signed(v: int) -> int:
     return v - 256 if v & 0x80 else v
 
 
+def _default_data_stack_top(mode: str) -> int:
+    if mode == "128k":
+        return DEFAULT_DATA_STACK_TOP_128K
+    return DEFAULT_DATA_STACK_TOP
+
+
+def _default_return_stack_top(mode: str) -> int:
+    if mode == "128k":
+        return DEFAULT_RETURN_STACK_TOP_128K
+    return DEFAULT_RETURN_STACK_TOP
+
+
 class ForthMachine:
 
     def __init__(
         self,
         origin: int = DEFAULT_ORIGIN,
-        data_stack_top: int = DEFAULT_DATA_STACK_TOP,
-        return_stack_top: int = DEFAULT_RETURN_STACK_TOP,
+        data_stack_top: int | None = None,
+        return_stack_top: int | None = None,
+        mode: str = "48k",
     ):
         self.origin = origin
-        self.data_stack_top = data_stack_top
-        self.return_stack_top = return_stack_top
+        self.mode = mode
+        self.data_stack_top = data_stack_top if data_stack_top is not None else _default_data_stack_top(mode)
+        self.return_stack_top = return_stack_top if return_stack_top is not None else _default_return_stack_top(mode)
         self._prim_asm = Asm(origin)
         for creator in PRIMITIVES:
             creator(self._prim_asm)
@@ -850,7 +979,7 @@ class ForthMachine:
         profile: bool = False,
         pressed_keys: set[int] | None = None,
     ) -> ForthResult:
-        m = Z80()
+        m = Z80(mode=self.mode)
         m.load(self.origin, self._prim_code)
         m.load(SPECTRUM_FONT_BASE, TEST_FONT)
         m.load(self._body_base, body_bytes)
@@ -873,10 +1002,12 @@ class ForthMachine:
             raise TimeoutError(f"execution exceeded {max_ticks} ticks")
 
         border_writes = [v for port, v in m._outputs if (port & 0xFF) == SPECTRUM_BORDER_PORT]
+        page_writes = [v for port, v in m._outputs if is_7ffd_write(port)]
 
         return ForthResult(
             data_stack=_read_data_stack(m, self.data_stack_top, bool(initial_stack)),
             border_writes=border_writes,
+            page_writes=page_writes,
             chars_out=self._extract_chars_out(m),
             profile=profiler.report() if profiler is not None else None,
         )
