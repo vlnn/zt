@@ -52,6 +52,7 @@ def screen_text() -> str:
     for bank, data in c.banks().items():
         m.load_bank(bank, data)
     m.pc = c.words["_start"].address
+    m.input_buffer = bytearray(b"HELLO\r")
     m.run(max_ticks=50_000_000)
 
     raw = decode_screen_text(m.mem, cursor_row=23, cursor_col=0)

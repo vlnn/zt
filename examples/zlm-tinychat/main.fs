@@ -10,8 +10,9 @@
 
 require model.fs
 
-create query-text  $48 c, $45 c, $4C c, $4C c, $4F c,    \ "HELLO"
-5 constant query-len
+create query-buf  32 allot
+32 constant query-max
+variable query-len
 
 8 constant context-len
 create context-buf  8 allot
@@ -146,7 +147,7 @@ variable am-best-val
 
 : encode-input
     zero-input
-    query-text query-len  acts0  trigram-encode
+    query-buf query-len @  acts0  trigram-encode
     acts0  128 2 * +  context-encode ;
 
 : forward
@@ -195,9 +196,35 @@ variable am-best-val
         append-context
     loop ;
 
+: reset-input  ( -- )    0 query-len ! ;
+
+: input-full?  ( -- f )    query-len @ query-max = ;
+
+: input-append  ( c -- )
+    input-full? if drop exit then
+    query-buf query-len @ + c!
+    1 query-len +! ;
+
+: wait-press     ( -- )    begin key? until ;
+: wait-release   ( -- )    begin key? 0= until ;
+
+: read-key  ( -- c )    wait-press key wait-release ;
+
+: read-line  ( -- )
+    reset-input
+    begin
+        read-key  dup 13 <>
+    while
+        dup emit
+        input-append
+    repeat
+    drop ;
+
 : main
     7 0 cls
-    0 0 at-xy ." > " query-text query-len type cr
-    chat
-    cr
-    begin again ;
+    begin
+        ." > "
+        read-line
+        cr
+        query-len @ if chat cr then
+    again ;
