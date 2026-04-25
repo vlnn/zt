@@ -56,11 +56,33 @@ threaded mac4                4,018          ~37 sec
 2BIT-DOT+! (whole row)         251          ~2.3 sec
 ```
 
-Run: `uv run python -m zt.cli profile --source examples/zlm-smoke/main.fs --max-ticks 200000 --words row-mac,row-mac-fast,row-mac-dot`
+## Examples
+
+- `examples/zlm-smoke/main.fs` — profiling harness comparing threaded MAC,
+  `::`-fused MAC, and full-row `2BIT-DOT+!`. Profile-only; black screen.
+- `examples/zlm-layer/main.fs` — **tier (A) demo, runnable.** A 32-input × 4-output
+  linear layer with random fixed weights and activations (Python `random.seed(42)`).
+  Computes `outputs[i] = ReLU(dot(weights[i], activations))` using `2BIT-DOT+!`,
+  prints results via `at-xy` and `.` Expected screen content:
+
+  ```
+  zlm-layer demo (32x4)
+  expected: 377 1135 190 1175
+
+  out 0 : 377
+  out 1 : 1135
+  out 2 : 190
+  out 3 : 1175
+  ```
+
+  Build: `uv run python -m zt.cli build examples/zlm-layer/main.fs -o build/zlm-layer.sna`
+  Drop the .sna into FUSE or ZEsarUX. End-to-end test in `tests/test_examples_zlm_layer.py`
+  asserts all four numbers appear on screen in order.
 
 ## Files in this zip
 
 ```
+CHANGES.md
 src/zt/assemble/inline_bodies.py
 src/zt/assemble/opcodes.py
 src/zt/assemble/primitives.py
@@ -68,7 +90,9 @@ src/zt/sim.py
 tests/test_unpack_primitives.py
 tests/test_2bit_muladd.py
 tests/test_2bit_dot_plus_store.py
+tests/test_examples_zlm_layer.py
 examples/zlm-smoke/main.fs
+examples/zlm-layer/main.fs
 ```
 
 Drop them into your zt tree at the matching paths to apply.
