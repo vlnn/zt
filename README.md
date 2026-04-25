@@ -375,17 +375,25 @@ run unchanged on real hardware.
 
 ### Limitations worth knowing about
 
-- **No sound.** No beeper click, no AY.
-- **No sprites.** `EMIT` renders characters through the ROM font, and `CMOVE`
-  can blit bytes, but there's no pre-composed sprite primitive or
-  pre-shifted mask support.
-- **Signed multiply and divide live in `src/zt/stdlib/core.fs`** built on top of a
-  single unsigned `U/MOD` primitive. Fine for slow code, too slow for inner
-  loops.
-- **No interrupt hook.** The compiled program runs with interrupts disabled
-  in most dispatch paths. No frame-sync, no 50 Hz timer.
-- **48K only.** No `.tap`, no 128K banking, no AY support.
+- **No AY sound.** Beeper output is supported via the `BEEP` primitive
+  and `stdlib/sound.fs`, but the AY-3-8912 chip on 128K models is not
+  yet driven.
+- **No sprites.** `EMIT` renders characters through the ROM font, and
+  `CMOVE` can blit bytes, but there's no pre-composed sprite primitive
+  or pre-shifted mask support.
+- **Signed multiply lives in code, signed divide in `src/zt/stdlib/core.fs`**.
+  `*` is a primitive but `/`, `/MOD`, `MOD` are defined on top of a single
+  unsigned `U/MOD` primitive. Fine for slow code, too slow for inner loops.
+- **No general interrupt hook.** `WAIT-FRAME` blocks for the next 50 Hz
+  frame, but there's no user-installable interrupt routine yet.
+- **No `.tap` output.** Output formats are `sna`, `z80`, and `bin`.
+  Loading on real hardware via `.tap` is on the roadmap.
 
-Most of these are addressed in other docs.
+128K banking *is* supported — see `--target 128k`, the four examples
+under `examples/{plasma-128k,bank-rotator,bank-table,shadow-flip}`, and
+`docs/128k-architecture.md`.
+
+Most of the open items above are addressed in `docs/COMPILER-ROADMAP.md`
+and `docs/FORTH-ROADMAP.md`.
 
 [![Made in Ukraine](https://img.shields.io/badge/made_in-Ukraine-ffd700.svg?labelColor=0057b7)](https://stand-with-ukraine.pp.ua)

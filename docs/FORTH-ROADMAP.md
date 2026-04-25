@@ -13,8 +13,8 @@ should behave when a primitive assumes hardware only a 128K has.
 Conventions:
 - **Spec** primitives are described by their stack effect, rationale, and a
   one-liner Forth usage example.
-- **Deep** primitives include a Z80 register-plan sketch and, where novel, an
-  opcode outline in the style of `PLAN.md`.
+- **Deep** primitives include a Z80 register-plan sketch and, where novel,
+  an opcode outline.
 - Cell-width is 16-bit throughout (zt's only cell size).
 
 ---
@@ -25,22 +25,16 @@ The single most missing capability. Every genre needs it: text adventures for
 cursor blink, puzzles for animations between moves, arcade for consistent
 speed, demo for effects.
 
-### `WAIT-FRAME ( -- )` — deep
+### `WAIT-FRAME ( -- )` — deep  *(shipped)*
 
-Block until the next 50 Hz frame interrupt. After it returns, the program has
-~19,968 T-states (about 4,000 dispatches) before the next interrupt.
+Shipped. `create_wait_frame` in `assemble/primitives.py` issues `HALT`
+and resumes on the next 50 Hz frame interrupt. After it returns, the
+program has ~19,968 T-states (about 4,000 dispatches) before the next
+interrupt.
 
-```
-WAIT-FRAME:
-        halt
-        jp   NEXT
-```
-
-The runtime must install an IM 1 or IM 2 handler that increments
-`_frame_counter`. Simplest route: IM 1, handler at `$0038` in user code
-(overriding ROM's handler while our program runs), `EI` at program start.
-
-Should be perhaps changed for IM2 (e.g. AY music)
+The current handler is the ROM's IM 1; replacing it with a user-installed
+IM 2 vector (so AY music can be driven from the interrupt) is a future
+extension — see §8.1 below.
 
 *Genres:* all.
 
@@ -123,17 +117,17 @@ Not quite uniform for non-power-of-two `n`, but good enough for games.
 
 ## 3. Input
 
-### 3.1 Fix `KEY` and `KEY?` (currently broken on real hardware)
+### 3.1 Fix `KEY` and `KEY?` (real-hardware fix)  *(shipped)*
 
-Blocking item — see `COMPILER-ROADMAP.md` §1.1. Until this is fixed, no
-interactive program runs outside the simulator. Doesn't add a new primitive,
-just makes the existing one work.
+Shipped. `create_key` and `create_key_query` now scan port `$FE`
+directly. `KEY` blocks until any key is down and returns its ASCII
+code; `KEY?` returns a non-blocking flag.
 
-### 3.2 `KEY-STATE ( keycode -- flag )` — deep
+### 3.2 `KEY-STATE ( c -- flag )` — deep  *(shipped)*
 
-Non-blocking check of whether a specific key is currently held down. This is
-what an arcade game wants: every frame, "is `LEFT` pressed? is `FIRE`
-pressed?" without blocking.
+Shipped. `create_key_state` in `assemble/primitives.py` looks up the
+ASCII code in the `_key_table` and tests the corresponding bit on
+port `$FE`. Returns `-1` if held, `0` otherwise.
 
 ```forth
 : tick
@@ -141,33 +135,6 @@ pressed?" without blocking.
   'a' key-state if player-left then
   's' key-state if player-right then
   'm' key-state if fire then ;
-```
-
-Implementation reads the right half-row port and tests the specific bit.
-Keycode-to-(port, bit) mapping lives in a 96-byte table built at compile time.
-
-```
-KEY-STATE: ( keycode -- flag )
-        ld   a, l                 ; keycode low byte
-        cp   'A'
-        jr   c, .done             ; too low
-        cp   'Z'+1
-        jr   nc, .done            ; too high
-        sub  'A'
-        ld   e, a
-        ld   d, 0
-        ld   hl, _keytable
-        add  hl, de
-        add  hl, de               ; 2 bytes per entry: (port_high, bitmask)
-        ld   b, (hl)              ; port high byte
-        ld   c, $FE
-        in   a, (c)
-        inc  hl
-        and  (hl)
-        ld   hl, 0
-        jr   nz, .done            ; bit high = not pressed
-        dec  hl                   ; -1 = pressed
-.done:  jp   NEXT
 ```
 
 *Genres:* arcade (essential), demo (user controls), puzzle (keyboard nav).
@@ -344,10 +311,11 @@ Already effectively implemented in the plasma example as user-level code
 (`attr!` in `examples/plasma/lib/screen.fs`). Promote it to the primitive
 set so it's available without a library.
 
-### 4.7 `AT-XY ( col row -- )` — spec
+### 4.7 `AT-XY ( col row -- )` — spec  *(shipped)*
 
-Move the `EMIT` cursor. Already have `reset-cursor`; this generalizes to any
-position.
+Shipped. `create_at_xy` moves the `EMIT` cursor to any text-cell
+position (0–31 columns, 0–23 rows on a 48K screen). Pairs with the
+already-shipped `reset-cursor`.
 
 *Genres:* all.
 
@@ -464,37 +432,17 @@ documenting, not a primitive worth adding.
 
 ## 6. Audio
 
-### 6.1 `BEEP ( duration pitch -- )` — deep (48K)
+### 6.1 `BEEP ( cycles period -- )` — deep (48K)  *(shipped)*
 
-Classic Spectrum beeper loop: toggle bit 4 of port `$FE` at a cycle-counted
-interval. Duration in frames, pitch in Z80 half-periods.
+Shipped. `create_beep` in `assemble/primitives.py` toggles bit 4 of
+port `$FE` at a cycle-counted interval. `cycles` is the number of
+half-period iterations, `period` is the half-period in T-states.
 
-```
-BEEP:   ; ( duration pitch -- )
-        pop  de                 ; DE = duration (frames)
-        push de                 ; keep
-        di
-.frame: ld   b, 50              ; approx cycles per frame at this pitch
-.tone:  ld   a, $10             ; beeper bit
-        out  ($FE), a
-        ld   c, H               ; pitch-derived half-period wait
-.wait1: dec  c : jr nz, .wait1
-        xor  a
-        out  ($FE), a
-        ld   c, H
-.wait2: dec  c : jr nz, .wait2
-        djnz .tone
-        dec  de
-        ld   a, d : or e
-        jr   nz, .frame
-        ei
-        pop  de
-        pop  hl
-        jp   NEXT
-```
+User-friendly wrappers in [`stdlib/sound.fs`](../src/zt/stdlib/sound.fs):
+`click`, `chirp`, `low-beep`, `high-beep`, `tone`.
 
 Not polyphonic; game logic freezes during the tone. Adequate for sound
-effects (short blips).
+effects (short blips). For music, see §6.3 (AY) below.
 
 *Genres:* arcade, puzzle (feedback clicks), demo.
 
@@ -608,10 +556,12 @@ window.
 
 *Genres:* demo only.
 
-### 8.3 `HALT ( -- )` — already exists as primitive
+### 8.3 `HALT ( -- )` — primitive  *(shipped)*
 
-The existing `halt` primitive is already right for demos that want to sync
-to the next interrupt without consuming CPU. Document it as such.
+`halt` is a program terminator — emits Z80 `HALT` and falls through
+without dispatching. It's the clean stop signal for `zt test` and the
+default end-of-program behaviour. For *frame-sync without consuming
+CPU*, use `wait-frame` (§1) instead.
 
 ### 8.4 `LUT-SIN ( angle -- value )` — spec
 
@@ -657,37 +607,42 @@ custom allocators.
 
 ## 10. Priorities by genre
 
-If you're building one game today, here's the minimum viable primitive set
-per genre:
+If you're building one game today, here's the minimum viable primitive
+set per genre. Items already shipped (✅ `KEY`, `KEY?`, `KEY-STATE`,
+`WAIT-FRAME`, `BEEP`, `AT-XY`) are listed for completeness but don't
+need new work.
 
 | Genre | Must-have additions beyond current `PRIMITIVES` |
 |-------|-------------------------------------------------|
-| **Text adventure** | Fix `KEY` on real hardware, `ACCEPT`, `COMPARE`, `>UPPER`. Optional: `WORD`, `SAVE-SLOT`. |
-| **Puzzle / board** | Fix `KEY`, `WAIT-FRAME`, `RND`, `RANDOM`. Optional: `ATTR!` as primitive, `TILE@`/`TILE!`. |
-| **Action / arcade** | Fix `KEY`, `WAIT-FRAME`, `KEY-STATE`, `KEMPSTON`, `XOR-SPRITE`, `BEEP`, `RND`. |
-| **Demo / effects** | `WAIT-FRAME`, `IM2-HANDLER!`, `PLOT`, `LINE`, `LUT-SIN`, `BEEP`. |
+| **Text adventure** | `ACCEPT`, `COMPARE`, `>UPPER`. Optional: `WORD`, `SAVE-SLOT`. |
+| **Puzzle / board** | `RND`, `RANDOM`. Optional: `ATTR!` as primitive, `TILE@`/`TILE!`. |
+| **Action / arcade** | `KEMPSTON`, `XOR-SPRITE`, `RND`. |
+| **Demo / effects** | `IM2-HANDLER!`, `PLOT`, `LINE`, `LUT-SIN`. |
 
-The shared spine — fix `KEY`, add `WAIT-FRAME`, `RND` — costs maybe two days
-of work and unblocks every genre. Everything else layers on top.
+The shared spine — `RND` and a frame-paced input idiom — costs maybe a
+day of work now that the keyboard and timing primitives are done.
+Everything else layers on top.
 
 ---
 
 ## 11. Graceful-degradation discipline
 
-Per the hardware-target choice: 48K now, 128K later, design primitives so
-code written for 128K runs on 48K with predictable behavior rather than
-refusing to compile.
+Per the hardware-target choice: 48K and 128K both supported today;
+design primitives so code written for 128K runs on 48K with predictable
+behaviour rather than refusing to compile.
 
 Practical rules:
 
 - **AY primitives are no-ops on 48K.** A game using `AY!` produces silent
-  output on 48K but still runs. No conditional compilation required in user
-  code.
-- **Bank-switch primitives return false on 48K.** `BANK ( n -- ok )` returns
-  0 (false) on 48K; user code can `IF BANK THEN` to gate 128K-only features.
-- **`SOUND ( freq dur -- )` dispatches.** On 48K it compiles to `BEEP` with
-  a coarse frequency conversion; on 128K it writes AY registers. User code
-  reads the same.
+  output on 48K but still runs. No conditional compilation required in
+  user code.
+- **`128k?` returns `0` on 48K.** User code can `128k? if ... then` to
+  gate 128K-only features. The banking primitives (`bank@`, `bank!`,
+  `raw-bank!`) themselves are unsafe on 48K — gate calls behind the
+  `128k?` check.
+- **`SOUND ( freq dur -- )` dispatches.** On 48K it compiles to `BEEP`
+  with a coarse frequency conversion; on 128K it writes AY registers.
+  User code reads the same.
 - **`KEMPSTON` returns 0 when no joystick is present.** No crash, no
   detection ceremony.
 

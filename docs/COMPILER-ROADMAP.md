@@ -22,63 +22,34 @@ Tiers:
 
 ## Tier 1 — Fix soon
 
-### 1.1 Fix `KEY` and `KEY?` on real hardware
+### 1.1 Fix `KEY` and `KEY?` on real hardware  *(shipped)*
 
-**Impact:** critical. Any interactive program — game, adventure, editor — is
-currently simulator-only.
-**Difficulty:** low. ~30 lines of Z80, no architectural change.
-
-`src/zt/assemble/primitives.py` currently emits `CALL $15E6` / `CALL $15E9`. Those
-addresses are the simulator's hook points, not real ROM entry points. On a 48K
-they land mid-instruction in ROM and do nothing useful.
-
-The fix is to replace both with a direct keyboard-port scan. The Spectrum
-keyboard is wired to eight I/O ports, each reading five keys. A polling `KEY`
-busy-loops reading the half-rows until any bit goes low, decodes the bit
-position to an ASCII character (via a small ROM-resident or compiled table),
-and returns.
-
-```
-; KEY — block until a key is pressed, return its keycode in HL
-KEY:    push hl
-.scan:  ld   bc, $FEFE        ; half-row 0 (CAPS SHIFT..V)
-        ld   d, 8             ; 8 half-rows
-.row:   in   a, (c)
-        cpl
-        and  $1F
-        jr   nz, .found
-        rlc  b                ; next half-row
-        dec  d
-        jr   nz, .row
-        jr   .scan
-.found: ; a = row-bits, b = row address high; decode to keycode via table
-        ...
-        ld   l, a
-        ld   h, 0
-        jp   NEXT
-```
-
-`KEY?` is the same scan without the busy loop — just returns a flag.
-
-Change two constants and two `create_*` functions; add a small decode table.
-The simulator hook can stay as a faster path, or the simulator can be taught
-to synthesize port `$FE` reads from the `input_buffer`.
+Shipped. `create_key` and `create_key_query` in
+`src/zt/assemble/primitives.py` now do direct keyboard-port scans of
+port `$FE` rather than calling the old simulator hook addresses.
+`create_key_state` adds a per-key state query on top. Tests:
+`test_m5_key_integration.py`, `test_m5_type_key.py`.
 
 ### 1.2 Word-level testing facade (`zt.test_runner`)
 
-**Impact:** critical for velocity. Today the simulator exposes everything
-needed (`_outputs`, `input_buffer`, `mem`, cycle count), but tests read raw
-addresses — `mem[0x5800]`, `mem[0x4000]`, hand-built cell lists — instead of
-expressing behavioural intent. Every new primitive (especially the
-doc-#3 additions: `KEY-STATE`, `WAIT-FRAME`, `BEEP`, `KEMPSTON`,
-`IM2-HANDLER!`) is effectively un-TDD-able until this lands.
+**Status:** discovery and `compile_and_run_word` shipped (see
+[`PLAN.md`](PLAN.md) M5 onward and `tests/test_testing.py`). The richer
+`WordHarness` semantic-result API below is still the open item.
+
+**Impact:** medium for velocity. The simulator already exposes everything
+needed (`_outputs`, `input_buffer`, `mem`, cycle count). Today's tests
+read raw addresses — `mem[0x5800]`, `mem[0x4000]`, hand-built cell
+lists — instead of expressing behavioural intent. New primitives still
+ship with this style of test (`KEY-STATE`, `WAIT-FRAME`, `BEEP` all
+landed before the harness), but the per-test boilerplate cost is
+higher than it needs to be.
 **Difficulty:** medium. Mostly API design and a few simulator hooks; no
 deep compiler work.
 
-Goal: a public `zt.test_runner` module that makes assertions read like
-behavioural specifications. A `WordHarness` that takes a snippet or a word
-name, runs it in the simulator, and returns a rich result object with
-semantic accessors rather than raw memory reads.
+Goal: a public `WordHarness` API that makes assertions read like
+behavioural specifications. Takes a snippet or a word name, runs it in
+the simulator, and returns a rich result object with semantic accessors
+rather than raw memory reads.
 
 ```python
 result = harness.run_word("beep", stack=[100, 50])
@@ -145,9 +116,9 @@ reason it sits at #2 in Tier 1 rather than lower.
 
 ### 1.3 M8 — `.tap` output
 
-Already planned in `PLAN.md` M8. Completing it unblocks "load on a real
-Spectrum," which is the next thing every new user asks for after "does it
-work on my phone emulator?"
+Tracked as pending in [`PLAN.md`](PLAN.md). Completing it unblocks "load
+on a real Spectrum," which is the next thing every new user asks for
+after "does it work on my phone emulator?"
 
 **Impact:** high. Unblocks demos on real hardware.
 **Difficulty:** low-medium. Well-specified format, small amount of code.
@@ -158,7 +129,7 @@ Include a tiny BASIC loader stub that `RANDOMIZE USR`s into the entry point.
 
 ### 1.4 Peephole expansion
 
-**Impact:** medium-high (PLAN.md projected 15–25% speedup; current rules only
+**Impact:** medium-high (estimated 15–25% speedup; current rules only
 cover the obvious cases).
 **Difficulty:** low per rule; each rule is 2–3 lines of Python.
 
@@ -262,7 +233,8 @@ Saves typically 5–15% of image size on library-heavy programs.
 
 **Impact:** medium. Currently a mismatched `WHILE` / `REPEAT` / `LOOP`
 produces a confusing message.
-**Difficulty:** low. The tag machinery is sketched in `PLAN.md` M4.
+**Difficulty:** low. Each control-stack entry already carries a position;
+adding a tag field is mechanical.
 
 Tag each control-stack entry (`"if"`, `"begin"`, `"do"`). On pop, assert the
 tag matches what the closing word expects. Surface the token location in the
@@ -335,22 +307,24 @@ users can inspect their own definitions at "runtime" (in the simulator).
 
 ## Tier 4 — Hardware frontier
 
-### 4.1 M9 — 128K banking
+### 4.1 M9 — 128K banking  *(shipped)*
 
-**Impact:** high for any non-trivial game. 48K gets tight fast once you add
-level data and audio.
-**Difficulty:** high.
+Shipped. `--target 128k` builds a 128K image, four working examples
+(`examples/{plasma-128k,bank-rotator,bank-table,shadow-flip}`),
+runtime detection via `128k?`, banked memory primitives `bank@`,
+`bank!`, `raw-bank!`, plus `in-bank`/`end-bank` declarations for
+compile-time bank routing. `.z80` v3 output added because the `.sna`
+128K format is ambiguous to some emulators.
 
-Requires: detecting 128K at runtime (test port `$7FFD` behaviour), a
-bank-switching primitive (`BANK ( n -- )`), a cross-bank call convention,
-and a build-time flag that targets 128K and picks a page layout.
-
-Related: M9 in PLAN.md covers this at a planning level.
+Cross-bank *code* calls (originally a non-goal, only same-bank colon
+words can call each other across `in-bank` boundaries today) remain a
+follow-up. See [`128k-architecture.md`](128k-architecture.md) for the
+full architecture and milestone breakdown.
 
 ### 4.2 AY-3-8912 sound driver
 
-**Impact:** high for games. The beeper is a feasible short-term fallback
-(Tier 3.6 below), but music wants AY.
+**Impact:** high for games. The beeper (4.3 below, shipped) covers
+crude effects, but music wants AY.
 **Difficulty:** high.
 
 Three components:
@@ -361,23 +335,17 @@ Three components:
   a custom Forth-friendly pattern format)
 
 Graceful-degradation plan: ship a `SOUND` primitive that dispatches to
-either beeper (Tier 3.6) or AY at runtime based on detected hardware.
+either beeper or AY at runtime based on detected hardware.
 
-### 4.3 Beeper primitive (48K graceful degradation)
+### 4.3 Beeper primitive  *(shipped)*
 
-**Impact:** medium. Unblocks audio on 48K.
-**Difficulty:** medium. ~60 lines of cycle-counted Z80.
+Shipped. `BEEP ( cycles period -- )` is a primitive in
+`assemble/primitives.py:create_beep`; toggles bit 4 of port `$FE` at a
+cycle-counted interval. `stdlib/sound.fs` provides `click`, `chirp`,
+`low-beep`, `high-beep`, `tone` on top of it.
 
-```
-BEEP ( duration pitch -- )
-```
-
-Classic Spectrum beeper loop: toggle bit 4 of port `$FE` at a cycle-counted
-interval. Duration in frames, pitch as a Z80 half-period in T-states. Runs
-with interrupts disabled so timing is deterministic.
-
-Not polyphonic, can't play while running game logic — but sufficient for
-blip, tone, crude music.
+Not polyphonic, can't play while running game logic — but sufficient
+for blip, tone, crude music. AY (4.2 above) covers the music case.
 
 ### 4.4 TR-DOS / divMMC save primitives
 
@@ -439,8 +407,8 @@ as `zt lsp` subcommand.
 ### 5.6 Documentation site
 
 **Impact:** medium for adoption.
-**Difficulty:** low. Most of the content exists in `primitives.md`, `PLAN.md`,
-and the forthcoming docs.
+**Difficulty:** low. Most of the content exists in `docs/primitives.md`,
+`docs/PLAN.md`, `docs/128k-architecture.md`, and the README.
 
 mkdocs or Quarto against the current markdown files. Host on GitHub Pages.
 
