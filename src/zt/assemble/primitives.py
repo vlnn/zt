@@ -401,6 +401,244 @@ def create_rshift(a: Asm) -> None:
     a.dispatch()
 
 
+def create_unpack_nibbles(a: Asm) -> None:
+    """`UNPACK-NIBBLES ( byte -- hi lo )` — split low byte of TOS into two
+    unsigned nibbles 0..15; lo nibble (bits 0-3) ends on top."""
+    a.label("UNPACK_NIBBLES")
+    a.alias("unpack-nibbles", "UNPACK_NIBBLES")
+    a.ld_b_l()
+    a.ld_a_b()
+    a.rrca()
+    a.rrca()
+    a.rrca()
+    a.rrca()
+    a.and_n(0x0F)
+    a.ld_l_a()
+    a.ld_h_n(0)
+    a.push_hl()
+    a.ld_a_b()
+    a.and_n(0x0F)
+    a.ld_l_a()
+    a.dispatch()
+
+
+def create_unpack_2bits(a: Asm) -> None:
+    """`UNPACK-2BITS ( byte -- u3 u2 u1 u0 )` — split low byte of TOS into
+    four unsigned 2-bit fields 0..3; u0 (bits 0-1) ends on top, u3 (bits 6-7)
+    deepest. Caller can apply `2 -` per field to obtain the z80ai signed
+    weight mapping {-2,-1,0,+1}."""
+    a.label("UNPACK_2BITS")
+    a.alias("unpack-2bits", "UNPACK_2BITS")
+    a.ld_b_l()
+    a.ld_h_n(0)
+    a.ld_a_b()
+    a.rlca()
+    a.rlca()
+    a.and_n(0x03)
+    a.ld_l_a()
+    a.push_hl()
+    a.ld_a_b()
+    a.rrca()
+    a.rrca()
+    a.rrca()
+    a.rrca()
+    a.and_n(0x03)
+    a.ld_l_a()
+    a.push_hl()
+    a.ld_a_b()
+    a.rrca()
+    a.rrca()
+    a.and_n(0x03)
+    a.ld_l_a()
+    a.push_hl()
+    a.ld_a_b()
+    a.and_n(0x03)
+    a.ld_l_a()
+    a.dispatch()
+
+
+def create_2bit_muladd(a: Asm) -> None:
+    """`2BITMULADD ( raw act addr -- )` — z80ai signed 2-bit multiply-and-add.
+    Maps `raw` 0..3 to weight {-2,-1,0,+1} (via `SUB 2`) and applies
+    `*addr += weight*act` with a 4-way branch — never invoking general 16x16
+    multiply. The four paths are: skip (weight=0), `*addr += act` (+1),
+    `*addr -= act` (-1), `*addr -= 2*act` (-2)."""
+    a.label("MULADD_2BIT")
+    a.alias("2bitmuladd", "MULADD_2BIT")
+    a.pop_de()
+    a.pop_bc()
+    a.ld_a_c()
+    a.sub_n(0x02)
+    a.jr_z_to("_2bma_done")
+    a.jp_m("_2bma_neg")
+    a.ld_a_ind_hl()
+    a.add_a_e()
+    a.ld_ind_hl_a()
+    a.inc_hl()
+    a.ld_a_ind_hl()
+    a.adc_a_d()
+    a.ld_ind_hl_a()
+    a.jr_to("_2bma_done")
+    a.label("_2bma_neg")
+    a.inc_a()
+    a.jr_nz_to("_2bma_negtwo")
+    a.ld_a_ind_hl()
+    a.sub_e()
+    a.ld_ind_hl_a()
+    a.inc_hl()
+    a.ld_a_ind_hl()
+    a.sbc_a_d()
+    a.ld_ind_hl_a()
+    a.jr_to("_2bma_done")
+    a.label("_2bma_negtwo")
+    a.ex_de_hl()
+    a.add_hl_hl()
+    a.ex_de_hl()
+    a.ld_a_ind_hl()
+    a.sub_e()
+    a.ld_ind_hl_a()
+    a.inc_hl()
+    a.ld_a_ind_hl()
+    a.sbc_a_d()
+    a.ld_ind_hl_a()
+    a.label("_2bma_done")
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_2bit_dot_plus_store(a: Asm) -> None:
+    """`2BIT-DOT+! ( wptr aptr count addr -- )` — accumulating dot product
+    where weights are 2-bit signed values mapped {0,1,2,3} → {-2,-1,0,+1}
+    (z80ai LSB-first packing) and added to the 16-bit cell at `addr`.
+    `count` is the number of weights and must be a multiple of 4.
+
+    Application-specific (quantized 2-bit linear layer kernel). Lives in
+    core for now; candidate for app/zlm/ once an extension hook for
+    primitive registration lands."""
+    a.label("DOT_PLUS_STORE_2BIT")
+    a.alias("2bit-dot+!", "DOT_PLUS_STORE_2BIT")
+
+    a.ex_sp_hl()
+    a.ld_ind_nn_hl("_2bdps_count")
+    a.pop_hl()
+    a.ld_ind_nn_hl("_2bdps_addr")
+    a.pop_hl()
+    a.ld_ind_nn_hl("_2bdps_aptr")
+    a.pop_hl()
+    a.ld_ind_nn_hl("_2bdps_wptr")
+
+    a.ld_hl_ind_nn("_2bdps_addr")
+    a.ld_e_ind_hl()
+    a.inc_hl()
+    a.ld_d_ind_hl()
+    a.ex_de_hl()
+
+    a.ld_bc_ind_nn("_2bdps_aptr")
+
+    a.label("_2bdps_outer")
+    a.push_hl()
+    a.ld_hl_ind_nn("_2bdps_count")
+    a.ld_a_h()
+    a.or_l()
+    a.jr_z_to("_2bdps_pop_done")
+    a.dec_hl()
+    a.dec_hl()
+    a.dec_hl()
+    a.dec_hl()
+    a.ld_ind_nn_hl("_2bdps_count")
+
+    a.ld_hl_ind_nn("_2bdps_wptr")
+    a.ld_a_ind_hl()
+    a.inc_hl()
+    a.ld_ind_nn_hl("_2bdps_wptr")
+    a.ld_ind_nn_a("_2bdps_pkd")
+
+    a.pop_hl()
+
+    a.ld_a_ind_nn("_2bdps_pkd")
+    a.and_n(0x03)
+    a.call("_2bdps_muladd")
+
+    a.ld_a_ind_nn("_2bdps_pkd")
+    a.rrca()
+    a.rrca()
+    a.ld_ind_nn_a("_2bdps_pkd")
+    a.and_n(0x03)
+    a.call("_2bdps_muladd")
+
+    a.ld_a_ind_nn("_2bdps_pkd")
+    a.rrca()
+    a.rrca()
+    a.ld_ind_nn_a("_2bdps_pkd")
+    a.and_n(0x03)
+    a.call("_2bdps_muladd")
+
+    a.ld_a_ind_nn("_2bdps_pkd")
+    a.rrca()
+    a.rrca()
+    a.and_n(0x03)
+    a.call("_2bdps_muladd")
+
+    a.jr_to("_2bdps_outer")
+
+    a.label("_2bdps_pop_done")
+    a.pop_hl()
+
+    a.ex_de_hl()
+    a.ld_hl_ind_nn("_2bdps_addr")
+    a.ld_ind_hl_e()
+    a.inc_hl()
+    a.ld_ind_hl_d()
+
+    a.pop_hl()
+    a.dispatch()
+
+    a.label("_2bdps_muladd")
+    a.push_af()
+    a.ld_a_ind_bc()
+    a.ld_e_a()
+    a.inc_bc()
+    a.ld_a_ind_bc()
+    a.ld_d_a()
+    a.inc_bc()
+    a.pop_af()
+    a.or_a()
+    a.jr_z_to("_2bdps_w_neg2")
+    a.dec_a()
+    a.jr_z_to("_2bdps_w_neg1")
+    a.dec_a()
+    a.jr_z_to("_2bdps_w_zero")
+    a.add_hl_de()
+    a.ret()
+    a.label("_2bdps_w_neg2")
+    a.or_a()
+    a.sbc_hl_de()
+    a.or_a()
+    a.sbc_hl_de()
+    a.ret()
+    a.label("_2bdps_w_neg1")
+    a.or_a()
+    a.sbc_hl_de()
+    a.ret()
+    a.label("_2bdps_w_zero")
+    a.ret()
+
+    a.label("_2bdps_count")
+    a.byte(0)
+    a.byte(0)
+    a.label("_2bdps_addr")
+    a.byte(0)
+    a.byte(0)
+    a.label("_2bdps_aptr")
+    a.byte(0)
+    a.byte(0)
+    a.label("_2bdps_wptr")
+    a.byte(0)
+    a.byte(0)
+    a.label("_2bdps_pkd")
+    a.byte(0)
+
+
 def create_equals(a: Asm) -> None:
     """`= ( x1 x2 -- flag )` — true (-1) if equal, false (0) otherwise."""
     a.label("EQUALS")
@@ -1419,6 +1657,9 @@ PRIMITIVES = [
     create_min, create_max,
     create_and, create_or, create_xor, create_invert,
     create_lshift, create_rshift,
+    create_unpack_nibbles, create_unpack_2bits,
+    create_2bit_muladd,
+    create_2bit_dot_plus_store,
     create_equals, create_not_equals,
     create_less_than, create_greater_than,
     create_zero_equals, create_zero_less,

@@ -382,8 +382,11 @@ class Z80:
         reg(0x36, self._op_ld_r_n, 10)
 
         reg(0x1A, self._op_ld_a_ind_de, 7)
+        reg(0x0A, self._op_ld_a_ind_bc, 7)
         reg(0x3A, self._op_ld_a_ind_nn, 13)
         reg(0x32, self._op_ld_ind_nn_a, 13)
+        reg(0x22, self._op_ld_ind_nn_hl, 16)
+        reg(0x2A, self._op_ld_hl_ind_nn, 16)
 
         for op in range(0x40, 0x80):
             if op != 0x76:
@@ -492,11 +495,20 @@ class Z80:
     def _op_ld_a_ind_de(self, op: int) -> None:
         self.a = self._rb(self.de)
 
+    def _op_ld_a_ind_bc(self, op: int) -> None:
+        self.a = self._rb(self.bc)
+
     def _op_ld_a_ind_nn(self, op: int) -> None:
         self.a = self._rb(self._fetch_word())
 
     def _op_ld_ind_nn_a(self, op: int) -> None:
         self._wb(self._fetch_word(), self.a)
+
+    def _op_ld_ind_nn_hl(self, op: int) -> None:
+        self._ww(self._fetch_word(), self.hl)
+
+    def _op_ld_hl_ind_nn(self, op: int) -> None:
+        self.hl = self._rw(self._fetch_word())
 
     def _op_ld_r_r(self, op: int) -> None:
         dst, src = (op >> 3) & 7, op & 7
@@ -852,6 +864,12 @@ class Z80:
             self._outputs.append((self.bc, self.a))
             self._maybe_handle_7ffd(self.bc, self.a)
             self._t_states += 12
+        elif op == 0x4B:
+            self.bc = self._rw(self._fetch_word())
+            self._t_states += 20
+        elif op == 0x43:
+            self._ww(self._fetch_word(), self.bc)
+            self._t_states += 20
         else:
             raise RuntimeError(f"unimplemented ED opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}")
 
