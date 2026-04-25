@@ -34,6 +34,11 @@ def _all_banks_distinct() -> dict[int, bytes]:
     return {n: _bank_filled(0xA0 + n) for n in range(8)}
 
 
+def _expected_bank5_with_shadow(content: bytes, port: int) -> bytes:
+    shadow_offset = 0x5B5C - 0x4000
+    return content[:shadow_offset] + bytes([port & 0xFF]) + content[shadow_offset + 1:]
+
+
 def _bank_from_sna(sna: bytes, slot_offset: int) -> bytes:
     return sna[slot_offset:slot_offset + BANK_SIZE]
 
@@ -109,8 +114,10 @@ class TestBankPlacement:
     def test_bank_five_at_first_slot(self, paged_bank):
         banks = _all_banks_distinct()
         sna = build_sna_128(banks, entry=0x8000, paged_bank=paged_bank)
-        assert _bank_from_sna(sna, BANK5_OFFSET) == banks[5], (
-            f"bank 5 should land at offset {BANK5_OFFSET} regardless of paged_bank"
+        expected = _expected_bank5_with_shadow(banks[5], paged_bank | 0x10)
+        assert _bank_from_sna(sna, BANK5_OFFSET) == expected, (
+            f"bank 5 should land at offset {BANK5_OFFSET} regardless of paged_bank "
+            f"(modulo the BANKM shadow byte at $5B5C)"
         )
 
     @pytest.mark.parametrize("paged_bank", [0, 1, 3, 4, 6, 7])
@@ -148,10 +155,14 @@ class TestTailHeader:
         assert port & 0x07 == paged_bank, (
             f"port $7FFD low bits should equal paged_bank={paged_bank}"
         )
-        assert port & 0x10 == 0, (
-            "port $7FFD bit 4 should be CLEAR by default: libspectrum treats "
-            "every 128K SNA as Pentagon, where bit 4 = 0 selects BASIC ROM "
-            "and bit 4 = 1 selects TR-DOS. We want BASIC at startup."
+        assert port & 0x10 == 0x10, (
+            "port $7FFD bit 4 should be SET by default: on Sinclair 128K "
+            "this selects the 48K BASIC ROM in slot 0, which has the "
+            "standard glyph font at $3D00 (where zt's EMIT reads from). "
+            "Bit 4 = 0 selects the 128K editor ROM, which lacks the font "
+            "and produces garbage on screen for any program using EMIT. "
+            "Pentagon clones invert this; pass port_7ffd=paged_bank "
+            "explicitly if targeting Pentagon."
         )
 
     def test_port_override_stored_verbatim(self):
@@ -194,11 +205,16 @@ class TestDuplicationQuirk:
     def test_paged_bank_duplicated_when_two_or_five(self, paged_bank):
         banks = _all_banks_distinct()
         sna = build_sna_128(banks, entry=0x8000, paged_bank=paged_bank)
-        assert _bank_from_sna(sna, PAGED_OFFSET) == banks[paged_bank], (
+        port = paged_bank | 0x10
+        expected_paged = (_expected_bank5_with_shadow(banks[5], port)
+                          if paged_bank == 5 else banks[paged_bank])
+        assert _bank_from_sna(sna, PAGED_OFFSET) == expected_paged, (
             f"paged bank {paged_bank} should appear at the paged slot"
         )
         fixed_slot = BANK5_OFFSET if paged_bank == 5 else BANK2_OFFSET
-        assert _bank_from_sna(sna, fixed_slot) == banks[paged_bank], (
+        expected_fixed = (_expected_bank5_with_shadow(banks[5], port)
+                          if paged_bank == 5 else banks[paged_bank])
+        assert _bank_from_sna(sna, fixed_slot) == expected_fixed, (
             f"bank {paged_bank} should also appear at its fixed slot "
             f"(offset {fixed_slot}) — the 128K duplication quirk"
         )

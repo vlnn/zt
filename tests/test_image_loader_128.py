@@ -33,6 +33,11 @@ def _all_banks_distinct() -> dict[int, bytes]:
     return {n: _bank_filled(0xA0 + n) for n in range(8)}
 
 
+def _expected_bank5_with_shadow(content: bytes, port: int) -> bytes:
+    shadow_offset = 0x5B5C - 0x4000
+    return content[:shadow_offset] + bytes([port & 0xFF]) + content[shadow_offset + 1:]
+
+
 def _bank_slice(mem: bytearray, bank_id: int) -> bytes:
     start = bank_id * BANK_SIZE
     return bytes(mem[start:start + BANK_SIZE])
@@ -73,7 +78,9 @@ class TestBankPlacementFlat:
                                               paged_bank=paged_bank))
         image = load_sna_128(path)
         for bank_id in range(8):
-            assert _bank_slice(image.memory, bank_id) == banks[bank_id], (
+            expected = (_expected_bank5_with_shadow(banks[5], image.port_7ffd)
+                        if bank_id == 5 else banks[bank_id])
+            assert _bank_slice(image.memory, bank_id) == expected, (
                 f"bank {bank_id} should appear at flat offset "
                 f"{bank_id * BANK_SIZE:#x} (paged_bank={paged_bank})"
             )
@@ -84,12 +91,16 @@ class TestBankPlacementFlat:
         path = _write(tmp_path, build_sna_128(banks, entry=0x8000,
                                               paged_bank=paged_bank))
         image = load_sna_128(path)
-        assert _bank_slice(image.memory, paged_bank) == banks[paged_bank], (
+        expected_paged = (_expected_bank5_with_shadow(banks[5], image.port_7ffd)
+                          if paged_bank == 5 else banks[paged_bank])
+        assert _bank_slice(image.memory, paged_bank) == expected_paged, (
             f"duplicated paged_bank={paged_bank} should land correctly "
             f"despite appearing twice in the file"
         )
         for bank_id in range(8):
-            assert _bank_slice(image.memory, bank_id) == banks[bank_id], (
+            expected = (_expected_bank5_with_shadow(banks[5], image.port_7ffd)
+                        if bank_id == 5 else banks[bank_id])
+            assert _bank_slice(image.memory, bank_id) == expected, (
                 f"bank {bank_id} should appear at flat offset "
                 f"{bank_id * BANK_SIZE:#x} (duplicated-case paged_bank={paged_bank})"
             )
@@ -116,8 +127,10 @@ class TestPort7ffdRoundtrip:
         assert image.port_7ffd & 0x07 == paged_bank, (
             f"port_7ffd low bits should equal paged_bank={paged_bank}"
         )
-        assert image.port_7ffd & 0x10 == 0, (
-            "default port_7ffd should have bit 4 CLEAR (Pentagon BASIC ROM)"
+        assert image.port_7ffd & 0x10 == 0x10, (
+            "default port_7ffd should have bit 4 SET (Sinclair 128K: 48K BASIC "
+            "ROM in slot 0, font at $3D00). Was previously clear (Pentagon "
+            "convention) but that broke EMIT on real Sinclair-128K hardware."
         )
 
     def test_explicit_port_roundtrips(self, tmp_path: Path):
@@ -126,6 +139,34 @@ class TestPort7ffdRoundtrip:
         image = load_sna_128(path)
         assert image.port_7ffd == 0x28, (
             "explicit port_7ffd should round-trip unchanged"
+        )
+
+
+class TestBankmShadow:
+    """The shadow byte at $5B5C in bank 5 must be initialized to match port_7ffd
+    so that BANK! preserves the upper bits (esp. the ROM-select bit 4) across
+    page switches. Without this, the very first BANK! call after boot writes
+    raw `n` (with bit 4 = 0) and pages in the 128K editor ROM, breaking EMIT
+    on real hardware."""
+
+    @pytest.mark.parametrize("paged_bank", list(range(8)))
+    def test_default_shadow_matches_default_port(self, tmp_path: Path, paged_bank):
+        path = _write(tmp_path, build_sna_128({}, entry=0x8000,
+                                              paged_bank=paged_bank))
+        image = load_sna_128(path)
+        shadow = image.memory[5 * BANK_SIZE + (0x5B5C - 0x4000)]
+        assert shadow == image.port_7ffd, (
+            f"bank 5's $5B5C shadow ({shadow:#04x}) should equal port_7ffd "
+            f"({image.port_7ffd:#04x}) so BANK! preserves ROM-select"
+        )
+
+    def test_explicit_port_writes_matching_shadow(self, tmp_path: Path):
+        path = _write(tmp_path, build_sna_128({}, entry=0x8000,
+                                              paged_bank=0, port_7ffd=0x28))
+        image = load_sna_128(path)
+        shadow = image.memory[5 * BANK_SIZE + (0x5B5C - 0x4000)]
+        assert shadow == 0x28, (
+            f"explicit port_7ffd=0x28 should also init the shadow to 0x28; got {shadow:#04x}"
         )
 
 
@@ -188,9 +229,16 @@ class TestFullRoundtripAllBanks:
                                               paged_bank=paged_bank))
         image = load_sna_128(path)
         for bank_id in range(8):
-            assert _bank_slice(image.memory, bank_id) == banks[bank_id], (
-                f"bank {bank_id} should round-trip byte-for-byte "
-                f"(paged_bank={paged_bank})"
+            actual = _bank_slice(image.memory, bank_id)
+            expected = banks[bank_id]
+            if bank_id == 5:
+                shadow_offset = 0x5B5C - 0x4000
+                expected = (expected[:shadow_offset]
+                            + bytes([image.port_7ffd & 0xFF])
+                            + expected[shadow_offset + 1:])
+            assert actual == expected, (
+                f"bank {bank_id} should round-trip byte-for-byte except for the "
+                f"BANKM shadow byte at $5B5C in bank 5 (paged_bank={paged_bank})"
             )
         assert image.pc == 0xABCD, "pc should round-trip"
         assert image.port_7ffd & 0x07 == paged_bank, "port should encode paged_bank"

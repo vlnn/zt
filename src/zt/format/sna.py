@@ -18,6 +18,9 @@ SNA_128K_TRDOS_OFFSET = 49_182
 SNA_128K_TOTAL_SIZE = 131_103
 SNA_128K_DUPLICATED_SIZE = 147_487
 
+BANKM_SHADOW_ADDR = 0x5B5C
+_BANKM_SHADOW_OFFSET_IN_BANK_5 = BANKM_SHADOW_ADDR - 0x4000
+
 _BANK_AT_SLOT_4000 = 5
 _BANK_AT_SLOT_8000 = 2
 
@@ -68,7 +71,8 @@ def build_sna_128(
 ) -> bytes:
     _validate_128k_inputs(banks, entry, paged_bank)
     padded = _pad_all_banks(banks)
-    port = paged_bank if port_7ffd is None else port_7ffd
+    port = (paged_bank | 0x10) if port_7ffd is None else port_7ffd
+    padded = _set_bankm_shadow(padded, port)
     header = _build_sna_header(data_stack_top, border)
     initial = _initial_48k_image(padded, paged_bank)
     tail = _tail_128k(padded, paged_bank, entry, port)
@@ -100,6 +104,20 @@ def _pad_all_banks(banks: dict[int, bytes]) -> dict[int, bytes]:
 
 def _pad_to_bank_size(content: bytes) -> bytes:
     return bytes(content) + bytes(BANK_SIZE - len(content))
+
+
+def _set_bankm_shadow(padded: dict[int, bytes], port: int) -> dict[int, bytes]:
+    """Initialize the BANKM shadow at $5B5C (bank 5) to match port $7FFD.
+
+    BANK! reads this byte to preserve the upper bits (ROM select, screen
+    select, lock) when changing the paged-in bank. If left as zero, the
+    very first BANK! call clears bit 4 and pages in the 128K editor ROM,
+    which lacks the standard glyph font at $3D00 — every subsequent EMIT
+    then renders garbage on real hardware.
+    """
+    bank5 = bytearray(padded[5])
+    bank5[_BANKM_SHADOW_OFFSET_IN_BANK_5] = port & 0xFF
+    return {**padded, 5: bytes(bank5)}
 
 
 def _initial_48k_image(padded: dict[int, bytes], paged_bank: int) -> bytes:
