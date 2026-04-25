@@ -540,7 +540,9 @@ def create_2bit_dot_plus_store(a: Asm) -> None:
     a.ld_hl_ind_nn("_2bdps_count")
     a.ld_a_h()
     a.or_l()
-    a.jr_z_to("_2bdps_pop_done")
+    a.jr_nz_to("_2bdps_step")
+    a.jp("_2bdps_pop_done")
+    a.label("_2bdps_step")
     a.dec_hl()
     a.dec_hl()
     a.dec_hl()
@@ -555,31 +557,26 @@ def create_2bit_dot_plus_store(a: Asm) -> None:
 
     a.pop_hl()
 
-    a.ld_a_ind_nn("_2bdps_pkd")
-    a.and_n(0x03)
-    a.call("_2bdps_muladd")
+    _emit_inlined_muladd(a, "_2bdps_w0")
 
     a.ld_a_ind_nn("_2bdps_pkd")
     a.rrca()
     a.rrca()
     a.ld_ind_nn_a("_2bdps_pkd")
-    a.and_n(0x03)
-    a.call("_2bdps_muladd")
+    _emit_inlined_muladd(a, "_2bdps_w1")
 
     a.ld_a_ind_nn("_2bdps_pkd")
     a.rrca()
     a.rrca()
     a.ld_ind_nn_a("_2bdps_pkd")
-    a.and_n(0x03)
-    a.call("_2bdps_muladd")
+    _emit_inlined_muladd(a, "_2bdps_w2")
 
     a.ld_a_ind_nn("_2bdps_pkd")
     a.rrca()
     a.rrca()
-    a.and_n(0x03)
-    a.call("_2bdps_muladd")
+    _emit_inlined_muladd(a, "_2bdps_w3")
 
-    a.jr_to("_2bdps_outer")
+    a.jp("_2bdps_outer")
 
     a.label("_2bdps_pop_done")
     a.pop_hl()
@@ -592,36 +589,6 @@ def create_2bit_dot_plus_store(a: Asm) -> None:
 
     a.pop_hl()
     a.dispatch()
-
-    a.label("_2bdps_muladd")
-    a.push_af()
-    a.ld_a_ind_bc()
-    a.ld_e_a()
-    a.inc_bc()
-    a.ld_a_ind_bc()
-    a.ld_d_a()
-    a.inc_bc()
-    a.pop_af()
-    a.or_a()
-    a.jr_z_to("_2bdps_w_neg2")
-    a.dec_a()
-    a.jr_z_to("_2bdps_w_neg1")
-    a.dec_a()
-    a.jr_z_to("_2bdps_w_zero")
-    a.add_hl_de()
-    a.ret()
-    a.label("_2bdps_w_neg2")
-    a.or_a()
-    a.sbc_hl_de()
-    a.or_a()
-    a.sbc_hl_de()
-    a.ret()
-    a.label("_2bdps_w_neg1")
-    a.or_a()
-    a.sbc_hl_de()
-    a.ret()
-    a.label("_2bdps_w_zero")
-    a.ret()
 
     a.label("_2bdps_count")
     a.byte(0)
@@ -637,6 +604,43 @@ def create_2bit_dot_plus_store(a: Asm) -> None:
     a.byte(0)
     a.label("_2bdps_pkd")
     a.byte(0)
+
+
+def _emit_inlined_muladd(a: Asm, sfx: str) -> None:
+    """Inlined muladd: same branching as the original CALL/RET routine,
+    just pasted in place to remove the call/ret overhead per MAC."""
+    a.and_n(0x03)
+    a.push_af()
+    a.ld_a_ind_bc()
+    a.ld_e_a()
+    a.inc_bc()
+    a.ld_a_ind_bc()
+    a.ld_d_a()
+    a.inc_bc()
+    a.pop_af()
+
+    a.or_a()
+    a.jr_z_to(f"{sfx}_neg2")
+    a.dec_a()
+    a.jr_z_to(f"{sfx}_neg1")
+    a.dec_a()
+    a.jr_z_to(f"{sfx}_done")
+
+    a.add_hl_de()
+    a.jr_to(f"{sfx}_done")
+
+    a.label(f"{sfx}_neg2")
+    a.or_a()
+    a.sbc_hl_de()
+    a.or_a()
+    a.sbc_hl_de()
+    a.jr_to(f"{sfx}_done")
+
+    a.label(f"{sfx}_neg1")
+    a.or_a()
+    a.sbc_hl_de()
+
+    a.label(f"{sfx}_done")
 
 
 def create_equals(a: Asm) -> None:
