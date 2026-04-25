@@ -13,6 +13,7 @@ BUILD_FLAGS_bank-rotator := --target 128k
 BUILD_FLAGS_bank-table   := --target 128k
 BUILD_FLAGS_shadow-flip  := --target 128k
 BUILD_FLAGS_plasma-128k  := --target 128k --include-dir $(EXAMPLES_DIR)
+BUILD_FLAGS_zlm-tinychat := --target 128k
 
 .PHONY: all examples test clean help
 
