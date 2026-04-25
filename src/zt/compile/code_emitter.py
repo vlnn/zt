@@ -131,3 +131,125 @@ class CodeEmitter:
     def _emit_branch_cell(self, kind: str, target_label_id: int, tok: Token) -> None:
         self.emit_cell(self.words[kind].address, tok)
         self.append_ir(Branch(kind=kind, target=Label(id=target_label_id)))
+
+    # --- native control-flow emission ---
+
+    def compile_native_zbranch_placeholder(self, tok: Token) -> int:
+        """Emit native forward conditional branch matching the threaded ZBRANCH
+        primitive's flow: test the flag in HL (current TOS), pop the new TOS
+        from the data stack, then jump to a forward placeholder when the flag
+        was zero. Returns the operand offset of the JP Z instruction so it can
+        be resolved later by `patch_placeholder`."""
+        label_id = self.allocate_label()
+        asm = self.asm
+        self.source_map.append(
+            SourceEntry(asm.here, tok.source, tok.line, tok.col)
+        )
+        asm.ld_a_h()
+        asm.or_l()
+        asm.pop_hl()
+        asm.code.append(0xCA)
+        offset = len(asm.code)
+        asm.code.extend([0x00, 0x00])
+        self._placeholder_labels[offset] = label_id
+        self.append_ir(Branch(kind="0branch", target=Label(id=label_id)))
+        return offset
+
+    def compile_native_branch_placeholder(self, tok: Token) -> int:
+        """Emit `jp 0` as a native forward unconditional branch. Returns the
+        operand offset for later patching."""
+        label_id = self.allocate_label()
+        asm = self.asm
+        self.source_map.append(
+            SourceEntry(asm.here, tok.source, tok.line, tok.col)
+        )
+        asm.code.append(0xC3)
+        offset = len(asm.code)
+        asm.code.extend([0x00, 0x00])
+        self._placeholder_labels[offset] = label_id
+        self.append_ir(Branch(kind="branch", target=Label(id=label_id)))
+        return offset
+
+    def compile_native_branch_to_label(
+        self, kind: str, target_addr: int, target_label_id: int, tok: Token,
+    ) -> None:
+        """Emit a native backward branch to a known address."""
+        asm = self.asm
+        self.source_map.append(
+            SourceEntry(asm.here, tok.source, tok.line, tok.col)
+        )
+        self.append_ir(Branch(kind=kind, target=Label(id=target_label_id)))
+        if kind == "branch":
+            asm.jp(target_addr)
+        elif kind == "0branch":
+            asm.ld_a_h()
+            asm.or_l()
+            asm.pop_hl()
+            asm.jp_z(target_addr)
+        elif kind == "(loop)":
+            self._emit_native_loop_body(target_addr)
+        elif kind == "(+loop)":
+            self._emit_native_plus_loop_body(target_addr)
+        else:
+            raise ValueError(
+                f"native branch kind '{kind}' not supported; expected "
+                f"'branch', '0branch', '(loop)', or '(+loop)'"
+            )
+
+    def _emit_native_loop_body(self, body_addr: int) -> None:
+        """Emit native LOOP: increment index, compare against limit, JP back
+        to body if not equal, fall through with frame drop if equal.
+        Mirrors the threaded `(loop)` runtime minus the IX-cell-reading dance."""
+        asm = self.asm
+        asm.push_hl()
+        asm.ld_e_iy(0)
+        asm.ld_d_iy(1)
+        asm.inc_de()
+        asm.ld_iy_e(0)
+        asm.ld_iy_d(1)
+        asm.ld_l_iy(2)
+        asm.ld_h_iy(3)
+        asm.or_a()
+        asm.sbc_hl_de()
+        asm.pop_hl()
+        asm.code.append(0x28)
+        asm.code.append(0x03)
+        asm.jp(body_addr)
+        asm.inc_iy()
+        asm.inc_iy()
+        asm.inc_iy()
+        asm.inc_iy()
+
+    def _emit_native_plus_loop_body(self, body_addr: int) -> None:
+        """Emit native +LOOP: step + index, sign-XOR check for crossing the
+        limit, JP back to body if not crossed, fall through with frame drop
+        otherwise. Mirrors the threaded `(+loop)` runtime minus the IX dance."""
+        asm = self.asm
+        asm.ld_e_iy(0)
+        asm.ld_d_iy(1)
+        asm.add_hl_de()
+        asm.ld_iy_l(0)
+        asm.ld_iy_h(1)
+        asm.push_hl()
+        asm.ld_l_iy(2)
+        asm.ld_h_iy(3)
+        asm.ex_de_hl()
+        asm.or_a()
+        asm.sbc_hl_de()
+        asm.ex_sp_hl()
+        asm.or_a()
+        asm.sbc_hl_de()
+        asm.pop_de()
+        asm.ld_a_h()
+        asm.xor_d()
+        asm.pop_hl()
+        # Target of JP M lands right after the JP body_addr below — i.e. at
+        # the inc_iy frame-drop sequence. JP M is 3 bytes, JP body_addr is
+        # 3 bytes, so the target is current pos + 6.
+        done_addr = asm.origin + len(asm.code) + 6
+        asm.jp_m(done_addr)
+        asm.jp(body_addr)
+        asm.inc_iy()
+        asm.inc_iy()
+        asm.inc_iy()
+        asm.inc_iy()

@@ -1,5 +1,10 @@
 """
 End-to-end tests for compiled control flow: `0branch`, `if/else/then`, `begin/until`, `begin/while/repeat`, `do/loop`, `i`, `j`, and `unloop`.
+
+The `cf_mode` fixture parametrises forward-branch tests across the threaded
+(default) and native emission paths. As each phase of the native-control-flow
+work lands, the corresponding test classes pick up the fixture and start
+running in both modes.
 """
 import pytest
 
@@ -17,6 +22,11 @@ def _asm_with_next() -> Asm:
     a = Asm(0x8000)
     a.label("NEXT")
     return a
+
+
+@pytest.fixture(params=[False, True], ids=["threaded", "native-cf"])
+def cf_mode(request):
+    return request.param
 
 
 # ===== Tier 1: 0BRANCH primitive =====
@@ -63,8 +73,8 @@ class TestIfThen:
         (": main 0 if 42 then 99 halt ;", [99],
          "false IF should skip to THEN then continue"),
     ], ids=["true-if", "false-if", "after-then-true", "after-then-false"])
-    def test_if_then(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_if_then(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
     def test_compiles_zbranch_cell(self):
         c = make_compiler()
@@ -103,8 +113,8 @@ class TestIfElseThen:
         (": main 0 if 10 else 20 then 99 halt ;", [20, 99],
          "code after THEN runs after false branch"),
     ], ids=["true-branch", "false-branch", "after-true", "after-false"])
-    def test_if_else_then(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_if_else_then(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 class TestNestedIf:
@@ -121,8 +131,8 @@ class TestNestedIf:
         (": main 1 if 1 if 42 else 99 then then halt ;", [42],
          "nested IF/ELSE should take inner IF on true"),
     ], ids=["true-true", "true-false", "false-any", "inner-else-false", "inner-else-true"])
-    def test_nested_if(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_nested_if(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 # ===== Tier 2: BEGIN/UNTIL, BEGIN/WHILE/REPEAT =====
@@ -138,8 +148,8 @@ class TestBeginUntil:
         (": main 1 begin 2* dup 64 > until halt ;", [128],
          "should double until > 64"),
     ], ids=["count-up-5", "count-down-0", "double-to-128"])
-    def test_begin_until(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_begin_until(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 class TestBeginWhileRepeat:
@@ -152,8 +162,8 @@ class TestBeginWhileRepeat:
         (": main 0 begin dup 0 < while 1+ repeat halt ;", [0],
          "false on first pass should skip body"),
     ], ids=["count-up-5", "count-down-0", "skip-body"])
-    def test_begin_while_repeat(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_begin_while_repeat(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 # ===== Tier 2: control flow in colon words =====
@@ -248,8 +258,8 @@ class TestDoLoop:
         (": main 0 3 1 do i + loop halt ;", [3],
          "DO with nonzero start should work (1+2=3)"),
     ], ids=["count-10", "sum-i", "nonzero-start"])
-    def test_do_loop(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_do_loop(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 class TestNestedDoLoop:
@@ -262,8 +272,8 @@ class TestNestedDoLoop:
         (": main 0 2 0 do 3 0 do i j * + loop loop halt ;", [3],
          "I*J in nested loops should sum products"),
     ], ids=["3x3-count", "j-sum", "i-j-product"])
-    def test_nested_do_loop(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_nested_do_loop(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 class TestPlusLoop:
@@ -276,8 +286,8 @@ class TestPlusLoop:
         (": main 0 0 10 do 1+ 1 negate +loop halt ;", [11],
          "+LOOP with negative step should count down (10,9,...,0)"),
     ], ids=["step-2-sum", "step-3-count", "negative-step"])
-    def test_plus_loop(self, src, expected, desc):
-        assert compile_and_run(src) == expected, desc
+    def test_plus_loop(self, src, expected, desc, cf_mode):
+        assert compile_and_run(src, native_control_flow=cf_mode) == expected, desc
 
 
 class TestLeave:

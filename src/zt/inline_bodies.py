@@ -1,14 +1,11 @@
-"""
-Primitive-body inliner. Decides which primitives (`INLINABLE_PRIMITIVES`) and colon definitions are safe to splice into their callers, and emits the raw Z80 bytes for a resolved inline plan.
-"""
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from zt.assemble.asm import Asm
-from zt.compile.ir import Cell, Literal as LiteralCell, PrimRef
+from zt.asm import Asm
+from zt.ir import Cell, Literal as LiteralCell, PrimRef
 
 
 CREATE_PREFIX = "create_"
@@ -47,19 +44,16 @@ class InlineContext:
 
     @classmethod
     def build(cls, creators: Sequence[Callable]) -> "InlineContext":
-        """Build a context from a sequence of primitive creator functions."""
         registry = build_inline_registry(creators)
         name_to_key = _build_name_to_key_map(creators, registry)
         return cls(registry=registry, name_to_key=name_to_key)
 
 
 def primitive_name(creator: Callable) -> str:
-    """Return the primitive name implied by a `create_*` creator's function name."""
     return creator.__name__.removeprefix(CREATE_PREFIX)
 
 
 def extract_inline_body(creator: Callable) -> bytes | None:
-    """Return the creator's emitted bytes with the trailing `JP NEXT` stripped, or None if not inlinable."""
     if _is_dispatcher(creator):
         return None
     raw = _try_assemble(creator)
@@ -73,7 +67,6 @@ def extract_inline_body(creator: Callable) -> bytes | None:
 def build_inline_registry(
     creators: Sequence[Callable],
 ) -> dict[str, bytes]:
-    """Map each inlinable primitive's name to its raw body bytes."""
     registry: dict[str, bytes] = {}
     for creator in creators:
         body = extract_inline_body(creator)
@@ -84,12 +77,10 @@ def build_inline_registry(
 
 
 def is_primitive_inlinable(name: str) -> bool:
-    """Return True if the given primitive is on the allow-list for inlining."""
     return name in INLINABLE_PRIMITIVES
 
 
 def has_mid_body_dispatch(creator: Callable) -> bool:
-    """Return True if the creator emits a `JP NEXT` anywhere other than its final tail dispatch."""
     if _is_dispatcher(creator):
         return False
     raw = _try_assemble(creator)
@@ -102,7 +93,6 @@ def has_mid_body_dispatch(creator: Callable) -> bool:
 
 
 def has_absolute_jump_in_body(creator: Callable) -> bool:
-    """Return True if the creator's body (excluding final dispatch) contains an unresolved absolute fixup."""
     if _is_dispatcher(creator):
         return False
     a = Asm(0x0000, inline_next=False)
@@ -123,7 +113,6 @@ def plan_colon_inlining(
     words: dict[str, Any],
     context: InlineContext,
 ) -> list[InlineStep] | None:
-    """Return the inline plan for a colon word, or None if any cell isn't safely inlinable."""
     if getattr(word, "kind", None) != "colon":
         return None
     cells: list[Cell] = getattr(word, "body", None) or []
@@ -137,7 +126,6 @@ def is_colon_inlinable(
     words: dict[str, Any],
     context: InlineContext,
 ) -> bool:
-    """Return True if a valid inline plan exists for the given colon word."""
     return plan_colon_inlining(word, words, context) is not None
 
 
@@ -146,7 +134,6 @@ def emit_inline_plan(
     plan: list[InlineStep],
     context: InlineContext,
 ) -> None:
-    """Splice an inline plan into `asm`: primitive bytes verbatim, literals as `push_hl; ld_hl, nn`."""
     for step in plan:
         if step.kind == "prim":
             asm.code.extend(context.registry[step.key])
@@ -156,32 +143,7 @@ def emit_inline_plan(
     asm.dispatch()
 
 
-def emit_native_primitive_body(creator: Callable, asm: Asm) -> bool:
-    """Re-emit a primitive's body at the current asm position, with its
-    internal labels resolved to actual splice-site addresses. Strips the
-    trailing dispatch (a single `RET` byte in native mode) so the body
-    falls through to the next inlined construct.
-
-    Returns True if the body was emitted, False if the creator can't be
-    re-resolved standalone (e.g. it references an external label).
-    """
-    if _is_dispatcher(creator):
-        return False
-    splice_origin = asm.here
-    tmp = Asm(origin=splice_origin, native=True)
-    try:
-        creator(tmp)
-        raw = tmp.resolve()
-    except (KeyError, ValueError):
-        return False
-    if not raw or raw[-1] != 0xC9:
-        return False
-    asm.code.extend(raw[:-1])
-    return True
-
-
 def _is_exit_cell(cell: Cell) -> bool:
-    """True for a `PrimRef` naming EXIT — the canonical colon-word terminator."""
     return isinstance(cell, PrimRef) and cell.name == "exit"
 
 
@@ -189,7 +151,6 @@ def _plan_cells(
     cells: list[Cell],
     context: InlineContext,
 ) -> list[InlineStep] | None:
-    """Plan every cell; abort (return None) on the first non-inlinable one."""
     steps: list[InlineStep] = []
     for cell in cells:
         step = _plan_cell(cell, context)
@@ -200,7 +161,6 @@ def _plan_cells(
 
 
 def _plan_cell(cell: Cell, context: InlineContext) -> InlineStep | None:
-    """Turn a single IR cell into an `InlineStep`, or None if it can't be inlined."""
     if isinstance(cell, LiteralCell):
         return InlineStep(kind="lit", value=cell.value)
     if isinstance(cell, PrimRef):
@@ -215,7 +175,6 @@ def _build_name_to_key_map(
     creators: Sequence[Callable],
     registry: dict[str, bytes],
 ) -> dict[str, str]:
-    """Map every label defined by an inlinable creator (e.g. `DUP`, `dup`) to its registry key."""
     result: dict[str, str] = {}
     for creator in creators:
         key = primitive_name(creator)
@@ -232,7 +191,6 @@ def _build_name_to_key_map(
 
 
 def _labels_of(creator: Callable) -> dict[str, int] | None:
-    """Assemble the creator in isolation and return its label table, or None on unresolved refs."""
     a = Asm(0x0000, inline_next=False)
     a.label("NEXT")
     creator(a)
@@ -244,12 +202,10 @@ def _labels_of(creator: Callable) -> dict[str, int] | None:
 
 
 def _is_dispatcher(creator: Callable) -> bool:
-    """True for the NEXT-dispatcher creator itself, which must never be inlined."""
     return creator.__name__ == _DISPATCHER_NAME
 
 
 def _try_assemble(creator: Callable) -> bytes | None:
-    """Try assembling the creator in isolation; return resolved bytes or None on failure."""
     a = Asm(0x0000, inline_next=False)
     a.label("NEXT")
     creator(a)
@@ -260,7 +216,6 @@ def _try_assemble(creator: Callable) -> bytes | None:
 
 
 def _ends_with_jp_to_next(raw: bytes) -> bool:
-    """True if the last three bytes are `JP NEXT` (NEXT sits at origin 0 during isolation)."""
     if len(raw) < DISPATCH_TAIL_LEN:
         return False
     return raw[-DISPATCH_TAIL_LEN:] == _JP_TO_NEXT

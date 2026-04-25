@@ -1,6 +1,3 @@
-"""
-Compiler pipeline: tokenise → parse immediates/directives → emit IR → resolve to a Z80 image. Also defines the `Word` record and top-level `compile_*` helpers used by tests and the CLI.
-"""
 from __future__ import annotations
 
 import os
@@ -8,19 +5,18 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Literal as TypingLiteral
 
-from zt.assemble.asm import Asm
-from zt.compile.code_emitter import CodeEmitter
-from zt.compile.control_stack import ControlStack, ControlStackError
-from zt.compile.source import SourceEntry
-from zt.compile.dictionary import Dictionary
-from zt.compile.include_resolver import IncludeNotFound, IncludeResolver
-from zt.assemble.inline_bodies import (
+from zt.asm import Asm
+from zt.code_emitter import CodeEmitter
+from zt.control_stack import ControlStack, ControlStackError
+from zt.debug import SourceEntry
+from zt.dictionary import Dictionary
+from zt.include_resolver import IncludeNotFound, IncludeResolver
+from zt.inline_bodies import (
     InlineContext,
     emit_inline_plan,
-    emit_native_primitive_body,
     plan_colon_inlining,
 )
-from zt.compile.ir import (
+from zt.ir import (
     Branch,
     Cell,
     ColonRef,
@@ -31,18 +27,18 @@ from zt.compile.ir import (
     cell_size,
     resolve,
 )
-from zt.compile.peephole import (
+from zt.peephole import (
     DEFAULT_RULES,
     PatternElement,
     PeepholeRule,
     find_match,
     max_pattern_length,
 )
-from zt.assemble.primitives import PRIMITIVES
-from zt.compile.string_pool import StringPool
-from zt.compile.token_stream import TokenStream
-from zt.compile.tokenizer import Token, tokenize
-from zt.compile.word_registry import (
+from zt.primitives import PRIMITIVES
+from zt.string_pool import StringPool
+from zt.token_stream import TokenStream
+from zt.tokenizer import Token, tokenize
+from zt.word_registry import (
     collected_directives,
     collected_immediates,
     directive,
@@ -62,7 +58,6 @@ class Word:
     source_file: str | None = None
     source_line: int | None = None
     data_address: int | None = None
-    force_inline: bool = False
 
 
 class CompileError(Exception):
@@ -79,11 +74,6 @@ DEFAULT_DATA_STACK_TOP = 0xFF00
 DEFAULT_RETURN_STACK_TOP = 0xFE00
 
 
-def _bundled_stdlib_dir() -> Path:
-    import zt.stdlib
-    return Path(zt.stdlib.__path__[0])
-
-
 class Compiler:
 
     def __init__(
@@ -95,14 +85,11 @@ class Compiler:
         optimize: bool = True,
         inline_next: bool = True,
         inline_primitives: bool = True,
-        native_control_flow: bool = False,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
         self.return_stack_top = return_stack_top
-        self.include_resolver: IncludeResolver = IncludeResolver(
-            include_dirs or [], bundled_stdlib_dir=_bundled_stdlib_dir(),
-        )
+        self.include_resolver: IncludeResolver = IncludeResolver(include_dirs or [])
         outer_asm = Asm(origin, inline_next=inline_next)
         self.words: Dictionary = Dictionary()
         self.state: TypingLiteral["interpret", "compile"] = "interpret"
@@ -118,12 +105,8 @@ class Compiler:
         self.optimize: bool = optimize
         self.inline_next: bool = inline_next
         self.inline_primitives: bool = inline_primitives
-        self.native_control_flow: bool = native_control_flow
         self._inline_context: InlineContext | None = None
         self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
-        self._main_asm: Asm = outer_asm
-        self._bank_asms: dict[int, Asm] = {}
-        self._active_bank: int | None = None
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
@@ -146,29 +129,6 @@ class Compiler:
         self.words.register_primitives(self.asm)
         if self.inline_primitives:
             self._inline_context = InlineContext.build(PRIMITIVES)
-        self._creators_by_name: dict[str, Callable] = (
-            self._build_creators_by_name()
-        )
-
-    def _build_creators_by_name(self) -> dict[str, Callable]:
-        """Build a map from every Forth-visible primitive name (lowercased) to
-        its `create_*` function. Resolves each creator in isolation to discover
-        all the labels (including aliases) it declares."""
-        from zt.assemble.inline_bodies import primitive_name as _prim_name
-        result: dict[str, Callable] = {}
-        for creator in PRIMITIVES:
-            tmp = Asm(0x0000, inline_next=False)
-            tmp.label("NEXT")
-            try:
-                creator(tmp)
-                tmp.resolve()
-            except (KeyError, ValueError):
-                continue
-            for label_name in tmp.labels:
-                if label_name == "NEXT" or label_name.startswith("_"):
-                    continue
-                result[label_name.lower()] = creator
-        return result
 
     def _register_directives(self) -> None:
         for name, action in collected_directives(type(self)):
@@ -203,10 +163,7 @@ class Compiler:
 
     def _interpret_token(self, tok: Token) -> None:
         if tok.kind == "word" and tok.value == ":":
-            self._start_colon(tok, force_inline=False)
-            return
-        if tok.kind == "word" and tok.value == "::":
-            self._start_colon(tok, force_inline=True)
+            self._start_colon(tok)
             return
         if tok.kind == "word":
             word = self.words.get(tok.value)
@@ -226,8 +183,6 @@ class Compiler:
             self._end_colon(tok)
             return
         if tok.kind == "word" and tok.value == ":":
-            raise CompileError("nested colon definition", tok)
-        if tok.kind == "word" and tok.value == "::":
             raise CompileError("nested colon definition", tok)
         if self.optimize and self._try_peephole(tok):
             return
@@ -275,7 +230,7 @@ class Compiler:
         return None
 
     def _is_structural_token(self, tok: Token) -> bool:
-        return tok.kind == "word" and tok.value in (";", ":", "::")
+        return tok.kind == "word" and tok.value in (";", ":")
 
     def _is_immediate_token(self, tok: Token) -> bool:
         if tok.kind != "word":
@@ -283,46 +238,29 @@ class Compiler:
         word = self.words.get(tok.value)
         return word is not None and word.immediate
 
-    def _start_colon(self, tok: Token, force_inline: bool = False) -> None:
+    def _start_colon(self, tok: Token) -> None:
         if self.state == "compile":
             raise CompileError("nested colon definition", tok)
-        if force_inline and self.native_control_flow:
-            raise CompileError(
-                ":: force-inline is not yet supported with native_control_flow",
-                tok,
-            )
         name_tok = self._next_token(tok)
         name = name_tok.value
-        self._warn_if_redefining(name, tok, force_inline=force_inline)
+        self._warn_if_redefining(name, tok)
         self.state = "compile"
         self.current_word = name
         self.emitter.begin_body()
         self.emitter.begin_buffered()
         addr = self.asm.here
-        if not self.native_control_flow:
-            self.asm.call("DOCOL")
+        self.asm.call("DOCOL")
         self.words[name] = Word(
             name=name, address=addr, kind="colon",
-            force_inline=force_inline,
             source_file=tok.source, source_line=tok.line,
         )
 
-    def _warn_if_redefining(
-        self, name: str, tok: Token, *, force_inline: bool = False,
-    ) -> None:
+    def _warn_if_redefining(self, name: str, tok: Token) -> None:
         warning = self.words.redefinition_warning(
             name, source_file=tok.source, source_line=tok.line,
-            force_inline=force_inline,
         )
         if warning is not None:
             self.warnings.append(warning)
-
-    def _reject_native_unsupported(self, construct: str, tok: Token) -> None:
-        if self.native_control_flow:
-            raise CompileError(
-                f"{construct} is not yet supported in native_control_flow mode",
-                tok,
-            )
 
     def _end_colon(self, tok: Token) -> None:
         if self.state != "compile":
@@ -333,155 +271,12 @@ class Compiler:
             raise CompileError(
                 f"unclosed {tag} in '{self.current_word}'", tok
             )
-        if self.native_control_flow:
-            # Native colons are emitted as straight-line code; no EXIT cell, no
-            # RET. The native startup `JP`s to main, so main must end with HALT
-            # (or any instruction sequence that doesn't need to return).
-            self._append_ir(PrimRef("exit"))
-        else:
-            self._emit_word_ref(self.words["exit"], tok)
+        self._emit_word_ref(self.words["exit"], tok)
         word = self.words[self.current_word]
         word.body = self.emitter.end_body()
         self.state = "interpret"
         self.current_word = None
-        if word.force_inline:
-            self._force_inline_colon(word, tok)
-        elif self.native_control_flow:
-            self.emitter.commit_buffered()
-        else:
-            self._try_inline_colon(word)
-
-    def _force_inline_colon(self, word: Word, tok: Token) -> None:
-        self._reject_self_recursion(word, tok)
-        reason = self._first_non_inlinable_cell(word.body)
-        if reason is not None:
-            raise CompileError(
-                f":: word '{word.name}' cannot be inlined: {reason}", tok,
-            )
-        self.emitter.discard_buffered()
-        self._emit_force_inline_body(word, tok)
-        word.inlined = True
-
-    def _emit_force_inline_body(self, word: Word, tok: Token) -> None:
-        """Walk the word's IR cells and emit native bytes at the current asm
-        position. Forward branches are placed via the emitter's placeholder
-        helpers and patched once their target labels are reached. The body
-        ends with a threaded NEXT dispatch so the spliced fragment returns
-        control to the caller's threaded interpreter."""
-        label_addrs: dict[int, int] = {}
-        forward_fixups: list[tuple[int, int]] = []
-        body = word.body
-        if body and isinstance(body[-1], PrimRef) and body[-1].name == "exit":
-            body = body[:-1]
-        for cell in body:
-            if isinstance(cell, Literal):
-                self._emit_force_inline_literal(cell, tok)
-            elif isinstance(cell, PrimRef):
-                self._emit_force_inline_primitive(cell, tok)
-            elif isinstance(cell, Label):
-                label_addrs[cell.id] = self.asm.here
-            elif isinstance(cell, Branch):
-                self._emit_force_inline_branch(
-                    cell, tok, label_addrs, forward_fixups,
-                )
-            else:
-                raise CompileError(
-                    f":: word '{word.name}' cannot be inlined: "
-                    f"unsupported cell {type(cell).__name__}",
-                    tok,
-                )
-        for offset, target_id in forward_fixups:
-            target_addr = label_addrs.get(target_id)
-            if target_addr is None:
-                raise CompileError(
-                    f":: word '{word.name}' has unresolved forward branch "
-                    f"to label {target_id}",
-                    tok,
-                )
-            self._patch_placeholder(offset, target_addr)
-        self.asm.dispatch()
-
-    def _emit_force_inline_literal(self, cell: Literal, tok: Token) -> None:
-        self.emitter.source_map.append(
-            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
-        )
-        self.asm.push_hl()
-        self.asm.ld_hl_nn(cell.value & 0xFFFF)
-
-    def _emit_force_inline_primitive(self, cell: PrimRef, tok: Token) -> None:
-        self.emitter.source_map.append(
-            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
-        )
-        name = cell.name.lower()
-        if name == "halt":
-            self.asm.halt()
-            return
-        creator = self._creators_by_name.get(name)
-        if creator is None or not emit_native_primitive_body(creator, self.asm):
-            raise CompileError(
-                f":: cannot re-emit primitive '{cell.name}' at splice address",
-                tok,
-            )
-
-    def _emit_force_inline_branch(
-        self, cell: Branch, tok: Token,
-        label_addrs: dict[int, int],
-        forward_fixups: list[tuple[int, int]],
-    ) -> None:
-        if not isinstance(cell.target, Label):
-            raise CompileError(
-                f":: branch with non-label target is not supported", tok,
-            )
-        target_id = cell.target.id
-        kind = cell.kind
-        if target_id in label_addrs:
-            self.emitter.compile_native_branch_to_label(
-                kind, label_addrs[target_id], target_id, tok,
-            )
-            return
-        if kind == "branch":
-            offset = self.emitter.compile_native_branch_placeholder(tok)
-        elif kind == "0branch":
-            offset = self.emitter.compile_native_zbranch_placeholder(tok)
-        else:
-            raise CompileError(
-                f":: forward branch kind '{kind}' is not supported", tok,
-            )
-        forward_fixups.append((offset, target_id))
-
-    def _reject_self_recursion(self, word: Word, tok: Token) -> None:
-        for cell in word.body:
-            if isinstance(cell, ColonRef) and cell.name == word.name:
-                raise CompileError(
-                    f"recursive :: expansion in '{cell.name}'", tok,
-                )
-
-    def _first_non_inlinable_cell(self, body: list[Cell]) -> str | None:
-        if not body:
-            return "empty body (missing EXIT terminator)"
-        if not (isinstance(body[-1], PrimRef) and body[-1].name == "exit"):
-            return "missing EXIT terminator"
-        for i, cell in enumerate(body[:-1]):
-            if isinstance(cell, (Literal, Label)):
-                continue
-            if isinstance(cell, PrimRef):
-                name = cell.name.lower()
-                if name == "halt":
-                    continue
-                if name not in self._creators_by_name:
-                    return f"unknown primitive '{cell.name}' at position {i}"
-                continue
-            if isinstance(cell, Branch):
-                continue
-            if isinstance(cell, ColonRef):
-                return (
-                    f"calls colon word '{cell.name}' at position {i}; "
-                    f"nested calls are not yet inlinable"
-                )
-            if isinstance(cell, StringRef):
-                return f"string reference at position {i} is not inlinable"
-            return f"unsupported cell {type(cell).__name__} at position {i}"
-        return None
+        self._try_inline_colon(word)
 
     def _try_inline_colon(self, word: Word) -> None:
         plan = self._inline_plan_for(word)
@@ -498,20 +293,7 @@ class Compiler:
         return plan_colon_inlining(word, self.words, self._inline_context)
 
     def _compile_literal(self, value: int, tok: Token) -> None:
-        if self.native_control_flow:
-            self._compile_literal_native(value, tok)
-        else:
-            self.emitter.compile_literal(value, tok)
-
-    def _compile_literal_native(self, value: int, tok: Token) -> None:
-        masked = value & 0xFFFF
-        self.emitter.source_map.append(
-            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
-        )
-        # TOS-in-HL convention: push old TOS first, then load new TOS into HL.
-        self.asm.push_hl()
-        self.asm.ld_hl_nn(masked)
-        self._append_ir(Literal(masked))
+        self.emitter.compile_literal(value, tok)
 
     def _emit_cell(self, value: int | str, tok: Token) -> None:
         self.emitter.emit_cell(value, tok)
@@ -523,44 +305,7 @@ class Compiler:
         return self.emitter.allocate_label()
 
     def _emit_word_ref(self, word: Word, tok: Token) -> None:
-        if self.native_control_flow:
-            self._emit_word_ref_native(word, tok)
-        else:
-            self.emitter.emit_word_ref(word, tok)
-
-    def _emit_word_ref_native(self, word: Word, tok: Token) -> None:
-        """Splice the primitive's body bytes at the current address. Re-emits
-        each primitive against a temp Asm whose origin equals the splice
-        address, so internal absolute jumps (e.g. the `jp_p` in `<` and `>`)
-        resolve correctly."""
-        if word.kind != "prim":
-            raise CompileError(
-                f"{word.kind} '{word.name}' is not yet supported in "
-                f"native_control_flow mode (only primitives are emitted "
-                f"natively in this phase)",
-                tok,
-            )
-        name = word.name.lower()
-        self.emitter.source_map.append(
-            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
-        )
-        self._append_ir(PrimRef(word.name))
-        if name == "halt":
-            self.asm.halt()
-            return
-        creator = self._creators_by_name.get(name)
-        if creator is None:
-            raise CompileError(
-                f"primitive '{word.name}' has no native re-emitter "
-                f"(unknown to native_control_flow mode)",
-                tok,
-            )
-        if not emit_native_primitive_body(creator, self.asm):
-            raise CompileError(
-                f"primitive '{word.name}' cannot be safely re-emitted "
-                f"in native_control_flow mode",
-                tok,
-            )
+        self.emitter.emit_word_ref(word, tok)
 
     def _next_token(self, context_tok: Token) -> Token:
         if not self._tokens.has_more():
@@ -580,14 +325,14 @@ class Compiler:
         return code_addr
 
     def _emit_variable_shim(self) -> tuple[int, int]:
-        code_addr = self._main_asm.here
-        self._main_asm.push_hl()
-        self._main_asm.ld_hl_nn(0)
-        fixup = len(self._main_asm.code) - 2
-        self._main_asm.jp("NEXT")
+        code_addr = self.asm.here
+        self.asm.push_hl()
+        self.asm.ld_hl_nn(0)
+        fixup = len(self.asm.code) - 2
+        self.asm.jp("NEXT")
         data_addr = self.asm.here
-        self._main_asm.code[fixup] = data_addr & 0xFF
-        self._main_asm.code[fixup + 1] = (data_addr >> 8) & 0xFF
+        self.asm.code[fixup] = data_addr & 0xFF
+        self.asm.code[fixup + 1] = (data_addr >> 8) & 0xFF
         return code_addr, data_addr
 
     # --- directives ---
@@ -639,41 +384,6 @@ class Compiler:
         for _ in range(count):
             self.asm.byte(0)
 
-    @directive("in-bank")
-    def _directive_in_bank(self, _compiler: Compiler, tok: Token) -> None:
-        bank = self._host_pop(tok)
-        if bank not in range(8):
-            raise CompileError(
-                f"in-bank: bank {bank} must be in range 0..7", tok,
-            )
-        self._activate_bank(bank)
-
-    @directive("end-bank")
-    def _directive_end_bank(self, _compiler: Compiler, tok: Token) -> None:
-        if self._active_bank is None:
-            raise CompileError(
-                "end-bank without a matching in-bank", tok,
-            )
-        self._deactivate_bank()
-
-    def _activate_bank(self, bank: int) -> None:
-        if bank not in self._bank_asms:
-            self._bank_asms[bank] = Asm(0xC000, inline_next=self.inline_next)
-        self._active_bank = bank
-        self.emitter.asm = self._bank_asms[bank]
-
-    def _deactivate_bank(self) -> None:
-        self._active_bank = None
-        self.emitter.asm = self._main_asm
-
-    def bank_image(self, bank: int) -> bytes:
-        if bank not in self._bank_asms:
-            return b""
-        return bytes(self._bank_asms[bank].code)
-
-    def banks(self) -> dict[int, bytes]:
-        return {b: bytes(a.code) for b, a in self._bank_asms.items() if a.code}
-
     # --- control stack helpers ---
 
     def _push_control(self, tag: str, value: Any) -> None:
@@ -692,13 +402,9 @@ class Compiler:
             raise CompileError(str(e), tok) from e
 
     def _compile_zbranch_placeholder(self, tok: Token) -> int:
-        if self.native_control_flow:
-            return self.emitter.compile_native_zbranch_placeholder(tok)
         return self.emitter.compile_zbranch_placeholder(tok)
 
     def _compile_branch_placeholder(self, tok: Token) -> int:
-        if self.native_control_flow:
-            return self.emitter.compile_native_branch_placeholder(tok)
         return self.emitter.compile_branch_placeholder(tok)
 
     def _patch_placeholder(self, offset: int, target: int) -> None:
@@ -706,14 +412,7 @@ class Compiler:
 
     def _compile_branch_to_label(self, kind: str, target_addr: int,
                                  target_label_id: int, tok: Token) -> None:
-        if self.native_control_flow:
-            self.emitter.compile_native_branch_to_label(
-                kind, target_addr, target_label_id, tok,
-            )
-        else:
-            self.emitter.compile_branch_to_label(
-                kind, target_addr, target_label_id, tok,
-            )
+        self.emitter.compile_branch_to_label(kind, target_addr, target_label_id, tok)
 
     # --- immediate words: BEGIN/AGAIN ---
 
@@ -802,14 +501,6 @@ class Compiler:
 
     @immediate("leave")
     def _immediate_leave(self, _compiler: Compiler, tok: Token) -> None:
-        self._reject_native_unsupported("LEAVE", tok)
-        if (self.current_word
-                and self.current_word in self.words
-                and self.words[self.current_word].force_inline):
-            raise CompileError(
-                f"LEAVE is not supported inside :: definitions "
-                f"(in '{self.current_word}')", tok,
-            )
         frame = self.control_stack.find_innermost("do")
         if frame is None:
             raise CompileError("LEAVE outside DO/LOOP", tok)
@@ -934,23 +625,17 @@ class Compiler:
     # --- build ---
 
     def include_stdlib(self, path: object | None = None) -> None:
-        source = Path(path) if path is not None else _bundled_stdlib_dir() / "core.fs"
-        self.include_resolver.mark_seen(source.resolve())
-        self.compile_source(source.read_text(), source=str(source))
+        if path is None:
+            path = Path(__file__).resolve().parent.parent.parent / "stdlib" / "core.fs"
+        else:
+            path = Path(path)
+        self.include_resolver.mark_seen(path.resolve())
+        self.compile_source(path.read_text(), source=str(path))
 
     def compile_main_call(self) -> None:
         if "main" not in self.words:
             raise CompileError("no 'main' word defined")
         self.string_pool.flush(self.asm)
-        if self.native_control_flow:
-            self._emit_native_start()
-        else:
-            self._emit_threaded_start()
-        self.words["_start"] = Word(
-            name="_start", address=self.asm.labels["_start"], kind="prim"
-        )
-
-    def _emit_threaded_start(self) -> None:
         main_body_addr = self.asm.here
         self.asm.word(self.words["main"].address)
         halt_addr = self.words["halt"].address
@@ -961,16 +646,13 @@ class Compiler:
         self.asm.ld_ix_nn(main_body_addr)
         next_addr = self.words["next"].address
         self.asm.jp(next_addr)
-
-    def _emit_native_start(self) -> None:
-        self.asm.label("_start")
-        self.asm.ld_sp_nn(self.data_stack_top)
-        self.asm.ld_iy_nn(self.return_stack_top)
-        self.asm.jp(self.words["main"].address)
+        self.words["_start"] = Word(
+            name="_start", address=self.asm.labels["_start"], kind="prim"
+        )
 
     def build(self) -> bytes:
         image = self.asm.resolve()
-        if os.getenv("ZT_VERIFY_IR") == "1" and not self.native_control_flow:
+        if os.getenv("ZT_VERIFY_IR") == "1":
             self._verify_ir(image)
         return image
 
@@ -1011,14 +693,12 @@ def compile_and_run(
     optimize: bool = True,
     inline_next: bool = True,
     inline_primitives: bool = True,
-    native_control_flow: bool = False,
 ) -> list[int]:
     from zt.sim import Z80, _read_data_stack
 
     c = Compiler(
         origin=origin, optimize=optimize,
         inline_next=inline_next, inline_primitives=inline_primitives,
-        native_control_flow=native_control_flow,
     )
     c.compile_source(source)
     c.compile_main_call()
@@ -1037,13 +717,11 @@ def compile_and_run_with_output(
     source: str,
     origin: int = DEFAULT_ORIGIN,
     input_buffer: bytes = b"",
-    pressed_keys: set[int] | None = None,
     max_ticks: int = 10_000_000,
     stdlib: bool = False,
     optimize: bool = True,
     inline_next: bool = True,
     inline_primitives: bool = True,
-    native_control_flow: bool = False,
 ) -> tuple[list[int], bytes]:
     from zt.sim import (
         SPECTRUM_FONT_BASE,
@@ -1056,7 +734,6 @@ def compile_and_run_with_output(
     c = Compiler(
         origin=origin, optimize=optimize,
         inline_next=inline_next, inline_primitives=inline_primitives,
-        native_control_flow=native_control_flow,
     )
     if stdlib:
         c.include_stdlib()
@@ -1068,8 +745,6 @@ def compile_and_run_with_output(
     m.load(origin, image)
     m.load(SPECTRUM_FONT_BASE, TEST_FONT)
     m.input_buffer = bytearray(input_buffer)
-    if pressed_keys is not None:
-        m.pressed_keys = set(pressed_keys)
     m.pc = c.words["_start"].address
     m.run(max_ticks=max_ticks)
     if not m.halted:
@@ -1092,13 +767,11 @@ def build_from_source(
     optimize: bool = True,
     inline_next: bool = True,
     inline_primitives: bool = True,
-    native_control_flow: bool = False,
 ) -> tuple[bytes, Compiler]:
     c = Compiler(
         origin=origin, data_stack_top=data_stack_top,
         return_stack_top=return_stack_top, optimize=optimize,
         inline_next=inline_next, inline_primitives=inline_primitives,
-        native_control_flow=native_control_flow,
     )
     c.compile_source(source)
     c.compile_main_call()

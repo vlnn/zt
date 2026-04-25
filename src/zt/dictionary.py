@@ -1,14 +1,11 @@
-"""
-`Dictionary`: the compiler's symbol table (name → `Word`), wrapping a plain dict with the lookup / registration API the compiler uses.
-"""
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Iterator
 
-from zt.assemble.asm import Asm
+from zt.asm import Asm
 
 if TYPE_CHECKING:
-    from zt.compile.compiler import Word
+    from zt.compiler import Word
 
 
 class Dictionary:
@@ -47,7 +44,7 @@ class Dictionary:
         return self._words.keys()
 
     def register_primitives(self, asm: Asm) -> None:
-        from zt.compile.compiler import Word
+        from zt.compiler import Word
         for name, addr in asm.labels.items():
             if name.startswith("_"):
                 continue
@@ -58,7 +55,6 @@ class Dictionary:
 
     def redefinition_warning(
         self, name: str, source_file: str, source_line: int,
-        *, force_inline: bool = False,
     ) -> str | None:
         previous = self._words.get(name)
         if previous is None or previous.kind != "colon":
@@ -67,14 +63,7 @@ class Dictionary:
             return None
         here = f"{source_file}:{source_line}"
         there = f"{previous.source_file}:{previous.source_line}"
-        prev_kind = "::" if getattr(previous, "force_inline", False) else ":"
-        new_kind = "::" if force_inline else ":"
-        if prev_kind == new_kind:
-            return (
-                f"{here}: warning: redefining '{name}' "
-                f"(first defined at {there})"
-            )
         return (
-            f"{here}: warning: redefining '{name}' as {new_kind} "
-            f"(was {prev_kind} at {there})"
+            f"{here}: warning: redefining '{name}' "
+            f"(first defined at {there})"
         )
