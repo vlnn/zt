@@ -197,8 +197,9 @@ class TestInliningWhitelist:
 
     def test_unpack_nibbles_is_inlinable(self):
         assert "unpack_nibbles" in INLINABLE_PRIMITIVES, \
-            "unpack-nibbles should be on the inline whitelist (pure straight-line, no jumps)"
+            "unpack-nibbles should be on the inline whitelist (small, no jumps)"
 
-    def test_unpack_2bits_is_inlinable(self):
-        assert "unpack_2bits" in INLINABLE_PRIMITIVES, \
-            "unpack-2bits should be on the inline whitelist (pure straight-line, no jumps)"
+    def test_unpack_2bits_is_NOT_inlinable(self):
+        assert "unpack_2bits" not in INLINABLE_PRIMITIVES, \
+            "unpack-2bits exceeds the 20-byte body cap (30 bytes); off the paste whitelist " \
+            "but still callable from `::` bodies via normal primitive dispatch"

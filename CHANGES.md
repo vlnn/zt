@@ -14,8 +14,18 @@ plus the simulator and opcode-table additions they needed.
 - **`2BIT-DOT+! ( wptr aptr count addr -- )`** — accumulating dot product over
   `count` weights. Application-specific kernel, lives in core for now.
 
-All three are registered in `PRIMITIVES` and on the `INLINABLE_PRIMITIVES`
-whitelist (except `2BIT-DOT+!`, which has internal jumps and a loop).
+All four are registered in `PRIMITIVES`. Of these, only `UNPACK-NIBBLES` is on
+the `INLINABLE_PRIMITIVES` paste whitelist:
+
+- `UNPACK-NIBBLES` — 12 bytes, no jumps. ✓
+- `UNPACK-2BITS` — 30 bytes; exceeds the 20-byte size policy. Off whitelist.
+- `2BITMULADD` — uses absolute `jp_m` for the negative branch, relocation-unsafe.
+  Off whitelist (same category as `abs`, `min`, `max`, `less_than`).
+- `2BIT-DOT+!` — internal loop with `call`/`ret`. Off whitelist.
+
+The three off-whitelist primitives still work fine inside `::` bodies — they're
+called via normal NEXT dispatch, not pasted. Profile shows this is performant:
+`mac4-fast` calls `2BITMULADD` from inside `::` and lands at 592 T-states/MAC.
 
 ## Opcode table additions
 

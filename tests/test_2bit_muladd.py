@@ -130,6 +130,7 @@ class TestSemanticsForceInline:
 
 class TestInlineWhitelist:
 
-    def test_2bit_muladd_is_inlinable(self):
-        assert "2bit_muladd" in INLINABLE_PRIMITIVES, \
-            "2bitmuladd should be on the inline whitelist (straight-line entry, internal jumps but no NEXT)"
+    def test_2bit_muladd_is_NOT_inlinable(self):
+        assert "2bit_muladd" not in INLINABLE_PRIMITIVES, \
+            "2bitmuladd uses absolute `jp_m` for the negative-weight branch; relocation-unsafe " \
+            "to paste, so off the whitelist. Still callable from `::` bodies via normal dispatch."

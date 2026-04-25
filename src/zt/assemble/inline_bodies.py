@@ -30,8 +30,7 @@ INLINABLE_PRIMITIVES: frozenset[str] = frozenset({
     "border",
     "lshift",
     "equals",
-    "unpack_nibbles", "unpack_2bits",
-    "2bit_muladd",
+    "unpack_nibbles",
 })
 
 
