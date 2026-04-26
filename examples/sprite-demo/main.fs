@@ -41,7 +41,6 @@ require lib/sprites-data.fs
 
 : main
     7 0 cls
-    init-ship-table
     lock-sprites
     demo-blit8
     demo-blit8c

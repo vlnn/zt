@@ -56,7 +56,6 @@ class TestSpriteDemoCompiles:
     @pytest.mark.parametrize("word", [
         "smiley", "smiley-shifted",
         "ship-nose", "ship-body", "ship-tail", "ship-table",
-        "init-ship-table",
         "demo-blit8", "demo-blit8c", "demo-blit8x", "demo-blit8xc", "demo-multi",
         "main",
     ])
