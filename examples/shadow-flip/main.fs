@@ -48,27 +48,35 @@ $D800 constant shadow-attrs
 $07 constant page-normal-visible
 $0F constant page-shadow-visible
 
+\ fill the attribute area with attr-byte and zero the pixel area for one screen
 : paint-solid  ( bitmap-addr attrs-addr attr-byte -- )
     >r
     attrs-size r> fill
     bitmap-size 0 fill ;
 
+\ paint the normal screen solid bright white
 : paint-normal  ( -- )
     \ $78 = bright-white paper, black ink; pixels 0 → solid white
     normal-bitmap normal-attrs $78 paint-solid ;
 
+\ paint the shadow screen solid bright red
 : paint-shadow  ( -- )
     \ $50 = bright-red paper, black ink; pixels 0 → solid red
     shadow-bitmap shadow-attrs $50 paint-solid ;
 
+\ select the normal screen as the visible one
 : show-normal  ( -- )  page-normal-visible raw-bank! ;
+\ select the shadow screen as the visible one
 : show-shadow  ( -- )  page-shadow-visible raw-bank! ;
 
 variable dummy
+\ tick the dummy counter once — units of work for the busy loop
 : delay-tick  ( -- )  dummy @ 1 + dummy ! ;
+\ busy-wait roughly one second
 : wait-one-second  ( -- )
     10000 0 do  delay-tick  loop ;
 
+\ entry point: paint both screens, then alternate them every second
 : main
     7 bank!
     paint-normal

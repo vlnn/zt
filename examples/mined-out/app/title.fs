@@ -13,42 +13,56 @@ require state.fs
 require board.fs
 require hud.fs
 
+\ flush pending input then block until any key is pressed
 : press-any-key  ( -- )       drain-keys wait-key drop ;
+\ position the cursor at column 0 of the given row
 : at-row         ( row -- )   0 swap at-xy ;
+\ set border + colours for the title and mission screens (white-on-blue)
 : intro-colors   ( -- )       1 border  1 7 cls ;
+\ set border + colours for the instructions screen (black-on-white)
 : instr-colors   ( -- )       1 border  7 0 cls ;
 
+\ draw the "PRESS A KEY" prompt at the bottom of the screen
 : press-key-prompt  ( -- )    21 21 at-xy  ." PRESS A KEY" ;
 
+\ short five-note jingle played as the title appears
 : intro-chirp    ( -- )
     2 30 beep  1 20 beep
     2 26 beep  3 26 beep  2 18 beep ;
 
+\ ascending sweep accompanying the mine-frame title reveal
 : title-beeps    ( -- )
     80 0 do  3 60 i 2 / - beep  loop ;
 
+\ draw a full-width row of mine glyphs at row
 : mine-bar       ( row -- )
     at-row  32 0 do  ch-mine emit  loop ;
 
+\ draw mine glyphs in columns 0 and 31 of row, forming the frame's vertical edges
 : frame-sides-row  ( row -- )
     dup  0 swap at-xy ch-mine emit
          31 swap at-xy ch-mine emit ;
 
+\ draw the vertical sides of the title's mine frame on rows 8..10
 : frame-sides    ( -- )
     11 8 do i frame-sides-row loop ;
 
+\ draw the rectangle of mine glyphs that surrounds the title
 : draw-mine-frame  ( -- )
     7 mine-bar
     frame-sides
     11 mine-bar ;
 
+\ render the "MINED OUT!" title inside the mine frame
 : title-in-frame  ( -- )
    11 9 at-xy  ." MINED OUT!" ;
 
+\ print the two-line tagline below the title
 : tagline        ( -- )
     14 at-row  ."  OR RESCUE BILL THE WORM FROM"
     15 at-row  ."        CERTAIN OLD AGE" ;
 
+\ Quicksilva-presents title screen — BASIC line 7000
 : quicksilva-screen  ( -- )
     intro-colors
     0 at-row  ."     QUICKSILVA PRESENTS ...."
@@ -76,16 +90,20 @@ require hud.fs
 
 create bill-scroll-buf   85 allot
 
+\ fill the scroll buffer with spaces and place the player and bug glyphs
 : init-bill-scroll  ( -- )
     bill-scroll-buf bill-scroll-len 32 fill
     ch-player bill-scroll-buf bill-player-offset + c!
     ch-bug    bill-scroll-buf bill-bug-offset    + c! ;
 
+\ render a 32-character window of the scroll buffer at the given row
 : bill-scroll-frame  ( offset row -- )
     at-row  bill-scroll-buf + 32 type ;
 
+\ short tick beep played each scroll step
 : bill-scroll-beep   ( -- )   1 60 beep ;
 
+\ animate Bill running across the given row, beep-throttled
 : scroll-bill-row  ( row -- )
     init-bill-scroll
     bill-scroll-steps 0 do
@@ -98,6 +116,7 @@ create bill-scroll-buf   85 allot
 \ Screen 2: mission briefing, then Bill scrolls across row 6.
 \ ---------------------------------------------------------------------------
 
+\ mission briefing screen — BASIC line 7081
 : mission-screen  ( -- )
     instr-colors
     0  at-row  ."   (c) MINED OUT!  by Ian Andrew"
@@ -117,6 +136,7 @@ create bill-scroll-buf   85 allot
 \ Screen 3: keys + adjacency + tips.
 \ ---------------------------------------------------------------------------
 
+\ controls and gameplay tips screen — BASIC line 7200+
 : tips-screen    ( -- )
     instr-colors
     0  at-row  ."            CONTROLS"
@@ -133,6 +153,7 @@ create bill-scroll-buf   85 allot
     press-key-prompt
     press-any-key ;
 
+\ show all three intro screens in order
 : show-intro     ( -- )
     quicksilva-screen
     mission-screen

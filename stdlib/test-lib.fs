@@ -7,6 +7,7 @@ variable _result
 variable _expected
 variable _actual
 
+\ fail the test if actual does not equal expected, recording both for diagnosis
 : assert-eq  ( actual expected -- )
     2dup = if
         2drop
@@ -16,8 +17,10 @@ variable _actual
         1 _result !
     then ;
 
+\ fail the test if flag is zero
 : assert-true  ( flag -- )
     if else 1 _result ! then ;
 
+\ fail the test if flag is non-zero
 : assert-false  ( flag -- )
     if 1 _result ! then ;

@@ -38,6 +38,7 @@ create wave
 variable phase
 variable shadow-visible?     \ 0 = ULA on normal screen, nonzero = on shadow
 
+\ sample the triangle wave at index i (mod 32)
 : wave@  ( i -- n )  mod32 wave + c@ ;
 
 \ Plasma cell colour: XOR of two wave values → 0..7, placed into the paper
@@ -50,11 +51,14 @@ variable shadow-visible?     \ 0 = ULA on normal screen, nonzero = on shadow
     3 lshift                       ( paper-bits )
     $40 or ;                       \ bright bit
 
+\ linear offset within an attribute area for cell (col, row)
 : attr-offset  ( col row -- offset )  scr-cols * + ;
 
+\ base address of the attribute area for whichever screen is currently hidden
 : hidden-attrs  ( -- attrs-base )
     shadow-visible? @ if normal-attrs else shadow-attrs then ;
 
+\ render one full plasma frame into the hidden buffer
 : draw-plasma  ( -- )
     hidden-attrs                            ( base )
     scr-rows 0 do
@@ -65,6 +69,7 @@ variable shadow-visible?     \ 0 = ULA on normal screen, nonzero = on shadow
     loop
     drop ;
 
+\ swap visible and hidden buffers via $7FFD bit 3
 : flip  ( -- )
     shadow-visible? @ if
         page-normal-visible raw-bank!
@@ -74,8 +79,10 @@ variable shadow-visible?     \ 0 = ULA on normal screen, nonzero = on shadow
         1 shadow-visible? !
     then ;
 
+\ advance the phase by one frame
 : step  ( -- )  1 phase +! ;
 
+\ entry point: page bank 7 into slot 3 and run the draw/flip/step loop
 : main
     7 bank!                    \ bank 7 into slot 3, stays there for ever
     0 shadow-visible? !        \ ULA currently on normal (matches $7FFD = $07)

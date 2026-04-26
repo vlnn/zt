@@ -10,6 +10,7 @@
 
 require app/mined.fs
 
+\ entry point: show intro, then loop playing levels until quit
 : main
     init-game
     show-intro
