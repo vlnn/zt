@@ -215,6 +215,46 @@ Both `--source file.fs` (compile-then-run) and `--image file.sna` (with a
 sibling `.map`) are accepted; `--json` emits the same data for scripting.
 See `zt profile --help` for the full flag list.
 
+### Showcase: a language model on a stock 48K
+
+`examples/zlm-tinychat-48k/` runs a small conversational language model
+(256→256→192→128→40 MLP, 2-bit packed weights, ~35 KB of parameters
+total) on an unmodified 48K Spectrum. Type a query, press ENTER, get a
+character-by-character reply:
+
+
+https://github.com/user-attachments/assets/65cb033d-32ba-4934-9465-9a8b3b5f6261
+
+
+The model is HarryR's [Z80-μLM](https://github.com/HarryR/z80ai) —
+a delightful piece of work that quantizes a tiny chatbot down to where
+it'll comfortably run inside a Z80's 64 KB address space. The trigram
+hash encoder (input → 128 buckets, typo-tolerant and word-order
+invariant) is what gives the model its surprising "vibe" matching
+behaviour at that parameter budget. Huge thanks and full credit to
+HarryR for the model itself, the training pipeline, and the original
+ZX Spectrum target work — without that foundation this example
+wouldn't exist. Go look at the upstream project.
+
+The zt-side contribution is just the Forth port and the memory-map
+arrangement that makes the model fit on a stock 48K (rather than the
+128K a more naive layout would need). Read
+`examples/zlm-tinychat-48k/README.md` for the layout details — the gist
+is that activations get hoisted to fixed RAM addresses outside the
+compiled image, biases shrink from 16-bit to 8-bit signed, and the
+third-layer activation buffer parks in the 48K printer-buffer region
+(plain RAM that the display hardware never reads), which is what closes
+the budget without scribbling on the screen during inference. Final
+image: 40315 bytes; usable budget: 40416. 101 bytes of headroom.
+
+Build it the same way you'd build any other example:
+
+```
+make build/zlm-tinychat-48k.sna
+```
+
+Load the resulting `.sna` in Fuse, ZEsarUX, or a real 48K via divMMC.
+
 ---
 
 ## Part 2 — How it works (internal reasoning)
@@ -395,5 +435,16 @@ under `examples/{plasma-128k,bank-rotator,bank-table,shadow-flip}`, and
 
 Most of the open items above are addressed in `docs/COMPILER-ROADMAP.md`
 and `docs/FORTH-ROADMAP.md`.
+
+## Credits
+
+- **HarryR** — for [Z80-μLM](https://github.com/HarryR/z80ai), the tiny
+  quantized language model that makes `examples/zlm-tinychat-48k/`
+  possible. The model architecture, the trigram-hash input encoder, the
+  quantization-aware training pipeline, and the original ZX Spectrum
+  port are all his work; the zt-side contribution is just a Forth
+  reimplementation and a memory-map rearrangement to fit a stock 48K.
+  Sincere thanks for releasing such a fun and well-documented project,
+  and warm regards.
 
 [![Made in Ukraine](https://img.shields.io/badge/made_in-Ukraine-ffd700.svg?labelColor=0057b7)](https://stand-with-ukraine.pp.ua)
