@@ -343,6 +343,16 @@ def _write_output(image: bytes, args: argparse.Namespace,
         args.output.write_bytes(sna)
         return
     if fmt == "sna":
+        bank_data = compiler.banks()
+        if bank_data:
+            banks_listed = ", ".join(str(b) for b in sorted(bank_data))
+            print(
+                f"error: source has data in bank(s) {banks_listed} but the "
+                f"48k .sna format has no banks; rebuild with --target 128k "
+                f"or rearrange the data into the main image",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         sna = build_sna(image, args.origin, args.dstack,
                         border=args.border,
                         entry=compiler.words["_start"].address)
