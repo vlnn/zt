@@ -7,6 +7,7 @@ import pytest
 
 from zt.assemble.asm import Asm
 from zt.sim import ForthMachine, Z80, decode_screen_cell
+from zt.test_facade import Run
 
 
 @pytest.fixture
@@ -32,10 +33,6 @@ class TestNewAsmOpcodes:
 
 
 class TestTypePrimitive:
-
-    def _write_string(self, fm: ForthMachine, addr: int, text: bytes) -> None:
-        fm.run([])
-        fm._last_m.mem[addr:addr + len(text)] = text
 
     def test_type_single_char(self, fm):
         addr = 0xE000
@@ -91,9 +88,8 @@ class TestTypePrimitive:
             code.extend([fm.label("LIT"), ch, fm.label("LIT"), 0xE000 + i, fm.label("C_STORE")])
         code.extend([fm.label("LIT"), 0xE000, fm.label("LIT"), 2, fm.label("TYPE")])
         fm.run(code)
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[col_addr] == 2, (
-            "TYPE of 2-char string should leave cursor at col 2"
+        assert Run.of(fm).cursor() == (0, 2), (
+            "TYPE of 2-char string should leave cursor at row 0, col 2"
         )
 
     def test_type_handles_cr_in_buffer(self, fm):
@@ -248,20 +244,18 @@ class TestEmitRefactorInvariants:
 
     def test_emit_cr_unchanged(self, fm):
         fm.run([fm.label("LIT"), 13, fm.label("EMIT")])
-        row_addr = fm._prim_asm.labels["_emit_cursor_row"]
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[row_addr] == 1, "CR should advance row"
-        assert fm._last_m.mem[col_addr] == 0, "CR should reset col"
+        assert Run.of(fm).cursor() == (1, 0), (
+            "CR should advance row and reset col to 0"
+        )
 
     def test_emit_wrap_unchanged(self, fm):
         cells = []
         for _ in range(33):
             cells.extend([fm.label("LIT"), 65, fm.label("EMIT")])
         fm.run(cells)
-        row_addr = fm._prim_asm.labels["_emit_cursor_row"]
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[row_addr] == 1, "after 33 EMITs row should be 1"
-        assert fm._last_m.mem[col_addr] == 1, "after 33 EMITs col should be 1"
+        assert Run.of(fm).cursor() == (1, 1), (
+            "after 33 EMITs cursor should be at row 1, col 1"
+        )
 
     def test_emit_char_core_is_exposed(self, fm):
         assert "_emit_char_core" in fm._prim_asm.labels, (

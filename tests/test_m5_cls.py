@@ -7,6 +7,7 @@ import pytest
 
 from zt.compile.compiler import Compiler, compile_and_run_with_output
 from zt.sim import ForthMachine, SPECTRUM_ATTR_BASE, SPECTRUM_SCREEN_BASE
+from zt.test_facade import Run
 
 
 SPECTRUM_PIXEL_BYTES = 6144
@@ -30,17 +31,15 @@ class TestResetCursorPrimitive:
             cells.extend([fm.label("LIT"), 65, fm.label("EMIT")])
         cells.append(fm.label("RESET_CURSOR"))
         fm.run(cells)
-        row_addr = fm._prim_asm.labels["_emit_cursor_row"]
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[row_addr] == 0, "reset-cursor should zero row"
-        assert fm._last_m.mem[col_addr] == 0, "reset-cursor should zero col"
+        assert Run.of(fm).cursor() == (0, 0), (
+            "reset-cursor should zero the emit cursor"
+        )
 
     def test_next_emit_starts_at_top_left(self, fm):
         cells = [fm.label("LIT"), 88, fm.label("EMIT"), fm.label("RESET_CURSOR"),
                  fm.label("LIT"), 65, fm.label("EMIT")]
         fm.run(cells)
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[col_addr] == 1, (
+        assert Run.of(fm).cursor() == (0, 1), (
             "EMIT after reset-cursor should land at col 1 (0, then advance)"
         )
 

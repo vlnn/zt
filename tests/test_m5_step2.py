@@ -7,6 +7,7 @@ import pytest
 
 from zt.assemble.asm import Asm
 from zt.sim import FLAG_C, FLAG_H, FLAG_N, FLAG_Z, ForthMachine, Z80, decode_screen_cell
+from zt.test_facade import Run
 
 
 @pytest.fixture
@@ -189,16 +190,15 @@ class TestEmitSingleChar:
 
     def test_emit_leaves_screen_cell_with_identity_bytes(self, fm):
         fm.run([fm.label("LIT"), 65, fm.label("EMIT")])
-        assert decode_screen_cell(fm._last_m.mem, 0, 0) == 65, (
+        assert Run.of(fm).screen(0, 0) == 65, (
             "EMIT of 65 should write 8 copies of 65 to cell (0, 0)"
         )
 
     def test_emit_advances_cursor_column(self, fm):
         fm.run([fm.label("LIT"), 65, fm.label("EMIT")])
-        row_addr = fm._prim_asm.labels["_emit_cursor_row"]
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[row_addr] == 0, "one EMIT should leave cursor on row 0"
-        assert fm._last_m.mem[col_addr] == 1, "one EMIT should leave cursor at col 1"
+        assert Run.of(fm).cursor() == (0, 1), (
+            "one EMIT should leave cursor at row 0, col 1"
+        )
 
 
 class TestEmitMultipleChars:
@@ -225,13 +225,8 @@ class TestEmitMultipleChars:
         for _ in range(33):
             cells.extend([fm.label("LIT"), 65, fm.label("EMIT")])
         fm.run(cells)
-        row_addr = fm._prim_asm.labels["_emit_cursor_row"]
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[row_addr] == 1, (
-            "after 33 EMITs, cursor should have wrapped to row 1"
-        )
-        assert fm._last_m.mem[col_addr] == 1, (
-            "after 33 EMITs, cursor col should be 1 on row 1"
+        assert Run.of(fm).cursor() == (1, 1), (
+            "after 33 EMITs, cursor should have wrapped to row 1, col 1"
         )
 
 
@@ -245,14 +240,13 @@ class TestEmitCarriageReturn:
 
     def test_cr_moves_cursor_to_next_row_col_zero(self, fm):
         fm.run([fm.label("LIT"), 13, fm.label("EMIT")])
-        row_addr = fm._prim_asm.labels["_emit_cursor_row"]
-        col_addr = fm._prim_asm.labels["_emit_cursor_col"]
-        assert fm._last_m.mem[row_addr] == 1, "CR should advance row by 1"
-        assert fm._last_m.mem[col_addr] == 0, "CR should reset col to 0"
+        assert Run.of(fm).cursor() == (1, 0), (
+            "CR should advance row by 1 and reset col to 0"
+        )
 
     def test_cr_does_not_write_to_screen(self, fm):
         fm.run([fm.label("LIT"), 13, fm.label("EMIT")])
-        assert decode_screen_cell(fm._last_m.mem, 0, 0) == 0, (
+        assert Run.of(fm).screen(0, 0) == 0, (
             "CR should not write a glyph at (0, 0)"
         )
 

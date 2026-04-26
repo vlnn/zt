@@ -17,6 +17,7 @@ from zt.assemble.primitives import (
     create_raw_bank_store,
 )
 from zt.sim import ForthMachine
+from zt.test_facade import Run
 
 
 def _asm_with_next() -> Asm:
@@ -129,9 +130,8 @@ class TestBankStoreEndToEnd:
     def test_bank_store_actually_pages(self, bank):
         fm = ForthMachine(mode="128k")
         fm.run([fm.label("LIT"), bank, fm.label("BANK!"), fm.label("HALT")])
-        m = fm._last_m
-        assert m.port_7ffd & 0x07 == bank, (
-            f"BANK! {bank} should leave the simulator's port_7ffd at {bank}"
+        assert Run.of(fm).paged_bank() == bank, (
+            f"BANK! {bank} should leave the simulator paged to bank {bank}"
         )
 
     def test_bank_store_preserves_upper_bits(self):
@@ -139,19 +139,18 @@ class TestBankStoreEndToEnd:
         fm.run([fm.label("LIT"), 0x18, fm.label("RAW-BANK!"),
                 fm.label("LIT"), 3, fm.label("BANK!"),
                 fm.label("HALT")])
-        m = fm._last_m
-        assert m.port_7ffd & 0xF8 == 0x18, (
+        run = Run.of(fm)
+        assert run.port_7ffd() & 0xF8 == 0x18, (
             "BANK! should preserve upper bits of the shadow (screen/ROM)"
         )
-        assert m.port_7ffd & 0x07 == 3, (
+        assert run.paged_bank() == 3, (
             "BANK! should still place the requested bank bits in the low 3 bits"
         )
 
     def test_bank_store_masks_tos_to_low_three_bits(self):
         fm = ForthMachine(mode="128k")
         fm.run([fm.label("LIT"), 0xFF, fm.label("BANK!"), fm.label("HALT")])
-        m = fm._last_m
-        assert m.port_7ffd & 0x07 == 0x07, (
+        assert Run.of(fm).paged_bank() == 7, (
             "BANK! with TOS=$FF should only use the low 3 bits"
         )
 
@@ -166,9 +165,9 @@ class TestBankStoreEndToEnd:
     def test_bank_store_updates_shadow_at_5b5c(self):
         fm = ForthMachine(mode="128k")
         fm.run([fm.label("LIT"), 5, fm.label("BANK!"), fm.label("HALT")])
-        m = fm._last_m
-        assert m.mem[BANKM_ADDR] == m.port_7ffd, (
-            "BANK! should keep the shadow at $5B5C in sync with port_7ffd"
+        run = Run.of(fm)
+        assert run.bank_shadow() == run.port_7ffd(), (
+            "BANK! should keep the $5B5C shadow in sync with port_7ffd"
         )
 
 
@@ -204,24 +203,21 @@ class TestRawBankStoreEndToEnd:
     def test_raw_bank_store_writes_full_byte(self):
         fm = ForthMachine(mode="128k")
         fm.run([fm.label("LIT"), 0x17, fm.label("RAW-BANK!"), fm.label("HALT")])
-        m = fm._last_m
-        assert m.port_7ffd == 0x17, (
+        assert Run.of(fm).port_7ffd() == 0x17, (
             "RAW-BANK! should write the full byte (bits 0-7) without masking"
         )
 
     def test_raw_bank_store_can_set_lock_bit(self):
         fm = ForthMachine(mode="128k")
         fm.run([fm.label("LIT"), 0x20, fm.label("RAW-BANK!"), fm.label("HALT")])
-        m = fm._last_m
-        assert m.port_7ffd & 0x20 != 0, (
+        assert Run.of(fm).port_7ffd() & 0x20 != 0, (
             "RAW-BANK! with $20 should set the paging lock bit"
         )
 
     def test_raw_bank_store_updates_shadow(self):
         fm = ForthMachine(mode="128k")
         fm.run([fm.label("LIT"), 0x14, fm.label("RAW-BANK!"), fm.label("HALT")])
-        m = fm._last_m
-        assert m.mem[BANKM_ADDR] == 0x14, (
+        assert Run.of(fm).bank_shadow() == 0x14, (
             "RAW-BANK! should store the exact byte in the $5B5C shadow"
         )
 
@@ -275,8 +271,7 @@ class TestOneTwentyEightKQuery:
         fm.run([fm.label("LIT"), 4, fm.label("BANK!"),
                 fm.label("128K?"), fm.label("DROP"),
                 fm.label("HALT")])
-        m = fm._last_m
-        assert m.port_7ffd & 0x07 == 4, (
+        assert Run.of(fm).paged_bank() == 4, (
             "128K? should restore the original paged bank after its probing"
         )
 
@@ -288,8 +283,7 @@ class TestOneTwentyEightKQuery:
                 fm.label("128K?"), fm.label("DROP"),
                 fm.label("LIT"), m_entry, fm.label("C_FETCH"),
                 fm.label("HALT")])
-        result_stack = fm._last_m.mem[m_entry]
-        assert result_stack == 0x5A, (
+        assert Run.of(fm).byte(m_entry) == 0x5A, (
             "128K? on 48K leaves the $5A sentinel at $C000 (no real paging); "
             "document that the probe is destructive. Restoring is impossible "
             "without paging, so callers should run 128K? before seeding RAM"
