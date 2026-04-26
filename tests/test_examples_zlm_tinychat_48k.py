@@ -48,6 +48,7 @@ def compiled(example_dir):
         include_dirs=[example_dir, ROOT / "stdlib"],
         origin=ORIGIN,
         inline_next=False,
+        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     return c
@@ -121,6 +122,7 @@ def screen_text(example_dir):
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
+        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()

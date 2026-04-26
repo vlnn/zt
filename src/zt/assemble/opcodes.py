@@ -136,6 +136,8 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _no("ld_e_ind_hl",  0x5E),
     _no("ld_d_ind_hl",  0x56),
     _no("ld_l_ind_hl",  0x6E),
+    _no("ld_b_ind_hl",  0x46),
+    _no("ld_c_ind_hl",  0x4E),
     _no("ld_ind_hl_e",  0x73),
     _no("ld_ind_hl_d",  0x72),
     _no("ld_ind_hl_a",  0x77),
@@ -214,6 +216,16 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _n ("out_n_a",      0xD3),
     _n ("in_a_n",       0xDB),
     _no("out_c_a",      0xED, 0x79),
+
+    _no("ld_sp_hl",     0xF9),
+    _no("ld_ind_hl_b",  0x70),
+    _no("ld_ind_hl_c",  0x71),
+    _no("ld_c_a",       0x4F),
+    _no("inc_l",        0x2C),
+    _no("dec_l",        0x2D),
+    _n ("add_a_n",      0xC6),
+    _nn("ld_sp_ind_nn", 0xED, 0x7B),
+    _nn("ld_ind_nn_sp", 0xED, 0x73),
 )
 
 

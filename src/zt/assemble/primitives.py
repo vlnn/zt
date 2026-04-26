@@ -4,6 +4,7 @@ Hand-written Z80 bodies for all Forth primitives (`DUP`, `DROP`, `+`, `@`, `BRAN
 from __future__ import annotations
 
 from zt.assemble.asm import Asm
+from zt.assemble.sprite_primitives import SPRITE_PRIMITIVES
 
 SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_KEYBOARD_PORT_LOW = 0xFE
@@ -1657,7 +1658,8 @@ def create_128k_query(a: Asm) -> None:
     a.dispatch()
 
 
-PRIMITIVES = [
+
+CORE_PRIMITIVES = [
     create_next, create_docol, create_exit,
     create_dup, create_drop, create_swap, create_over,
     create_rot, create_nip, create_tuck,
@@ -1701,4 +1703,9 @@ PRIMITIVES = [
     create_wait_frame,
     create_bank_store, create_bank_fetch,
     create_raw_bank_store, create_128k_query,
+]
+
+PRIMITIVES = [
+    *CORE_PRIMITIVES,
+    *SPRITE_PRIMITIVES,
 ]

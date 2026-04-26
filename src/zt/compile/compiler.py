@@ -38,7 +38,7 @@ from zt.compile.peephole import (
     find_match,
     max_pattern_length,
 )
-from zt.assemble.primitives import PRIMITIVES
+from zt.assemble.primitives import CORE_PRIMITIVES, PRIMITIVES
 from zt.compile.string_pool import StringPool
 from zt.compile.token_stream import TokenStream
 from zt.compile.tokenizer import Token, tokenize
@@ -96,6 +96,7 @@ class Compiler:
         inline_next: bool = True,
         inline_primitives: bool = True,
         native_control_flow: bool = False,
+        include_sprites: bool = True,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
@@ -119,6 +120,8 @@ class Compiler:
         self.inline_next: bool = inline_next
         self.inline_primitives: bool = inline_primitives
         self.native_control_flow: bool = native_control_flow
+        self.include_sprites: bool = include_sprites
+        self._primitives: list = list(PRIMITIVES if include_sprites else CORE_PRIMITIVES)
         self._inline_context: InlineContext | None = None
         self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
         self._main_asm: Asm = outer_asm
@@ -141,11 +144,11 @@ class Compiler:
         self.emitter.asm = value
 
     def _register_primitives(self) -> None:
-        for creator in PRIMITIVES:
+        for creator in self._primitives:
             creator(self.asm)
         self.words.register_primitives(self.asm)
         if self.inline_primitives:
-            self._inline_context = InlineContext.build(PRIMITIVES)
+            self._inline_context = InlineContext.build(self._primitives)
         self._creators_by_name: dict[str, Callable] = (
             self._build_creators_by_name()
         )
@@ -156,7 +159,7 @@ class Compiler:
         all the labels (including aliases) it declares."""
         from zt.assemble.inline_bodies import primitive_name as _prim_name
         result: dict[str, Callable] = {}
-        for creator in PRIMITIVES:
+        for creator in self._primitives:
             tmp = Asm(0x0000, inline_next=False)
             tmp.label("NEXT")
             try:
@@ -1012,6 +1015,7 @@ def compile_and_run(
     inline_next: bool = True,
     inline_primitives: bool = True,
     native_control_flow: bool = False,
+    include_sprites: bool = True,
 ) -> list[int]:
     from zt.sim import Z80, _read_data_stack
 
@@ -1019,6 +1023,7 @@ def compile_and_run(
         origin=origin, optimize=optimize,
         inline_next=inline_next, inline_primitives=inline_primitives,
         native_control_flow=native_control_flow,
+        include_sprites=include_sprites,
     )
     c.compile_source(source)
     c.compile_main_call()
@@ -1044,6 +1049,7 @@ def compile_and_run_with_output(
     inline_next: bool = True,
     inline_primitives: bool = True,
     native_control_flow: bool = False,
+    include_sprites: bool = True,
 ) -> tuple[list[int], bytes]:
     from zt.sim import (
         SPECTRUM_FONT_BASE,
@@ -1057,6 +1063,7 @@ def compile_and_run_with_output(
         origin=origin, optimize=optimize,
         inline_next=inline_next, inline_primitives=inline_primitives,
         native_control_flow=native_control_flow,
+        include_sprites=include_sprites,
     )
     if stdlib:
         c.include_stdlib()
@@ -1093,12 +1100,14 @@ def build_from_source(
     inline_next: bool = True,
     inline_primitives: bool = True,
     native_control_flow: bool = False,
+    include_sprites: bool = True,
 ) -> tuple[bytes, Compiler]:
     c = Compiler(
         origin=origin, data_stack_top=data_stack_top,
         return_stack_top=return_stack_top, optimize=optimize,
         inline_next=inline_next, inline_primitives=inline_primitives,
         native_control_flow=native_control_flow,
+        include_sprites=include_sprites,
     )
     c.compile_source(source)
     c.compile_main_call()

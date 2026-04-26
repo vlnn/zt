@@ -457,6 +457,11 @@ class Z80:
         reg(0xF3, self._op_di, 4)
         reg(0xFB, self._op_ei, 4)
 
+        reg(0xF9, self._op_ld_sp_hl, 6)
+        reg(0x2C, self._op_inc_l, 4)
+        reg(0x2D, self._op_dec_l, 4)
+        reg(0xC6, self._op_add_a_n, 7)
+
         reg(0xCB, self._op_cb_prefix, 0)
         reg(0xDD, self._op_dd_prefix, 0)
         reg(0xED, self._op_ed_prefix, 0)
@@ -488,6 +493,18 @@ class Z80:
 
     def _op_ld_sp_nn(self, op: int) -> None:
         self.sp = self._fetch_word()
+
+    def _op_ld_sp_hl(self, op: int) -> None:
+        self.sp = self.hl
+
+    def _op_inc_l(self, op: int) -> None:
+        self.l = self._inc8(self.l)
+
+    def _op_dec_l(self, op: int) -> None:
+        self.l = self._dec8(self.l)
+
+    def _op_add_a_n(self, op: int) -> None:
+        self.a = self._add8(self.a, self._fetch())
 
     def _op_ld_r_n(self, op: int) -> None:
         self._set_reg((op >> 3) & 7, self._fetch())
@@ -869,6 +886,12 @@ class Z80:
             self._t_states += 20
         elif op == 0x43:
             self._ww(self._fetch_word(), self.bc)
+            self._t_states += 20
+        elif op == 0x73:
+            self._ww(self._fetch_word(), self.sp)
+            self._t_states += 20
+        elif op == 0x7B:
+            self.sp = self._rw(self._fetch_word())
             self._t_states += 20
         else:
             raise RuntimeError(f"unimplemented ED opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}")
