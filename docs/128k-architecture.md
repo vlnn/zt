@@ -852,7 +852,7 @@ Modified:
 - `src/zt/assemble/primitives.py` — added `BANKM_ADDR`, `PORT_7FFD`, `PAGE_MASK`, `UPPER_MASK` constants; four `create_*` functions (`create_bank_store`, `create_bank_fetch`, `create_raw_bank_store`, `create_128k_query`); all four registered in `PRIMITIVES`
 - `src/zt/cli/main.py` — `--target {48k,128k}` and `--paged-bank` flags; `--format z80` alongside `sna`/`bin`; `_resolve_stack_defaults`, `_validate_128k_config`, `_validate_48k_config` helpers; `_image_to_banks` for 128k origin → bank routing; `_write_output` routes to `build_sna_128` or `build_z80_v3` under `--target 128k` and merges `compiler.banks()` into the banks dict
 - `src/zt/compile/compiler.py` — `_main_asm`, `_bank_asms`, `_active_bank` state; `_activate_bank`/`_deactivate_bank` routing helpers; `bank_image(n)`/`banks()` public accessors; `in-bank` and `end-bank` directives; `_emit_variable_shim` split into main-bank code and active-bank data
-- `Makefile` — `TARGET_128K_ROOTS` and both `TARGET_128K_SNAS`/`TARGET_128K_Z80S` target groups; `make examples` produces both formats for every 128K demo
+- `Makefile` — per-target `BUILD_FLAGS_<name>` plumbing for the 128K examples (`bank-rotator`, `bank-table`, `shadow-flip`, `plasma-128k`, `zlm-tinychat`, `zlm-emit-test`). `make examples` produces `.sna` for every example today; emitting `.z80` alongside is a one-line `BUILD_FLAGS` extension when the need arises.
 
 New test files:
 - `tests/test_sna_128.py` (71 tests)
@@ -881,12 +881,12 @@ Simulator addition for M5 — in `src/zt/sim.py`:
 
 ### Deferred beyond this plan
 
-- **User-facing guide** (`docs/128k.md`) — complementing the
-  architectural doc with a short "how to write a 128K program" that
-  covers the memory map, the primitives, the CLI, the two example
-  patterns, and the `128K?` sharp edge. Content is all in this doc
-  and the example header comments; needs editorial sweep, not new
-  material.
+- ~~**User-facing guide** (`docs/128k.md`)~~ — **shipped.** See
+  [`128k.md`](128k.md) for the practical-recipes companion to this
+  architectural note: memory map, the four primitives, build flags,
+  the two banking patterns (runtime seeding vs. compile-time
+  placement), shadow-screen double buffering, troubleshooting, and
+  the `.z80`-vs-`.sna` decision matrix.
 - **Cross-bank code calls** — a trampoline in bank 2 that saves the
   current bank, `BANK!`-switches, does a `CALL` into bank-N code,
   then restores. Flagged as a non-goal in this plan from the start;

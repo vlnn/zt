@@ -323,9 +323,24 @@ already-shipped `reset-cursor`.
 
 ## 5. Graphics — sprites
 
-### 5.1 `XOR-SPRITE ( addr col row -- )` — deep
+The seven SP-stream sprite primitives shipped in
+[`assemble/sprite_primitives.py`](../src/zt/assemble/sprite_primitives.py)
+cover much of the original wishlist below: `BLIT8`, `BLIT8C`, `BLIT8X`,
+`BLIT8XC`, `MULTI-BLIT`, plus the `LOCK-SPRITES`/`UNLOCK-SPRITES` DI
+wrappers. See `docs/primitives.md` and `examples/sprite-demo/`. The
+remaining items — pixel-aligned shifting helpers, scroll, tile-map —
+are still open and described below for context.
 
-Blit an 8-wide × H-tall byte-aligned sprite via XOR. Two draws = erase.
+### 5.1 `XOR-SPRITE ( addr col row -- )` — *(partially shipped — copy variants only)*
+
+Pixel- and char-aligned blits shipped under different names. `BLIT8X
+( shifted-src x y -- )` is the pixel-aligned 8×8 monochrome blit;
+`BLIT8XC` is the colored variant. Char-aligned versions (`BLIT8`,
+`BLIT8C`) cover the simpler 8-aligned case at lower cost. The shipped
+primitives do plain *copy*, not XOR — so erase-by-redraw isn't free
+yet. A true XOR-blit primitive (the historic Spectrum idiom for cheap
+sprite erase) is still a candidate addition; the original proposal
+below sketches the Z80 path.
 
 ```
 ; sprite bytes at (addr): H bytes, one per scanline.
@@ -358,7 +373,15 @@ many arcade games live with character-grid movement for that reason.
 
 *Genres:* arcade (essential).
 
-### 5.2 `PRE-SHIFT ( src dst -- )` — deep
+### 5.2 `PRE-SHIFT ( src dst -- )` — deep *(consumer shipped, generator still open)*
+
+The shipped `BLIT8X`/`BLIT8XC` primitives expect a pre-shifted source
+laid out as 8 sequential 8-byte tables (one per shift offset 0..7).
+What's still open is the *generator* — a primitive (or build-time
+directive) that takes a single 8-byte sprite and emits the eight
+shifted copies. Today the caller prepares those copies by hand or in
+host-side Python before embedding them with `c,`. A `PRE-SHIFT`
+primitive would let users skip the manual table.
 
 Pre-compute eight shifted copies of a sprite for pixel-accurate blitting
 without per-frame shifting. Classic arcade optimization.

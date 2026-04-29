@@ -202,12 +202,12 @@ instruction-count-based simulated interrupts.
 
 ### 2.2 Expand the inlining whitelist
 
-**Impact:** medium (inlining already active, whitelist is currently 26
+**Impact:** medium (inlining already active, whitelist is currently 32
 primitives).
 **Difficulty:** low per addition. Main constraint is relocation safety.
 
-Add to `INLINABLE_PRIMITIVES`: `2drop`, `2swap`, `rot`, `tuck`, `negate`,
-`min`, `max`, `xor`, `rshift`, `u_less`. Each requires verifying that the
+Add to `INLINABLE_PRIMITIVES`: `2drop` ✓ (already in), `2swap`, `negate` ✓,
+`min`, `max`, `xor` ✓, `rshift`, `u_less`. Each requires verifying that the
 primitive body has no absolute addresses (`has_absolute_jump_in_body` already
 tests this).
 
@@ -216,18 +216,28 @@ that make them relocation-unsafe. Rewriting them to use `JR` with short
 displacements (< 127 bytes) would allow inlining and save dispatches on every
 comparison.
 
-### 2.3 Dead-code elimination
+### 2.3 Dead-code elimination  *(shipped as tree-shaking)*
 
-**Impact:** medium. Every unused `:` definition costs 2 bytes per referenced
-primitive plus its body.
-**Difficulty:** medium. Requires a reachability pass from entry points
-(`main` and anything marked `export`).
+Shipped. `zt.compile.liveness.compute_liveness()` walks the IR from
+`main`, `halt`, `next`, `docol` and returns the reachable
+`(words, strings)` set; `Compiler.build_tree_shaken()` emits a fresh
+image containing only the live cells. On by default — `zt build`
+auto-tree-shakes any program that uses supported features and falls
+back to the eager build with a stderr warning when it can't (programs
+using `'`/`[']` for word-address-as-data, or `in-bank` compile-time
+banking). Pass `--tree-shake` for strict mode, `--no-tree-shake` to
+opt out.
 
-Walk the IR graph from entry points, mark reachable words, drop the rest
-from the image. Peephole already has the infrastructure to iterate over
-cells; this is a pre-emission garbage collection pass.
+Survey across the 24 examples in this repo: total image size drops
+from 158 KB to 101 KB (36% reduction). Per-example shrinkage ranges
+from 18% on already-library-light programs (`mined-out`) up to 95%
+on programs that pull in stdlib but use little of it (`counter`).
 
-Saves typically 5–15% of image size on library-heavy programs.
+Remaining lifts: `'`/`[']` (word-address-as-data and
+word-address-as-literal — both embed a word's address as an immediate
+indistinguishable from any other integer); banking (separate `Asm`
+per bank); native control flow (bypasses the IR pipeline). See
+[`PLAN.md`](PLAN.md) M13 for the full breakdown and the test list.
 
 ### 2.4 Control-stack tagging for better errors
 

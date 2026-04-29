@@ -31,6 +31,8 @@ For milestone history of how these landed, see [`PLAN.md`](PLAN.md).
 | Storage     | `,` `c,` `allot`                                                     |
 | Text I/O    | `emit` `key` `key?` `key-state` `type` `at-xy` `reset-cursor` `scroll-attr` |
 | Hardware    | `border` `beep` `wait-frame` `halt`                                  |
+| Sprites     | `lock-sprites` `unlock-sprites` `blit8` `blit8c` `blit8x` `blit8xc` `multi-blit` |
+| Quantized ML| `unpack-nibbles` `unpack-2bits` `2bitmuladd` `2bit-dot+!`            |
 | 128K banks  | `bank@` `bank!` `raw-bank!` `128k?`                                  |
 | Internal    | `lit` `branch` `0branch` `(do)` `(loop)` `(+loop)` `i` `j` `unloop` `next` `docol` `exit` |
 
@@ -257,6 +259,79 @@ frame-paced animation and timing.
 Execute Z80 `HALT`. Ends the program when no interrupt handler is
 installed (common case); useful both as a clean program terminator
 and as the stop signal `zt test` watches for.
+
+---
+
+## Sprites
+
+The seven SP-stream sprite primitives use the Z80 stack pointer to walk
+source bytes — the densest way to copy data into screen memory on a Z80.
+This means **interrupts must be disabled for the duration of a blit**;
+otherwise an ISR push would corrupt the source stream. Wrap a batch of
+blits between `lock-sprites` and `unlock-sprites`.
+
+These primitives can be excluded from the image with `--no-sprites` to
+reclaim ~800 bytes for memory-tight 48K builds.
+
+### `lock-sprites` `( -- )` and `unlock-sprites` `( -- )`
+`DI` / `EI` wrappers. Always pair them around a batch of blits.
+
+### `blit8` `( src col row -- )`
+Char-aligned 8×8 monochrome blit. `src` points at 8 bitmap bytes,
+top scanline first. `col` is 0–31, `row` is 0–23.
+
+### `blit8c` `( src attr col row -- )`
+Char-aligned 8×8 colored blit. Same as `blit8` but also writes one
+attribute byte for the cell.
+
+### `blit8x` `( shifted-src x y -- )`
+Pixel-aligned 8×8 monochrome blit. `shifted-src` points at a
+pre-shifted source; pick the correct shift table from the 8 prepared
+copies based on `x AND 7`. `x` is 0–255, `y` is 0–191.
+
+### `blit8xc` `( shifted-src attr x y -- )`
+Pixel-aligned 8×8 colored blit; writes the source bytes plus one
+attribute byte for the character cell containing the sprite.
+
+### `multi-blit` `( table x y -- )`
+Composite sprite from a table of components, each rendered via the
+`blit8x` core at `(x+dx, y+dy)`. Table layout: 1 byte `count`,
+followed by `count` quadruples `(dx:i8, dy:i8, sprite_lo, sprite_hi)`.
+Useful for sprites larger than 8×8 or composed of pre-shifted parts
+(e.g. `examples/sprite-demo/` ships a three-piece spaceship).
+
+---
+
+## Quantized 2-bit ML kernels
+
+Application-specific primitives for running quantized neural networks
+in the style of HarryR's [Z80-μLM](https://github.com/HarryR/z80ai).
+The 2-bit muladd path avoids invoking general 16×16 multiply: the
+`{0,1,2,3}` raw values map to weights `{-2,-1,0,+1}`, each handled by
+a short branch. See `examples/zlm-tinychat-48k/` and
+[`zlm-optimization-notes.md`](zlm-optimization-notes.md) for usage.
+
+### `unpack-nibbles` `( byte -- hi lo )`
+Split the low byte of TOS into two unsigned nibbles 0..15. Low nibble
+ends on top. Inlinable.
+
+### `unpack-2bits` `( byte -- u3 u2 u1 u0 )`
+Split the low byte into four unsigned 2-bit fields 0..3, LSB-first
+packing (matches z80ai's `buildz80tap.py`). `u0` (bits 0–1) ends on
+top, `u3` (bits 6–7) deepest. Apply `2 -` per field to recover signed
+weights.
+
+### `2bitmuladd` `( raw act addr -- )`
+Signed 2-bit multiply-and-add into a 16-bit cell. Maps `raw` 0..3 to
+weight `{-2,-1,0,+1}` (via `SUB 2`) and applies `*addr += weight*act`
+through a 4-way branch — never invoking general multiply.
+
+### `2bit-dot+!` `( wptr aptr count addr -- )`
+Accumulating 2-bit-quantized dot product. `wptr` points at packed
+2-bit weights (4 per byte, LSB-first); `aptr` points at 16-bit
+activations; `count` is the number of weights (must be a multiple
+of 4). Adds the dot product into the 16-bit cell at `addr`. The hot
+path on a tinychat-style 48K language model — ~250 T-states/MAC.
 
 ---
 

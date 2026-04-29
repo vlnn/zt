@@ -109,6 +109,96 @@ architecture doc.
 **See:** [`128k-architecture.md`](128k-architecture.md) for the full
 hand-off note.
 
+## M10 — Sprite primitives ✅
+
+Seven SP-stream sprite primitives in
+[`assemble/sprite_primitives.py`](../src/zt/assemble/sprite_primitives.py):
+`lock-sprites`, `unlock-sprites`, `blit8`, `blit8c`, `blit8x`,
+`blit8xc`, `multi-blit`. All blit primitives redirect SP to walk the
+source data — the densest copy idiom on a Z80 — so callers must
+`lock-sprites` (DI) around a batch.
+
+CLI flag `--no-sprites` excludes them from the image to reclaim
+~800 bytes for memory-tight 48K builds. Working example:
+`examples/sprite-demo/`. Tests:
+`test_sprites.py`, `test_sprite_opcodes.py`,
+`test_examples_sprite_demo.py`, `test_examples_sprite_dynamic.py`.
+
+## M11 — Force-inline `::` defining word and native control flow ✅
+
+`::name ... ;` declares a colon whose body is unconditionally spliced
+into every caller — broader than the inline-primitives whitelist
+because it accepts arbitrary control flow (`if/else/then`,
+`begin/until/while/repeat`, `do/loop/+loop`). Callers see the body as
+straight-line Z80 with one dispatch at the tail.
+
+Restrictions: `::` bodies cannot contain `LEAVE`, calls into other
+colon words, or string literals (compile-time errors with source
+locations). `::` plus `native_control_flow` simultaneously is also
+not yet supported — the two paths emit different tails.
+
+The `native_control_flow` flag is a parallel track that emits
+straight-line Z80 throughout (no threaded NEXT), used by
+`compile_and_run` and similar test-only entry points. Not exposed
+via the CLI today; see
+[`NOTES-native-control-flow.md`](NOTES-native-control-flow.md).
+
+**Tests:** `test_double_colon.py` (28 tests), `test_controlflow.py`
+parametrised across `{threaded, native-cf}`.
+
+## M12 — Quantized 2-bit ML kernels ✅
+
+Four primitives motivated by porting HarryR's
+[Z80-μLM](https://github.com/HarryR/z80ai) tinychat to a stock 48K:
+`unpack-nibbles`, `unpack-2bits`, `2bitmuladd`, `2bit-dot+!`.
+Application-specific (linear-layer kernel for 2-bit-quantized weights)
+but registered in `PRIMITIVES` because the gain over a Forth-level
+implementation is large — `2bit-dot+!` runs ~250 T-states/MAC vs.
+~4000 for a threaded equivalent.
+
+Working examples: `examples/zlm-smoke/` (profiling harness),
+`examples/zlm-layer/` (32×4 linear layer demo),
+`examples/zlm-multilayer/`, `examples/zlm-tinychat/` (128K),
+`examples/zlm-tinychat-48k/` (the showcase).
+
+**Tests:** `test_unpack_primitives.py`, `test_2bit_muladd.py`,
+`test_2bit_dot_plus_store.py`. See also
+[`zlm-optimization-notes.md`](zlm-optimization-notes.md) for what
+moves the needle in this kernel and what doesn't.
+
+## M13 — Tree-shaking (default-on liveness pruning) ✅
+
+Liveness-driven image emission. `zt build` walks the IR from `main`,
+`halt`, `next`, `docol`, marks every reachable primitive, colon,
+string, constant, variable, and `create` definition, and emits an
+image containing only the live set. Shipped in three phases:
+
+- Phase A — `zt.compile.liveness.compute_liveness()` (pure analysis).
+- Phase B — `zt.assemble.primitive_blob` and `BlobRegistry`
+  (harvesting + replay infrastructure).
+- Phase C — `Compiler.build_tree_shaken()` (constructs the new image)
+  and CLI integration.
+
+CLI flags: default is auto-tree-shake-when-possible (falls back to
+eager with a stderr warning when a program uses unsupported features).
+`--tree-shake` is strict mode (fail on unsupported features);
+`--no-tree-shake` forces the legacy eager build for layout-sensitive
+downstream tooling. Auto-tree-shake covers 19 of 24 examples; the
+five fallbacks are programs using `'`/`[']` (word-address-as-data)
+or `in-bank` compile-time banking, both tracked as remaining lifts.
+
+Survey across all examples: 158 KB → 101 KB combined image size
+(36% reduction). Per-program reductions range from 18% (`mined-out`,
+already library-light) to 95% (`counter`, almost entirely library).
+The 48K tinychat port (`zlm-tinychat-48k`) needs tree-shake to fit
+the recommended `--origin 0x5CB6` layout that sidesteps an
+IM 1 corruption bug — see CHANGES.md for the full archaeology.
+
+**Tests:** `test_liveness.py`, `test_primitive_blob.py`,
+`test_emit_blob.py`, `test_blob_registry.py`,
+`test_compiler_blob_registry.py`, `test_build_tree_shaken.py`,
+`test_cli.py::TestCliTreeShake`, `test_start_di.py`.
+
 ---
 
 ## Pending
@@ -122,7 +212,7 @@ deliverable.
 
 Output formats currently supported: `sna`, `z80`, `bin`.
 
-### Beyond M9
+### Beyond the current set
 
 Forward-looking work — peephole expansion, AY sound, debugger, language
 server, packaging, CI, fuzz testing, alternate threading models, multi-target,

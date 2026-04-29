@@ -37,15 +37,21 @@ One file deleted:
 
 ## What still has dead-flat duplicates
 
-The flat `src/zt/{asm,cli,code_emitter,compiler,...}.py` files (22 of
-them) plus `stdlib/` at root remain in your tree as I received them. They
-are dead — nothing imports them now that `tests/conftest.py` is gone.
-They're harmless but they're 22 stale files masquerading as code.
+Most of the 22 dead-flat duplicates have been cleaned up since the
+original Phase 0–4 merge. Four remain at the top of `src/zt/` as
+unimported leftovers:
 
-If you want them cleaned up, say so and I'll produce a follow-up zip that
-deletes them; the regression sweep should still pass. I left them in this
-zip out of conservatism — your git history may still need them as
-reference.
+- `src/zt/ir.py` — superseded by `src/zt/compile/ir.py`
+- `src/zt/inspect.py` — superseded by `src/zt/inspect/decompile.py`
+- `src/zt/profile.py` — superseded by `src/zt/profile/core.py`
+- `src/zt/include_resolver.py` — superseded by `src/zt/compile/include_resolver.py`
+
+A grep across the live tree confirms no production module nor any
+test imports the flat versions; the package versions are everywhere.
+The flat files are harmless but stale and worth deleting in a future
+cleanup. `src/zt/test_runner.py` and `src/zt/test_facade.py`, by
+contrast, are *live* — they're the entry points for `zt test` and
+the high-level Forth-test harness, not duplicates of anything.
 
 ## What was already landed before this merge — phase summary
 

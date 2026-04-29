@@ -326,8 +326,9 @@ tokens
 IR (list[Cell] per colon word)
    │  peephole.py           → fuse patterns like (1, '+') → '1+'
    │  inline_bodies.py      → splice primitive bodies inline when profitable
+   │  liveness.py           → reachability set for tree-shaking (default-on)
    ▼
-IR (optimized)
+IR (optimized, live cells only)
    │  ir.resolve()          → bytes (little-endian word addresses)
    │  code_emitter.py       → glue to Asm
    ▼
@@ -347,7 +348,7 @@ addresses; `Branch` cells are 4 bytes (opcode ref + target address); all
 others are 2 bytes. This uniformity is what makes the peephole optimizer easy
 to write: patterns match on primitive names, not on byte sequences.
 
-### Two kinds of optimization
+### Three kinds of optimization
 
 **Peephole.** Matches short sequences of IR elements and replaces them with
 shorter ones. The rule set is nine entries today (`peephole.py:DEFAULT_RULES`)
@@ -367,6 +368,26 @@ by assembling each `create_*` function, recognising the trailing `JP NEXT`,
 and stripping it. It only inlines primitives on an explicit whitelist
 (`INLINABLE_PRIMITIVES`) because some — `EMIT`, `DO`, anything with an
 absolute jump — aren't relocation-safe.
+
+A complementary tool is the `::` (force-inline) defining word — `::name ... ;`
+declares a colon whose body is *always* spliced into its callers. Useful for
+hot paths where the caller knows the inline cost is worth it. Bodies may
+contain control flow (`if/else/then`, `begin/until/while/repeat`,
+`do/loop/+loop`); they may not call other colon words, use string literals,
+or contain `LEAVE`.
+
+**Tree-shaking.** A liveness pass (`liveness.py`) walks the IR from
+`main`/`halt`/`next`/`docol` and marks every reachable primitive,
+colon, string, constant, variable, and `create` definition. The
+emitter then builds a fresh image containing only the live set. This
+is on by default — `zt build` automatically tree-shakes any program
+that uses supported features and falls back to the eager build with a
+warning when it can't (programs using `'`/`[']` for word-address-as-data
+or `in-bank` compile-time banking). Pass `--tree-shake` for strict
+mode (fail rather than fall back) or `--no-tree-shake` to opt out
+entirely. Typical savings: 18–95% of image size on stdlib-using
+programs; the full suite of 24 examples shrinks from 158 KB to 101 KB
+combined.
 
 ### Debug surface
 
@@ -418,9 +439,13 @@ run unchanged on real hardware.
 - **No AY sound.** Beeper output is supported via the `BEEP` primitive
   and `stdlib/sound.fs`, but the AY-3-8912 chip on 128K models is not
   yet driven.
-- **No sprites.** `EMIT` renders characters through the ROM font, and
-  `CMOVE` can blit bytes, but there's no pre-composed sprite primitive
-  or pre-shifted mask support.
+- **Sprites are basic but present.** Seven `BLIT8`/`MULTI-BLIT` family
+  primitives (see `docs/primitives.md` and `examples/sprite-demo/`)
+  cover char-aligned and pixel-aligned 8×8 blits. There is no
+  built-in pre-shift table generator yet — the caller prepares the
+  eight shifted copies — no XOR / transparency-mask variant, and no
+  scroll primitive. Sprites can be excluded entirely with
+  `--no-sprites` to reclaim ~800 bytes on tight 48K builds.
 - **Signed multiply lives in code, signed divide in `src/zt/stdlib/core.fs`**.
   `*` is a primitive but `/`, `/MOD`, `MOD` are defined on top of a single
   unsigned `U/MOD` primitive. Fine for slow code, too slow for inner loops.
