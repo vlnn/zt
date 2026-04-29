@@ -101,6 +101,20 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
                             "LOCK-SPRITES/UNLOCK-SPRITES) to reclaim ~800 "
                             "bytes of image space; useful for memory-tight "
                             "48K builds")
+    tree_shake_group = build.add_mutually_exclusive_group()
+    tree_shake_group.add_argument("--tree-shake", dest="tree_shake_explicit",
+                                  action="store_true", default=False,
+                                  help="strict tree-shaking: drop unused primitives, "
+                                       "colons, strings, constants, and variables from "
+                                       "the image; FAILS on programs using `'`/`[']` "
+                                       "or `in-bank`. Default is "
+                                       "auto-tree-shake-when-possible.")
+    tree_shake_group.add_argument("--no-tree-shake", dest="no_tree_shake",
+                                  action="store_true", default=False,
+                                  help="force the eager (non-tree-shaken) build; "
+                                       "produces the byte-compatible legacy image, "
+                                       "useful when downstream tooling depends on a "
+                                       "specific address layout")
     build.add_argument("--profile", dest="profile", action="store_true", default=False,
                        help="run the built image in the simulator and write a profile report")
     build.add_argument("--profile-output", type=Path, default=None, dest="profile_output",
@@ -193,9 +207,13 @@ def _do_build(args: argparse.Namespace) -> None:
 
     try:
         compiler = _build_compiler(args)
-        image = compiler.build()
+        image = _build_image(compiler, args)
     except CompileError as e:
         print(f"error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except NotImplementedError as e:
+        print(f"error: --tree-shake does not yet support this program: {e}",
+              file=sys.stderr)
         sys.exit(1)
 
     _write_output(image, args, compiler, fmt)
@@ -208,6 +226,33 @@ def _do_build(args: argparse.Namespace) -> None:
 def _emit_warnings(compiler: Compiler) -> None:
     for msg in compiler.warnings:
         print(msg, file=sys.stderr)
+
+
+def _build_image(compiler: Compiler, args: argparse.Namespace) -> bytes:
+    """Decide between tree-shaken and eager build per the tree-shake policy:
+
+    * `--tree-shake` (strict): always tree-shake; bubble NotImplementedError
+      up to caller
+    * `--no-tree-shake`: always eager; never attempt tree-shaking
+    * default (auto): try tree-shake; on NotImplementedError fall back to
+      eager with a single-line warning to stderr
+    """
+    if args.tree_shake_explicit:
+        image, _ = compiler.build_tree_shaken()
+        return image
+    if args.no_tree_shake:
+        return compiler.build()
+    try:
+        image, _ = compiler.build_tree_shaken()
+        return image
+    except NotImplementedError as exc:
+        print(
+            f"warning: auto-tree-shake skipped, falling back to eager build "
+            f"(reason: {exc}); pass --no-tree-shake to silence this or "
+            f"--tree-shake to fail strictly instead",
+            file=sys.stderr,
+        )
+        return compiler.build()
 
 
 def _write_debug_artifacts(compiler: Compiler, args: argparse.Namespace) -> None:

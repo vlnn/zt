@@ -28,6 +28,9 @@ class Dictionary:
     def __setitem__(self, name: str, word: "Word") -> None:
         self._words[name] = word
 
+    def __delitem__(self, name: str) -> None:
+        del self._words[name]
+
     def __iter__(self) -> Iterator[str]:
         return iter(self._words)
 

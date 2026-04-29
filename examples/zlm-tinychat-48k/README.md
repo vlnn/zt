@@ -8,18 +8,38 @@ visible side-effect on the display.
 
 ```
 $5B00..$5C00 (256 B)  acts3        — printer-buffer area, invisible
-$5C00..$F9E0          image (code + W1..W4 + biases + charset
+$5C00..$5CB6 (182 B)  Spectrum 48K system variables — KEEP CLEAR
+$5CB6..$F6E2          image (code + W1..W4 + biases + charset
                               + small buffers + variables)
+$F6E2..$F9E0 (~766 B) free
 $F9E0..$FB60 (384 B)  acts2
 $FB60..$FD60 (512 B)  acts0
 $FD60..$FF60 (512 B)  acts1
-$FF80                 return-stack top
-$FFC0                 data-stack top
+$FF60..$FFA0 (64 B)   return-stack region (top at $FFA0)
+$FFA0..$FFC0 (32 B)   data-stack region (top at $FFC0)
 ```
 
 The display reads pixels from `$4000..$57FF` and attrs from `$5800..$5AFF`.
 None of those addresses get touched by the model, so the screen stays
 clean during a forward pass.
+
+**Why origin = $5CB6 (not $5C00)**: the Spectrum 48K ROM's IM 1 interrupt
+handler increments the `FRAMES` timer at `$5C78..$5C7A` every 1/50 second.
+With origin `$5C00`, those bytes lie inside live primitive bodies (`R>` at
+`$5C77`), so any interrupt corrupts code and the next call into the
+corrupted primitive crashes — usually as a reset (PC ends up at `$0000`).
+Even with `DI` at `_start`, some loaders re-enable interrupts during SNA
+load, so the safe layout puts all code past the system-variable area
+(ends at `$5CB6`).
+
+**Why `--tree-shake` is required**: the eager build (40 KB) doesn't fit between
+`$5CB6` and `acts2` at `$F9E0`. Tree-shaking drops it to ~38.5 KB,
+which fits with ~750 B of margin.
+
+**Stack budget**: peak return-stack usage during a HELLO query is 26 bytes
+(13 cells). The return stack region was widened from 32 to 64 bytes
+(`--rstack 0xFFA0`) to give 38 bytes of margin between peak rstack and
+`acts1` at `$FF60`.
 
 ## What changed vs. the 128K reference
 
@@ -36,6 +56,14 @@ clean during a forward pass.
 5. **`acts3` parked at `$5B00`** in the printer-buffer area — plain RAM
    that the display never reads. This is what closes the budget without
    a visible side-effect.
+6. **Return stack widened from 32 to 64 bytes** (`--rstack 0xFFA0`) by
+   consuming the previously-unused gap between rstack-top and dstack-floor.
+   Peak rstack usage during a query is 26 bytes; the 32-byte limit had
+   only 6 bytes of margin before corrupting `acts1`.
+7. **Origin moved past system variables** (`--origin 0x5CB6`) and **tree-
+   shaking required** (`--tree-shake`) so the image fits between sysvars and
+   `acts2`. Without this, IM 1 corrupts primitive code in `R>` at `$5C77`
+   if interrupts ever fire (e.g. some loaders leave them on).
 
 No retraining. No model surgery. Same `model.npz` pipeline.
 
@@ -43,12 +71,50 @@ No retraining. No model surgery. Same `model.npz` pipeline.
 
 ```
 zt build examples/zlm-tinychat-48k/main.fs -o tc48.sna --target 48k \
-    --origin 0x5C00 --rstack 0xFF80 --dstack 0xFFC0 \
+    --origin 0x5CB6 --rstack 0xFFA0 --dstack 0xFFC0 \
     --no-inline-next --no-stdlib
 ```
 
+(Tree-shaking is on by default; no `--tree-shake` flag needed. The build
+will fall back to eager if a program uses unsupported features, and
+the eager image won't fit at this origin — but tinychat-48k tree-shakes
+cleanly so the default path is correct.)
+
 Output is a standard 49179-byte `.sna` snapshot loadable by Fuse,
 ZEsarUX, or a real 48K via divMMC.
+
+## Debugging real-hardware resets
+
+If the program resets on real hardware where the simulator works,
+build the border-instrumented variant `main_debug.fs` instead:
+
+```
+zt build examples/zlm-tinychat-48k/main_debug.fs -o tc48d.sna --target 48k \
+    --origin 0x5C00 --rstack 0xFFA0 --dstack 0xFFC0 \
+    --no-inline-next --no-stdlib
+```
+
+Each phase of execution sets a distinct border colour. When the program
+resets, the **border colour tells you the last checkpoint reached**:
+
+- 1 BLUE — outside `chat` (in main's outer loop / read-line / cr).
+  Stays blue while waiting for input.
+- 2 RED — inside `chat`, top of iteration, before `encode-input`
+- 3 MAGENTA — `encode-input` done, before `forward`
+- 4 GREEN — `forward` done, before `predict-char`
+- 5 CYAN — `predict-char` done, before `dup 0= if`
+- 6 YELLOW — past the if-test (char != 0), before `dup`
+- 7 WHITE — `dup` done, about to `emit`
+- 0 BLACK — `emit` done, about to `append-context`
+
+If the border **freezes on a single colour**, that colour identifies
+the last successful checkpoint — the crash is in code reached *after*
+that point.
+
+If the border **cycles** through colours, the program is running fine;
+what looks like "reset" is the cursor wrapping from row 23 back to row 0
+(a cosmetic effect from the EMIT primitive's wrap-on-overflow behaviour,
+not a CPU reset).
 
 ## Tests
 

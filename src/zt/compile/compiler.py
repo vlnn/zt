@@ -111,6 +111,8 @@ class Compiler:
         self.current_word: str | None = None
         self._tokens: TokenStream = TokenStream([])
         self._host_stack: list[int] = []
+        self._uses_word_address_literal: bool = False
+        self._uses_word_address_data: bool = False
         self.string_pool: StringPool = StringPool()
         self.emitter: CodeEmitter = CodeEmitter(
             asm=outer_asm, words=self.words, origin=origin,
@@ -144,34 +146,18 @@ class Compiler:
         self.emitter.asm = value
 
     def _register_primitives(self) -> None:
-        for creator in self._primitives:
-            creator(self.asm)
+        from zt.assemble.primitive_blob import BlobRegistry, emit_blob
+        self._blob_registry = BlobRegistry.from_creators(
+            self._primitives, inline_next=self.inline_next,
+        )
+        for blob in self._blob_registry.blobs:
+            emit_blob(self.asm, blob)
         self.words.register_primitives(self.asm)
         if self.inline_primitives:
             self._inline_context = InlineContext.build(self._primitives)
         self._creators_by_name: dict[str, Callable] = (
-            self._build_creators_by_name()
+            self._blob_registry.forth_visible_creators()
         )
-
-    def _build_creators_by_name(self) -> dict[str, Callable]:
-        """Build a map from every Forth-visible primitive name (lowercased) to
-        its `create_*` function. Resolves each creator in isolation to discover
-        all the labels (including aliases) it declares."""
-        from zt.assemble.inline_bodies import primitive_name as _prim_name
-        result: dict[str, Callable] = {}
-        for creator in self._primitives:
-            tmp = Asm(0x0000, inline_next=False)
-            tmp.label("NEXT")
-            try:
-                creator(tmp)
-                tmp.resolve()
-            except (KeyError, ValueError):
-                continue
-            for label_name in tmp.labels:
-                if label_name == "NEXT" or label_name.startswith("_"):
-                    continue
-                result[label_name.lower()] = creator
-        return result
 
     def _register_directives(self) -> None:
         for name, action in collected_directives(type(self)):
@@ -639,6 +625,7 @@ class Compiler:
             raise CompileError(f"' unknown word '{name_tok.value}'", name_tok)
         addr = word.data_address if word.data_address is not None else word.address
         self._host_stack.append(addr)
+        self._uses_word_address_data = True
 
     @directive("c,")
     def _directive_c_comma(self, _compiler: Compiler, tok: Token) -> None:
@@ -847,6 +834,7 @@ class Compiler:
         if word is None:
             raise CompileError(f"unknown word '{name_tok.value}'", name_tok)
         self._compile_literal(word.address, tok)
+        self._uses_word_address_literal = True
 
     @immediate("recurse")
     def _immediate_recurse(self, _compiler: Compiler, tok: Token) -> None:
@@ -968,6 +956,7 @@ class Compiler:
         halt_addr = self.words["halt"].address
         self.asm.word(halt_addr)
         self.asm.label("_start")
+        self.asm.di()
         self.asm.ld_sp_nn(self.data_stack_top)
         self.asm.ld_iy_nn(self.return_stack_top)
         self.asm.ld_ix_nn(main_body_addr)
@@ -976,6 +965,7 @@ class Compiler:
 
     def _emit_native_start(self) -> None:
         self.asm.label("_start")
+        self.asm.di()
         self.asm.ld_sp_nn(self.data_stack_top)
         self.asm.ld_iy_nn(self.return_stack_top)
         self.asm.jp(self.words["main"].address)
@@ -985,6 +975,28 @@ class Compiler:
         if os.getenv("ZT_VERIFY_IR") == "1" and not self.native_control_flow:
             self._verify_ir(image)
         return image
+
+    def build_tree_shaken(self) -> tuple[bytes, int]:
+        from zt.compile.tree_shake import build_tree_shaken_image
+        return build_tree_shaken_image(self)
+
+    def compute_liveness(self):
+        from zt.compile.liveness import compute_liveness
+        return compute_liveness(
+            roots=self._liveness_roots(),
+            bodies=self._liveness_bodies(),
+            prim_deps=self._blob_registry.dependency_graph(),
+        )
+
+    def _liveness_roots(self) -> list[str]:
+        return ["main", "halt", "next", "docol"]
+
+    def _liveness_bodies(self) -> dict[str, list]:
+        return {
+            word.name: word.body
+            for word in self.words.values()
+            if word.kind == "colon" and word.body is not None
+        }
 
     def _verify_ir(self, image: bytes) -> None:
         word_addrs = self._build_verify_addr_table()

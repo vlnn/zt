@@ -300,15 +300,20 @@ class TestCliInlinePrimitivesFlag:
         )
 
     def test_flag_changes_output_bytes(self, tmp_path):
+        """`--inline-primitives` is an eager-build optimization that splices
+        primitive bodies into colon definitions; it has no effect under
+        tree-shaking (which rebuilds colon bodies fresh against new primitive
+        addresses). Pin against `--no-tree-shake` so the flag's effect is
+        observable."""
         src = self._write_source(tmp_path)
         plain = tmp_path / "plain.bin"
         inlined = tmp_path / "inlined.bin"
         _run_cli("build", str(src), "-o", str(plain),
-                 "--no-stdlib", "--no-inline-primitives")
+                 "--no-stdlib", "--no-tree-shake", "--no-inline-primitives")
         _run_cli("build", str(src), "-o", str(inlined),
-                 "--no-stdlib", "--inline-primitives")
+                 "--no-stdlib", "--no-tree-shake", "--inline-primitives")
         assert plain.read_bytes() != inlined.read_bytes(), (
-            "--inline-primitives should alter the output bytes; "
+            "--inline-primitives should alter the output bytes for eager builds; "
             "otherwise the flag is wired but has no effect"
         )
 
@@ -350,3 +355,110 @@ def _sum_ticks_from_report(text: str) -> int:
             continue
         total += int(parts[2])
     return total
+
+
+class TestCliTreeShake:
+    """Default behavior: auto-tree-shake when supported, fall back to eager
+    with a warning when not. `--tree-shake` makes tree-shaking strict (fails on
+    unsupported features). `--no-tree-shake` forces the eager build."""
+
+    def test_default_auto_tree_shakes_when_supported(self, tmp_path):
+        """Default build should pick the tree_shaken image for programs that
+        support tree-shaking — same image bytes as `--tree-shake` for hello."""
+        default_out = tmp_path / "hello-default.bin"
+        tree_shaken_out = tmp_path / "hello-tree_shaken.bin"
+        default_result = _run_cli(
+            "build", str(HELLO_PATH), "-o", str(default_out),
+        )
+        tree_shaken_result = _run_cli(
+            "build", str(HELLO_PATH), "-o", str(tree_shaken_out), "--tree-shake",
+        )
+        assert default_result.returncode == 0
+        assert tree_shaken_result.returncode == 0
+        assert default_out.read_bytes() == tree_shaken_out.read_bytes(), (
+            "default build should tree-shake automatically; image should match --tree-shake output"
+        )
+
+    def test_default_smaller_than_no_tree_shake(self, tmp_path):
+        """Default (auto-tree-shake) should produce a smaller image than
+        `--no-tree-shake` for any program where tree-shaking is supported."""
+        default_out = tmp_path / "hello-default.bin"
+        eager_out = tmp_path / "hello-eager.bin"
+        _run_cli("build", str(HELLO_PATH), "-o", str(default_out))
+        _run_cli("build", str(HELLO_PATH), "-o", str(eager_out), "--no-tree-shake")
+        assert default_out.stat().st_size < eager_out.stat().st_size, (
+            f"default should auto-tree-shake and be smaller than --no-tree-shake; "
+            f"got default={default_out.stat().st_size}, "
+            f"eager={eager_out.stat().st_size}"
+        )
+
+    def test_no_tree_shake_flag_forces_eager(self, tmp_path):
+        """`--no-tree-shake` forces the eager build; result is byte-identical
+        to the pre-auto-tree-shake default behavior."""
+        out = tmp_path / "hello-eager.bin"
+        result = _run_cli("build", str(HELLO_PATH), "-o", str(out), "--no-tree-shake")
+        assert result.returncode == 0
+        assert out.exists()
+
+    def test_default_falls_back_silently_for_unsupported(self, tmp_path):
+        """For programs using `[']`/`'`/banking, default should silently
+        fall back to the eager build with a single-line warning."""
+        unsupported_src = tmp_path / "bracket_tick.fs"
+        unsupported_src.write_text(
+            ": helper 1 ;\n"
+            ": main ['] helper drop ;\n"
+        )
+        out = tmp_path / "out.bin"
+        result = _run_cli(
+            "build", str(unsupported_src), "-o", str(out), "--no-stdlib",
+        )
+        assert result.returncode == 0, (
+            "default build should fall back rather than fail; "
+            f"stderr={result.stderr!r}"
+        )
+        assert out.exists(), "fallback should still produce output"
+        assert "auto-tree-shake" in result.stderr.lower() or "fall" in result.stderr.lower(), (
+            f"fallback should emit a clear warning; got stderr={result.stderr!r}"
+        )
+
+    def test_explicit_tree_shake_strict_on_unsupported(self, tmp_path):
+        """`--tree-shake` (explicit opt-in) should still fail loudly on
+        unsupported programs — users who ask for tree-shake want exactly tree-shake."""
+        unsupported_src = tmp_path / "bracket_tick.fs"
+        unsupported_src.write_text(
+            ": helper 1 ;\n"
+            ": main ['] helper drop ;\n"
+        )
+        out = tmp_path / "out.bin"
+        result = _run_cli(
+            "build", str(unsupported_src), "-o", str(out),
+            "--tree-shake", "--no-stdlib",
+        )
+        assert result.returncode != 0, (
+            "--tree-shake on a program using ['] should fail strictly, not fall back"
+        )
+        assert "bracket-tick" in result.stderr or "[']" in result.stderr, (
+            f"error should mention the unsupported feature; got: {result.stderr!r}"
+        )
+
+    def test_default_produces_runnable_sna(self, tmp_path):
+        """Default-build .sna should still be 49179 bytes regardless of mode."""
+        out = tmp_path / "hello.sna"
+        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+        assert result.returncode == 0
+        assert out.stat().st_size == 49179
+
+    def test_explicit_tree_shake_and_no_tree_shake_are_mutually_exclusive(self, tmp_path):
+        """Passing both --tree-shake and --no-tree-shake should be rejected; user
+        intent is ambiguous."""
+        out = tmp_path / "out.bin"
+        result = _run_cli(
+            "build", str(HELLO_PATH), "-o", str(out),
+            "--tree-shake", "--no-tree-shake",
+        )
+        assert result.returncode != 0, (
+            "passing both --tree-shake and --no-tree-shake should fail"
+        )
+        assert "not allowed" in result.stderr or "mutually exclusive" in result.stderr, (
+            f"error should explain the conflict; got: {result.stderr!r}"
+        )
