@@ -18,9 +18,35 @@ from zt.cli.profile import (
 )
 
 
-EXAMPLES = Path(__file__).parent.parent / "examples"
-HELLO_FS = EXAMPLES / "hello.fs"
-SMALL_BUDGET = 50000
+SAMPLE_SOURCE = """\
+: banner
+    ." ==================" cr
+    ."   FORTH ON Z80"     cr
+    ." ==================" cr ;
+
+: count-to-five
+    6 1 do i . loop cr ;
+
+: greet
+    banner
+    ." counting: " count-to-five ;
+
+: main 7 0 cls begin greet again ;
+"""
+
+SMALL_BUDGET = 50_000
+
+
+@pytest.fixture
+def sample_fs(tmp_path: Path) -> Path:
+    """A small, self-contained Forth program written to a tmp file.
+
+    Runtime profile of this program reliably exercises `emit`, `cr`, and
+    several stdlib words, which is what the CLI tests need to assert against.
+    """
+    path = tmp_path / "sample.fs"
+    path.write_text(SAMPLE_SOURCE)
+    return path
 
 
 def _args(**overrides) -> ProfileArgs:
@@ -41,21 +67,21 @@ def _run(args: ProfileArgs) -> tuple[int, str, str]:
 
 class TestSingleRunMode:
 
-    def test_source_run_exits_ok(self):
-        code, _out, _err = _run(_args(source=HELLO_FS))
-        assert code == EXIT_OK, "a clean profile of hello.fs should exit 0"
+    def test_source_run_exits_ok(self, sample_fs: Path):
+        code, _out, _err = _run(_args(source=sample_fs))
+        assert code == EXIT_OK, "a clean profile of the sample program should exit 0"
 
-    def test_output_contains_expected_columns(self):
-        _code, out, _err = _run(_args(source=HELLO_FS))
+    def test_output_contains_expected_columns(self, sample_fs: Path):
+        _code, out, _err = _run(_args(source=sample_fs))
         for col in ["Word", "Calls", "Self", "Self%", "Incl", "Incl%", "Avg"]:
             assert col in out, f"single-mode table should contain {col!r} column"
 
-    def test_output_contains_total_line(self):
-        _code, out, _err = _run(_args(source=HELLO_FS))
+    def test_output_contains_total_line(self, sample_fs: Path):
+        _code, out, _err = _run(_args(source=sample_fs))
         assert "Total:" in out, "single-mode output should include a totals line"
 
-    def test_words_filter_restricts_rows(self):
-        _code, out, _err = _run(_args(source=HELLO_FS, words=["emit"]))
+    def test_words_filter_restricts_rows(self, sample_fs: Path):
+        _code, out, _err = _run(_args(source=sample_fs, words=["emit"]))
         assert "emit" in out, "selected word should appear"
         assert "docol" not in out, "unselected word should not appear"
 
@@ -67,27 +93,27 @@ class TestSingleRunMode:
 
 class TestWordMatching:
 
-    def test_all_or_nothing_typo_exits_runtime(self):
-        code, _out, err = _run(_args(source=HELLO_FS, words=["emit", "NOTAWORD"]))
+    def test_all_or_nothing_typo_exits_runtime(self, sample_fs: Path):
+        code, _out, err = _run(_args(source=sample_fs, words=["emit", "NOTAWORD"]))
         assert code == EXIT_RUNTIME, "any missing word should trigger all-or-nothing exit"
         assert "NOTAWORD" in err, "stderr should name the missing word"
         assert "not found in profile" in err, "stderr should explain the error"
 
-    def test_all_valid_words_passes(self):
-        code, _out, _err = _run(_args(source=HELLO_FS, words=["emit", "cr"]))
+    def test_all_valid_words_passes(self, sample_fs: Path):
+        code, _out, _err = _run(_args(source=sample_fs, words=["emit", "cr"]))
         assert code == EXIT_OK, "a word list containing only valid names should succeed"
 
 
 class TestJsonOutput:
 
-    def test_json_flag_emits_valid_json(self):
-        _code, out, _err = _run(_args(source=HELLO_FS, json_output=True))
+    def test_json_flag_emits_valid_json(self, sample_fs: Path):
+        _code, out, _err = _run(_args(source=sample_fs, json_output=True))
         data = json.loads(out)
         assert "entries" in data, "JSON output should include entries"
         assert "total_ticks" in data, "JSON output should include total_ticks"
 
-    def test_json_preserves_selected_words(self):
-        _code, out, _err = _run(_args(source=HELLO_FS, words=["emit"], json_output=True))
+    def test_json_preserves_selected_words(self, sample_fs: Path):
+        _code, out, _err = _run(_args(source=sample_fs, words=["emit"], json_output=True))
         data = json.loads(out)
         words = {e["word"] for e in data["entries"]}
         assert words == {"emit"}, "--words filter should carry through to --json output"
@@ -95,16 +121,16 @@ class TestJsonOutput:
 
 class TestSave:
 
-    def test_writes_both_prof_and_zprof(self, tmp_path: Path):
+    def test_writes_both_prof_and_zprof(self, tmp_path: Path, sample_fs: Path):
         base = tmp_path / "snapshot"
-        code, _out, _err = _run(_args(source=HELLO_FS, save=base))
+        code, _out, _err = _run(_args(source=sample_fs, save=base))
         assert code == EXIT_OK, "save should not fail a single-run profile"
         assert (tmp_path / "snapshot.prof").exists(), "--save should write the text .prof"
         assert (tmp_path / "snapshot.zprof").exists(), "--save should write the JSON .zprof"
 
-    def test_zprof_is_roundtrippable(self, tmp_path: Path):
+    def test_zprof_is_roundtrippable(self, tmp_path: Path, sample_fs: Path):
         base = tmp_path / "snapshot"
-        _run(_args(source=HELLO_FS, save=base))
+        _run(_args(source=sample_fs, save=base))
         data = json.loads((tmp_path / "snapshot.zprof").read_text())
         assert data["version"] == 1, "saved zprof should declare current version"
         assert data["entries"], "saved zprof should contain entries"
@@ -113,62 +139,68 @@ class TestSave:
 class TestDiffMode:
 
     @pytest.fixture
-    def baseline(self, tmp_path: Path) -> Path:
+    def baseline(self, tmp_path: Path, sample_fs: Path) -> Path:
         base = tmp_path / "baseline"
-        _run(_args(source=HELLO_FS, save=base))
+        _run(_args(source=sample_fs, save=base))
         return tmp_path / "baseline.zprof"
 
-    def test_identical_run_has_zero_delta(self, baseline: Path):
-        _code, out, _err = _run(_args(source=HELLO_FS, baseline=baseline, words=["emit"]))
+    def test_identical_run_has_zero_delta(self, sample_fs: Path, baseline: Path):
+        _code, out, _err = _run(_args(source=sample_fs, baseline=baseline, words=["emit"]))
         assert "+0.0%" in out or "+0" in out, (
-            "comparing hello.fs against its own snapshot should show zero deltas"
+            "comparing the sample against its own snapshot should show zero deltas"
         )
 
-    def test_diff_table_has_delta_columns(self, baseline: Path):
-        _code, out, _err = _run(_args(source=HELLO_FS, baseline=baseline))
+    def test_diff_table_has_delta_columns(self, sample_fs: Path, baseline: Path):
+        _code, out, _err = _run(_args(source=sample_fs, baseline=baseline))
         for col in ["Base Incl", "Curr Incl"]:
             assert col in out, f"diff mode should include column {col!r}"
 
-    def test_missing_baseline_exits_runtime(self, tmp_path: Path):
+    def test_missing_baseline_exits_runtime(self, tmp_path: Path, sample_fs: Path):
         bad = tmp_path / "does_not_exist.zprof"
-        code, _out, err = _run(_args(source=HELLO_FS, baseline=bad))
+        code, _out, err = _run(_args(source=sample_fs, baseline=bad))
         assert code == EXIT_RUNTIME, "missing baseline should yield exit 3"
         assert "not found" in err, "stderr should explain the missing baseline"
 
 
 class TestRegressionGating:
 
-    def test_no_fail_flag_means_exit_zero_even_with_regressions(self, tmp_path: Path):
-        halved = self._halved_baseline(tmp_path)
+    def test_no_fail_flag_means_exit_zero_even_with_regressions(
+        self, tmp_path: Path, sample_fs: Path,
+    ):
+        halved = self._halved_baseline(tmp_path, sample_fs)
         code, _out, _err = _run(
-            _args(source=HELLO_FS, baseline=halved, words=["emit"])
+            _args(source=sample_fs, baseline=halved, words=["emit"])
         )
         assert code == EXIT_OK, (
             "without --fail-if-slower, a regression should not change exit code"
         )
 
-    def test_regression_over_threshold_exits_one(self, tmp_path: Path):
-        halved = self._halved_baseline(tmp_path)
+    def test_regression_over_threshold_exits_one(
+        self, tmp_path: Path, sample_fs: Path,
+    ):
+        halved = self._halved_baseline(tmp_path, sample_fs)
         code, _out, err = _run(
-            _args(source=HELLO_FS, baseline=halved, words=["emit"], fail_if_slower=5.0)
+            _args(source=sample_fs, baseline=halved, words=["emit"], fail_if_slower=5.0)
         )
         assert code == EXIT_REGRESSION, (
             "100%% regression with threshold 5%% should exit 1"
         )
         assert "emit" in err, "stderr should name the regressed word"
 
-    def test_no_regression_passes_threshold(self, tmp_path: Path):
+    def test_no_regression_passes_threshold(
+        self, tmp_path: Path, sample_fs: Path,
+    ):
         base = tmp_path / "baseline"
-        _run(_args(source=HELLO_FS, save=base))
+        _run(_args(source=sample_fs, save=base))
         code, _out, _err = _run(
-            _args(source=HELLO_FS, baseline=tmp_path / "baseline.zprof",
+            _args(source=sample_fs, baseline=tmp_path / "baseline.zprof",
                   words=["emit"], fail_if_slower=1.0)
         )
         assert code == EXIT_OK, "identical run should exit 0 even with tight threshold"
 
-    def _halved_baseline(self, tmp_path: Path) -> Path:
+    def _halved_baseline(self, tmp_path: Path, sample_fs: Path) -> Path:
         base = tmp_path / "baseline"
-        _run(_args(source=HELLO_FS, save=base))
+        _run(_args(source=sample_fs, save=base))
         path = tmp_path / "baseline.zprof"
         data = json.loads(path.read_text())
         for e in data["entries"]:
@@ -180,19 +212,19 @@ class TestRegressionGating:
 class TestImageMode:
 
     @pytest.fixture
-    def built(self, tmp_path: Path) -> tuple[Path, Path]:
+    def built(self, tmp_path: Path, sample_fs: Path) -> tuple[Path, Path]:
         from zt.cli.main import _build_compiler as build
         import argparse as ap
         ns = ap.Namespace(
-            source=HELLO_FS, origin=0x8000, dstack=0xFF00, rstack=0xFE00,
+            source=sample_fs, origin=0x8000, dstack=0xFF00, rstack=0xFE00,
             include_dirs=[], optimize=True, inline_next=True,
             inline_primitives=True, stdlib=True,
         )
         compiler = build(ns)
         image = compiler.build()
         from zt.format.sna import build_sna
-        sna_path = tmp_path / "hello.sna"
-        map_path = tmp_path / "hello.map"
+        sna_path = tmp_path / "sample.sna"
+        map_path = tmp_path / "sample.map"
         sna_path.write_bytes(build_sna(
             image, 0x8000, entry=compiler.words["_start"].address,
         ))

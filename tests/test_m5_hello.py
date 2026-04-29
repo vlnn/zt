@@ -1,11 +1,9 @@
 """Milestone-5 end-to-end hello-world tests over the full compile-and-simulate path."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from zt.compile.compiler import Compiler, compile_and_run_with_output
+from zt.compile.compiler import compile_and_run_with_output
 
 
 HELLO_HALTING = """
@@ -25,22 +23,6 @@ HELLO_HALTING = """
 
 : main  hello halt ;
 """
-
-
-class TestHelloExampleFile:
-
-    def test_hello_fs_exists(self):
-        path = Path(__file__).parent.parent / "examples" / "hello.fs"
-        assert path.exists(), "examples/hello.fs should be present"
-
-    def test_hello_fs_compiles(self):
-        path = Path(__file__).parent.parent / "examples" / "hello.fs"
-        c = Compiler()
-        c.include_stdlib()
-        c.compile_source(path.read_text(), source=str(path))
-        c.compile_main_call()
-        image = c.build()
-        assert len(image) > 100, "hello.fs compile should yield non-trivial image"
 
 
 class TestHelloOutput:

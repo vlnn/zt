@@ -11,7 +11,27 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).parent.parent
-HELLO_PATH = REPO_ROOT / "examples" / "hello.fs"
+
+SAMPLE_SOURCE = """\
+: count-to-five  6 1 do i . loop cr ;
+: greet          ." hi" cr count-to-five ;
+: main           7 0 cls begin greet again ;
+"""
+
+
+@pytest.fixture
+def sample_fs(tmp_path: Path) -> Path:
+    """A self-contained Forth program with these properties:
+
+    - Uses stdlib words (`cr`, `.`, `cls`) so `--no-stdlib` correctly fails.
+    - Defines multiple colon words so map-file and tree-shake tests have
+      something to inspect.
+    - Halts on an infinite loop so `--profile-ticks` capping is testable.
+    - Avoids `'`/`[']`/banking so auto-tree-shake applies cleanly.
+    """
+    path = tmp_path / "sample.fs"
+    path.write_text(SAMPLE_SOURCE)
+    return path
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess:
@@ -25,9 +45,9 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess:
 
 class TestCliStdlibDefault:
 
-    def test_hello_builds_without_flag(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_builds_without_stdlib_flag(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        result = _run_cli("build", str(sample_fs), "-o", str(out))
         assert result.returncode == 0, (
             f"build without --stdlib should succeed (stdlib is default); "
             f"stderr={result.stderr}"
@@ -35,40 +55,39 @@ class TestCliStdlibDefault:
         assert out.exists(), "build should produce an output .sna file"
         assert out.stat().st_size == 49179, ".sna snapshots should be 49179 bytes"
 
-    def test_hello_fails_with_no_stdlib(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_fails_with_no_stdlib(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out), "--no-stdlib",
+            "build", str(sample_fs), "-o", str(out), "--no-stdlib",
         )
         assert result.returncode != 0, (
-            "--no-stdlib on hello.fs should fail since hello uses cr/./etc."
+            "--no-stdlib on a sample using cr/./cls should fail"
         )
         assert "unknown word" in result.stderr, (
             f"error should mention 'unknown word'; got: {result.stderr!r}"
         )
 
-    def test_explicit_stdlib_flag_still_works(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_explicit_stdlib_flag_still_works(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out), "--stdlib",
+            "build", str(sample_fs), "-o", str(out), "--stdlib",
         )
         assert result.returncode == 0, (
             "explicit --stdlib should still succeed for backwards compatibility"
         )
 
 
-class TestCliCounterStillWorks:
+class TestCliNoStdlib:
 
-    def test_counter_builds_with_no_stdlib(self, tmp_path):
-        counter_path = REPO_ROOT / "examples" / "counter.fs"
-        if not counter_path.exists():
-            pytest.skip("counter.fs not present")
-        out = tmp_path / "counter.sna"
+    def test_primitives_only_program_builds_with_no_stdlib(self, tmp_path):
+        src = tmp_path / "primitives_only.fs"
+        src.write_text(": main 0 begin dup border 1+ again ;\n")
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(counter_path), "-o", str(out), "--no-stdlib",
+            "build", str(src), "-o", str(out), "--no-stdlib",
         )
         assert result.returncode == 0, (
-            f"counter.fs should build with --no-stdlib (uses only primitives); "
+            f"a program using only primitives should build with --no-stdlib; "
             f"stderr={result.stderr}"
         )
 
@@ -131,46 +150,46 @@ class TestCliInclude:
 
 class TestCliMap:
 
-    def test_map_file_written(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        map_path = tmp_path / "hello.map"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out),
+    def test_map_file_written(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        map_path = tmp_path / "out.map"
+        result = _run_cli("build", str(sample_fs), "-o", str(out),
                           "--map", str(map_path))
         assert result.returncode == 0, (
             f"build with --map should succeed; stderr={result.stderr}"
         )
         assert map_path.exists(), "--map should produce a map file"
 
-    def test_map_contains_main_word(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        map_path = tmp_path / "hello.map"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--map", str(map_path))
+    def test_map_contains_main_word(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        map_path = tmp_path / "out.map"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--map", str(map_path))
         contents = map_path.read_text()
         assert " main" in contents, "map file should contain the 'main' symbol"
 
-    def test_map_contains_hex_addresses(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        map_path = tmp_path / "hello.map"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--map", str(map_path))
+    def test_map_contains_hex_addresses(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        map_path = tmp_path / "out.map"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--map", str(map_path))
         lines = [line for line in map_path.read_text().splitlines() if line]
         assert all(line.startswith("$") for line in lines), (
             "every map line should start with a $ hex address"
         )
 
-    def test_map_addresses_sorted(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        map_path = tmp_path / "hello.map"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--map", str(map_path))
+    def test_map_addresses_sorted(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        map_path = tmp_path / "out.map"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--map", str(map_path))
         addrs = [
             int(line.split()[0].lstrip("$"), 16)
             for line in map_path.read_text().splitlines() if line
         ]
         assert addrs == sorted(addrs), "map entries should be sorted by address"
 
-    def test_no_map_flag_no_map_file(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        map_path = tmp_path / "hello.map"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_no_map_flag_no_map_file(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        map_path = tmp_path / "out.map"
+        _run_cli("build", str(sample_fs), "-o", str(out))
         assert not map_path.exists(), "without --map, no map file should be written"
 
 
@@ -180,32 +199,32 @@ class TestCliFormat:
         (".sna", "sna"),
         (".bin", "bin"),
     ], ids=["sna-ext", "bin-ext"])
-    def test_format_auto_detected(self, tmp_path, ext, fmt):
-        out = tmp_path / f"hello{ext}"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_format_auto_detected(self, tmp_path, sample_fs, ext, fmt):
+        out = tmp_path / f"out{ext}"
+        result = _run_cli("build", str(sample_fs), "-o", str(out))
         assert result.returncode == 0, (
             f"extension {ext} should be auto-detected as {fmt}; stderr={result.stderr}"
         )
         assert out.exists(), f"{fmt} output file should be written"
 
-    def test_bin_output_is_image_only(self, tmp_path):
-        out = tmp_path / "hello.bin"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_bin_output_is_image_only(self, tmp_path, sample_fs):
+        out = tmp_path / "out.bin"
+        _run_cli("build", str(sample_fs), "-o", str(out))
         assert out.stat().st_size < 49179, (
             ".bin output should be raw image (smaller than 49179-byte SNA)"
         )
 
-    def test_explicit_format_overrides_extension(self, tmp_path):
-        out = tmp_path / "hello.out"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out),
+    def test_explicit_format_overrides_extension(self, tmp_path, sample_fs):
+        out = tmp_path / "out.out"
+        result = _run_cli("build", str(sample_fs), "-o", str(out),
                           "--format", "bin")
         assert result.returncode == 0, (
             "explicit --format should override unknown extension"
         )
 
-    def test_unknown_extension_without_format_fails(self, tmp_path):
-        out = tmp_path / "hello.xyz"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_unknown_extension_without_format_fails(self, tmp_path, sample_fs):
+        out = tmp_path / "out.xyz"
+        result = _run_cli("build", str(sample_fs), "-o", str(out))
         assert result.returncode != 0, (
             "unknown extension without --format should fail fast"
         )
@@ -213,9 +232,9 @@ class TestCliFormat:
             "unknown-extension error should mention format"
         )
 
-    def test_tap_is_not_yet_implemented(self, tmp_path):
-        out = tmp_path / "hello.tap"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_tap_is_not_yet_implemented(self, tmp_path, sample_fs):
+        out = tmp_path / "out.tap"
+        result = _run_cli("build", str(sample_fs), "-o", str(out))
         assert result.returncode != 0, ".tap should fail until M8"
         assert "tap" in result.stderr.lower() or "M8" in result.stderr, (
             "tap error should indicate it's not implemented yet"
@@ -224,9 +243,9 @@ class TestCliFormat:
 
 class TestBuildProfileFlag:
 
-    def test_profile_flag_writes_prof_file(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out),
+    def test_profile_flag_writes_prof_file(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        result = _run_cli("build", str(sample_fs), "-o", str(out),
                           "--profile", "--profile-ticks", "20000")
         assert result.returncode == 0, (
             f"build --profile should succeed; stderr={result.stderr}"
@@ -234,32 +253,32 @@ class TestBuildProfileFlag:
         assert out.with_suffix(".prof").exists(), \
             "--profile should write a .prof file next to the snapshot"
 
-    def test_profile_file_contains_report_header(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+    def test_profile_file_contains_report_header(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out),
                  "--profile", "--profile-ticks", "20000")
         text = out.with_suffix(".prof").read_text()
         assert "Word" in text, ".prof should contain the report header"
         assert "Ticks" in text, ".prof should contain a Ticks column"
 
-    def test_profile_file_lists_some_primitives(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+    def test_profile_file_lists_some_primitives(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out),
                  "--profile", "--profile-ticks", "50000")
         text = out.with_suffix(".prof").read_text()
         assert "NEXT" in text or "next" in text, \
             "NEXT should appear in any non-trivial profile run"
 
-    def test_no_profile_flag_writes_no_prof_file(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_no_profile_flag_writes_no_prof_file(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out))
         assert not out.with_suffix(".prof").exists(), \
             "without --profile, no .prof file should be created"
 
-    def test_profile_output_overrides_default_path(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_profile_output_overrides_default_path(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         custom = tmp_path / "custom-location.prof"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+        _run_cli("build", str(sample_fs), "-o", str(out),
                  "--profile", "--profile-output", str(custom),
                  "--profile-ticks", "20000")
         assert custom.exists(), \
@@ -267,9 +286,9 @@ class TestBuildProfileFlag:
         assert not out.with_suffix(".prof").exists(), \
             "when --profile-output is set, no default .prof should be written"
 
-    def test_profile_ticks_bounds_execution(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out),
+    def test_profile_ticks_bounds_execution(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out),
                  "--profile", "--profile-ticks", "500")
         text = out.with_suffix(".prof").read_text()
         total = _sum_ticks_from_report(text)
@@ -362,16 +381,16 @@ class TestCliTreeShake:
     with a warning when not. `--tree-shake` makes tree-shaking strict (fails on
     unsupported features). `--no-tree-shake` forces the eager build."""
 
-    def test_default_auto_tree_shakes_when_supported(self, tmp_path):
+    def test_default_auto_tree_shakes_when_supported(self, tmp_path, sample_fs):
         """Default build should pick the tree_shaken image for programs that
-        support tree-shaking — same image bytes as `--tree-shake` for hello."""
-        default_out = tmp_path / "hello-default.bin"
-        tree_shaken_out = tmp_path / "hello-tree_shaken.bin"
+        support tree-shaking — same image bytes as `--tree-shake`."""
+        default_out = tmp_path / "default.bin"
+        tree_shaken_out = tmp_path / "tree_shaken.bin"
         default_result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(default_out),
+            "build", str(sample_fs), "-o", str(default_out),
         )
         tree_shaken_result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(tree_shaken_out), "--tree-shake",
+            "build", str(sample_fs), "-o", str(tree_shaken_out), "--tree-shake",
         )
         assert default_result.returncode == 0
         assert tree_shaken_result.returncode == 0
@@ -379,24 +398,24 @@ class TestCliTreeShake:
             "default build should tree-shake automatically; image should match --tree-shake output"
         )
 
-    def test_default_smaller_than_no_tree_shake(self, tmp_path):
+    def test_default_smaller_than_no_tree_shake(self, tmp_path, sample_fs):
         """Default (auto-tree-shake) should produce a smaller image than
         `--no-tree-shake` for any program where tree-shaking is supported."""
-        default_out = tmp_path / "hello-default.bin"
-        eager_out = tmp_path / "hello-eager.bin"
-        _run_cli("build", str(HELLO_PATH), "-o", str(default_out))
-        _run_cli("build", str(HELLO_PATH), "-o", str(eager_out), "--no-tree-shake")
+        default_out = tmp_path / "default.bin"
+        eager_out = tmp_path / "eager.bin"
+        _run_cli("build", str(sample_fs), "-o", str(default_out))
+        _run_cli("build", str(sample_fs), "-o", str(eager_out), "--no-tree-shake")
         assert default_out.stat().st_size < eager_out.stat().st_size, (
             f"default should auto-tree-shake and be smaller than --no-tree-shake; "
             f"got default={default_out.stat().st_size}, "
             f"eager={eager_out.stat().st_size}"
         )
 
-    def test_no_tree_shake_flag_forces_eager(self, tmp_path):
+    def test_no_tree_shake_flag_forces_eager(self, tmp_path, sample_fs):
         """`--no-tree-shake` forces the eager build; result is byte-identical
         to the pre-auto-tree-shake default behavior."""
-        out = tmp_path / "hello-eager.bin"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out), "--no-tree-shake")
+        out = tmp_path / "eager.bin"
+        result = _run_cli("build", str(sample_fs), "-o", str(out), "--no-tree-shake")
         assert result.returncode == 0
         assert out.exists()
 
@@ -441,19 +460,21 @@ class TestCliTreeShake:
             f"error should mention the unsupported feature; got: {result.stderr!r}"
         )
 
-    def test_default_produces_runnable_sna(self, tmp_path):
+    def test_default_produces_runnable_sna(self, tmp_path, sample_fs):
         """Default-build .sna should still be 49179 bytes regardless of mode."""
-        out = tmp_path / "hello.sna"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+        out = tmp_path / "out.sna"
+        result = _run_cli("build", str(sample_fs), "-o", str(out))
         assert result.returncode == 0
         assert out.stat().st_size == 49179
 
-    def test_explicit_tree_shake_and_no_tree_shake_are_mutually_exclusive(self, tmp_path):
+    def test_explicit_tree_shake_and_no_tree_shake_are_mutually_exclusive(
+        self, tmp_path, sample_fs,
+    ):
         """Passing both --tree-shake and --no-tree-shake should be rejected; user
         intent is ambiguous."""
         out = tmp_path / "out.bin"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--tree-shake", "--no-tree-shake",
         )
         assert result.returncode != 0, (

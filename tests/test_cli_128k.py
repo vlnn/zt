@@ -16,7 +16,20 @@ from zt.format.sna import SNA_128K_TOTAL_SIZE, SNA_TOTAL_SIZE
 
 
 REPO_ROOT = Path(__file__).parent.parent
-HELLO_PATH = REPO_ROOT / "examples" / "hello.fs"
+
+SAMPLE_SOURCE = """\
+: greet  ." hi" cr ;
+: main   greet halt ;
+"""
+
+
+@pytest.fixture
+def sample_fs(tmp_path: Path) -> Path:
+    """A tiny self-contained source file. Tests don't care about its
+    contents — only that it compiles cleanly."""
+    path = tmp_path / "sample.fs"
+    path.write_text(SAMPLE_SOURCE)
+    return path
 
 
 def _run_cli(*args: str) -> subprocess.CompletedProcess:
@@ -30,9 +43,9 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess:
 
 class TestTargetDefault:
 
-    def test_default_target_produces_48k_sna(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out))
+    def test_default_target_produces_48k_sna(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        result = _run_cli("build", str(sample_fs), "-o", str(out))
         assert result.returncode == 0, (
             f"default build should succeed; stderr={result.stderr}"
         )
@@ -40,11 +53,11 @@ class TestTargetDefault:
             f"default target should produce a {SNA_TOTAL_SIZE}-byte 48k snapshot"
         )
 
-    def test_explicit_48k_matches_default(self, tmp_path):
+    def test_explicit_48k_matches_default(self, tmp_path, sample_fs):
         out_default = tmp_path / "default.sna"
         out_48k = tmp_path / "explicit.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out_default))
-        _run_cli("build", str(HELLO_PATH), "-o", str(out_48k), "--target", "48k")
+        _run_cli("build", str(sample_fs), "-o", str(out_default))
+        _run_cli("build", str(sample_fs), "-o", str(out_48k), "--target", "48k")
         assert out_default.read_bytes() == out_48k.read_bytes(), (
             "--target 48k should produce the exact same bytes as the default"
         )
@@ -52,9 +65,9 @@ class TestTargetDefault:
 
 class TestTarget128k:
 
-    def test_target_128k_produces_131103_byte_sna(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        result = _run_cli("build", str(HELLO_PATH), "-o", str(out), "--target", "128k")
+    def test_target_128k_produces_131103_byte_sna(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        result = _run_cli("build", str(sample_fs), "-o", str(out), "--target", "128k")
         assert result.returncode == 0, (
             f"--target 128k build should succeed; stderr={result.stderr}"
         )
@@ -63,18 +76,18 @@ class TestTarget128k:
             f"{SNA_128K_TOTAL_SIZE}-byte snapshot"
         )
 
-    def test_target_128k_loads_as_128k_image(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--target", "128k")
+    def test_target_128k_loads_as_128k_image(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--target", "128k")
         image = load_sna_128(out)
         assert isinstance(image, Sna128Image), (
             "--target 128k output should load via load_sna_128"
         )
         assert image.pc >= 0x4000, "pc should point at Spectrum RAM"
 
-    def test_target_128k_places_code_in_bank_2(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--target", "128k")
+    def test_target_128k_places_code_in_bank_2(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--target", "128k")
         image = load_sna_128(out)
         bank2 = image.memory[2 * 0x4000:(2 + 1) * 0x4000]
         non_zero = sum(1 for b in bank2 if b != 0)
@@ -83,9 +96,9 @@ class TestTarget128k:
             "since default origin $8000 is in bank 2"
         )
 
-    def test_target_128k_uses_bank_2_stacks(self, tmp_path):
-        out = tmp_path / "hello.sna"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--target", "128k")
+    def test_target_128k_uses_bank_2_stacks(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--target", "128k")
         image = load_sna_128(out)
         sp_low = image.memory[2 * 0x4000 + (0xBF00 - 0x8000)]
         assert image.memory[2 * 0x4000 - 0x8000 + 0xBF00] is not None, (
@@ -96,10 +109,10 @@ class TestTarget128k:
 class TestTarget128kPagedBank:
 
     @pytest.mark.parametrize("paged_bank", [0, 1, 3, 4, 6, 7])
-    def test_paged_bank_flag_encoded_in_port(self, tmp_path, paged_bank):
-        out = tmp_path / "hello.sna"
+    def test_paged_bank_flag_encoded_in_port(self, tmp_path, sample_fs, paged_bank):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--paged-bank", str(paged_bank),
         )
         assert result.returncode == 0, (
@@ -111,20 +124,20 @@ class TestTarget128kPagedBank:
         )
 
     @pytest.mark.parametrize("paged_bank", ["-1", "8", "99"])
-    def test_rejects_out_of_range_paged_bank(self, tmp_path, paged_bank):
-        out = tmp_path / "hello.sna"
+    def test_rejects_out_of_range_paged_bank(self, tmp_path, sample_fs, paged_bank):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--paged-bank", paged_bank,
         )
         assert result.returncode != 0, (
             f"--paged-bank {paged_bank} outside 0..7 should fail"
         )
 
-    def test_paged_bank_requires_128k_target(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_paged_bank_requires_128k_target(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--paged-bank", "3",
         )
         assert result.returncode != 0, (
@@ -134,10 +147,10 @@ class TestTarget128kPagedBank:
 
 class TestStackValidation:
 
-    def test_rejects_48k_dstack_default_under_128k(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_rejects_48k_dstack_default_under_128k(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--dstack", "0xFF00",
         )
         assert result.returncode != 0, (
@@ -147,20 +160,20 @@ class TestStackValidation:
             f"error should mention stack placement; got: {result.stderr!r}"
         )
 
-    def test_rejects_rstack_in_paged_slot(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_rejects_rstack_in_paged_slot(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--rstack", "0xFE00",
         )
         assert result.returncode != 0, (
             "--target 128k with --rstack in the paged slot should fail"
         )
 
-    def test_accepts_bank_2_dstack(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_accepts_bank_2_dstack(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--dstack", "0xBF00", "--rstack", "0xBE00",
         )
         assert result.returncode == 0, (
@@ -170,20 +183,20 @@ class TestStackValidation:
 
 class TestOriginValidation:
 
-    def test_rejects_origin_in_paged_slot_under_128k(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_rejects_origin_in_paged_slot_under_128k(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--origin", "0xC000",
         )
         assert result.returncode != 0, (
             "--target 128k with --origin in the paged slot should fail"
         )
 
-    def test_48k_origin_unconstrained(self, tmp_path):
-        out = tmp_path / "hello.sna"
+    def test_48k_origin_unconstrained(self, tmp_path, sample_fs):
+        out = tmp_path / "out.sna"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--origin", "0xC000",
         )
         assert result.returncode == 0, (
@@ -224,10 +237,10 @@ class TestBankingPrimitivesUsable:
 
 class TestTargetZ80Format:
 
-    def test_z80_extension_auto_detects_format(self, tmp_path):
-        out = tmp_path / "hello.z80"
+    def test_z80_extension_auto_detects_format(self, tmp_path, sample_fs):
+        out = tmp_path / "out.z80"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out), "--target", "128k",
+            "build", str(sample_fs), "-o", str(out), "--target", "128k",
         )
         assert result.returncode == 0, (
             f".z80 extension should auto-detect z80 format; stderr={result.stderr}"
@@ -236,20 +249,20 @@ class TestTargetZ80Format:
             "z80 128k output should contain the full banked image"
         )
 
-    def test_explicit_format_z80(self, tmp_path):
-        out = tmp_path / "hello.bin"
+    def test_explicit_format_z80(self, tmp_path, sample_fs):
+        out = tmp_path / "out.bin"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out),
+            "build", str(sample_fs), "-o", str(out),
             "--target", "128k", "--format", "z80",
         )
         assert result.returncode == 0, (
             f"--format z80 should override extension detection; stderr={result.stderr}"
         )
 
-    def test_z80_rejects_48k_target(self, tmp_path):
-        out = tmp_path / "hello.z80"
+    def test_z80_rejects_48k_target(self, tmp_path, sample_fs):
+        out = tmp_path / "out.z80"
         result = _run_cli(
-            "build", str(HELLO_PATH), "-o", str(out), "--format", "z80",
+            "build", str(sample_fs), "-o", str(out), "--format", "z80",
         )
         assert result.returncode != 0, (
             "--format z80 with default --target 48k should fail"
@@ -258,18 +271,18 @@ class TestTargetZ80Format:
             f"error should mention the z80/128k requirement; got: {result.stderr!r}"
         )
 
-    def test_z80_header_identifies_spectrum_128(self, tmp_path):
-        out = tmp_path / "hello.z80"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--target", "128k")
+    def test_z80_header_identifies_spectrum_128(self, tmp_path, sample_fs):
+        out = tmp_path / "out.z80"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--target", "128k")
         data = out.read_bytes()
         assert data[34] == 4, (
             "hardware mode byte 34 should equal 4 (Spectrum 128), not Pentagon; "
             "this is the whole reason z80 is preferred over sna for 128k output"
         )
 
-    def test_z80_pc_matches_start_label(self, tmp_path):
-        out = tmp_path / "hello.z80"
-        _run_cli("build", str(HELLO_PATH), "-o", str(out), "--target", "128k")
+    def test_z80_pc_matches_start_label(self, tmp_path, sample_fs):
+        out = tmp_path / "out.z80"
+        _run_cli("build", str(sample_fs), "-o", str(out), "--target", "128k")
         data = out.read_bytes()
         pc_in_base = data[6] | (data[7] << 8)
         pc_extended = data[32] | (data[33] << 8)

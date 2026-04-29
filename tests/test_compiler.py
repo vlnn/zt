@@ -407,34 +407,12 @@ class TestCounterDemo:
         assert border_writes[:6] == [0, 1, 2, 3, 4, 5], \
             "counter should cycle through border values 0,1,2,..."
 
-    def test_counter_from_fs_file(self):
-        from pathlib import Path
-        from zt.compile.compiler import Compiler
-        from zt.sim import Z80
-
-        fs_path = Path(__file__).parent.parent / "examples" / "counter.fs"
-        source = fs_path.read_text()
-
-        c = Compiler()
-        c.compile_source(source, source=str(fs_path))
-        c.compile_main_call()
-        image = c.build()
-
-        m = Z80()
-        m.load(c.origin, image)
-        m.pc = c.words["_start"].address
-        m.run(max_ticks=50_000)
-
-        border_writes = [v for port, v in m._outputs if (port & 0xFF) == 0xFE]
-        assert border_writes[:6] == [0, 1, 2, 3, 4, 5], \
-            "counter.fs should produce sequential border writes"
-
     def test_cli_build_produces_sna(self, tmp_path):
-        from pathlib import Path
         from zt.format.sna import SNA_TOTAL_SIZE, SNA_HEADER_SIZE, SNA_RAM_BASE
         from zt.sim import Z80
 
-        fs_path = Path(__file__).parent.parent / "examples" / "counter.fs"
+        fs_path = tmp_path / "counter.fs"
+        fs_path.write_text(": main 0 begin dup border 1+ again ;\n")
         sna_path = tmp_path / "counter.sna"
 
         from zt.cli.main import main

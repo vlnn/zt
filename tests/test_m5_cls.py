@@ -123,13 +123,3 @@ class TestClsForthWord:
         assert out == b"XY", (
             "after cls, previous output should be wiped; only post-cls EMITs visible"
         )
-
-
-class TestHelloWithCls:
-
-    def test_hello_fs_calls_cls(self):
-        from pathlib import Path
-        hello = (Path(__file__).parent.parent / "examples" / "hello.fs").read_text()
-        assert "cls" in hello, (
-            "hello.fs should call cls so real-hardware output is visible"
-        )

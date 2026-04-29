@@ -355,31 +355,76 @@ class TestBuildTreeShakenPostState:
         )
 
 
-class TestRealExamples:
+class TestNontrivialPrograms:
+    """Tree-shake parity and shrinkage on programs large enough to exercise
+    realistic compiler paths. Hand-rolled here rather than referencing
+    `examples/` so the suite remains hermetic when examples are added or
+    removed."""
 
-    @pytest.mark.parametrize("path", [
-        "examples/sierpinski/main.fs",
-    ])
-    def test_halting_example_runs_with_full_parity(self, path):
-        from zt.sim import SPECTRUM_FONT_BASE, TEST_FONT, Z80, _read_data_stack
-        text = open(path).read()
-        eager_c = Compiler(
+    HALTING_PROGRAM = """\
+\\ Halting program: nested colons, stdlib calls, control flow.
+\\ Pulls in the entire stdlib via `include`, of which most words go unused —
+\\ giving the tree-shaker something material to remove.
+
+variable counter
+variable accumulator
+
+: bump      ( -- )      1 counter +! ;
+: square    ( n -- n*n ) dup * ;
+
+: loop-five ( -- )
+    5 0 do
+        i square accumulator +!
+        bump
+    loop ;
+
+: classify  ( n -- )
+    dup 0= if drop exit then
+    dup 0< if drop exit then
+    drop ;
+
+: main
+    0 counter !
+    0 accumulator !
+    loop-five
+    accumulator @ classify
+    halt ;
+"""
+
+    SIZE_DOMINATED_PROGRAM = """\
+\\ A larger program with more colon words and more stdlib references.
+\\ Doesn't halt — used for byte-size assertions only.
+
+variable phase
+create scratch 32 allot
+
+: rotate    ( -- )      1 phase +!  phase @ 31 and phase ! ;
+: cell-of   ( i -- a )  scratch + ;
+: paint-row ( -- )      32 0 do  i phase @ + i cell-of c!  loop ;
+: pulse     ( -- )      paint-row rotate ;
+: animate   ( -- )      begin pulse again ;
+
+: main      animate ;
+"""
+
+    def _compile(self, source: str) -> "Compiler":
+        c = Compiler(
             origin=0x8000, optimize=False, inline_next=True,
             inline_primitives=True, include_sprites=True,
         )
-        eager_c.include_stdlib()
-        eager_c.compile_source(text, source=path)
-        eager_c.compile_main_call()
+        c.include_stdlib()
+        c.compile_source(source, source="<test>")
+        c.compile_main_call()
+        return c
+
+    def test_halting_program_runs_with_full_parity(self):
+        from zt.sim import SPECTRUM_FONT_BASE, TEST_FONT, Z80, _read_data_stack
+
+        eager_c = self._compile(self.HALTING_PROGRAM)
         eager_image = eager_c.build()
         eager_start = eager_c.words["_start"].address
 
-        tree_shaken_c = Compiler(
-            origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=True,
-        )
-        tree_shaken_c.include_stdlib()
-        tree_shaken_c.compile_source(text, source=path)
-        tree_shaken_c.compile_main_call()
+        tree_shaken_c = self._compile(self.HALTING_PROGRAM)
         tree_shaken_image, tree_shaken_start = tree_shaken_c.build_tree_shaken()
 
         def run(image, start):
@@ -392,43 +437,22 @@ class TestRealExamples:
 
         eager_halted, eager_stk = run(eager_image, eager_start)
         tree_shaken_halted, tree_shaken_stk = run(tree_shaken_image, tree_shaken_start)
-        assert eager_halted, f"eager build of {path} should halt under tick budget"
-        assert tree_shaken_halted, f"tree_shaken build of {path} should halt under tick budget"
+        assert eager_halted, "eager build should halt under the tick budget"
+        assert tree_shaken_halted, "tree_shaken build should halt under the tick budget"
         assert eager_stk == tree_shaken_stk, (
-            f"halt-state stacks should match for {path}: "
+            f"halt-state stacks should match: "
             f"eager={eager_stk}, tree_shaken={tree_shaken_stk}"
         )
         assert len(tree_shaken_image) < len(eager_image), (
-            f"tree_shaken image of {path} should be smaller than eager: "
+            f"tree_shaken image should be smaller than eager: "
             f"eager={len(eager_image)}, tree_shaken={len(tree_shaken_image)}"
         )
 
-    @pytest.mark.parametrize("path", [
-        "examples/plasma4/main.fs",
-        "examples/reaction/main.fs",
-        "examples/mined-out/main.fs",
-    ])
-    def test_real_example_compiles_to_smaller_image(self, path):
-        text = open(path).read()
-        c = Compiler(
-            origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=True,
-        )
-        c.include_stdlib()
-        c.compile_source(text, source=path)
-        c.compile_main_call()
-        eager_size = len(c.build())
-
-        c2 = Compiler(
-            origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=True,
-        )
-        c2.include_stdlib()
-        c2.compile_source(text, source=path)
-        c2.compile_main_call()
-        tree_shaken_image, _ = c2.build_tree_shaken()
+    def test_size_dominated_program_compiles_to_smaller_image(self):
+        eager_size = len(self._compile(self.SIZE_DOMINATED_PROGRAM).build())
+        tree_shaken_image, _ = self._compile(self.SIZE_DOMINATED_PROGRAM).build_tree_shaken()
         assert len(tree_shaken_image) < eager_size, (
-            f"tree_shaken image of {path} should be smaller: "
+            f"tree_shaken image should be smaller than eager: "
             f"eager={eager_size}, tree_shaken={len(tree_shaken_image)}"
         )
 

@@ -55,9 +55,7 @@ class TestMakeExamplesCoverage:
 
 class TestBuildFlagsPer128kExample:
 
-    @pytest.mark.parametrize("name", [
-        "bank-rotator", "bank-table", "plasma-128k", "shadow-flip",
-    ])
+    @pytest.mark.parametrize("name", ["plasma-128k"])
     def test_128k_example_uses_128k_target(self, name):
         result = subprocess.run(
             ["make", "-Bn", f"build/{name}.sna"],

@@ -30,7 +30,6 @@ from zt.sim import (
 
 EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "plasma-128k"
 MAIN = EXAMPLE_DIR / "main.fs"
-PLASMA_MATH = Path(__file__).parent.parent / "examples" / "plasma" / "lib" / "math.fs"
 
 
 def _build() -> tuple[Compiler, bytes]:
@@ -97,12 +96,6 @@ class TestSourceLayout:
 
     def test_main_fs_exists(self):
         assert MAIN.is_file(), "plasma-128k/main.fs should ship"
-
-    def test_reuses_plasma_math_lib(self):
-        assert PLASMA_MATH.is_file(), (
-            "plasma-128k is expected to require ../plasma/lib/math.fs; "
-            "shared helper should stay put"
-        )
 
 
 class TestCompiles:
