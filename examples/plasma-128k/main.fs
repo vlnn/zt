@@ -17,7 +17,7 @@
 \   $07 — normal visible
 \   $0F — shadow visible
 
-require ../plasma/lib/math.fs
+require ./lib/math.fs
 
 $07 constant page-normal-visible
 $0F constant page-shadow-visible
