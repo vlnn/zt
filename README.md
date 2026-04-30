@@ -16,7 +16,7 @@ generated image uses indirect-threaded code so most of a program is a flat list 
 The 48K Spectrum has 42KB of usable RAM, an 8-bit CPU, and a character-mapped
 screen. You could write a game in Z80 assembly and spend weeks re-implementing
 control flow every time. Or you could write C with z88dk and fight the
-codegen. zt sits in between: you get a tight REPL-style language that compiles
+codegen. zt sits in between: you get a tight language that compiles
 to code you can read byte-for-byte, a simulator that runs your code in pytest,
 and a debugger that maps addresses back to source lines.
 
