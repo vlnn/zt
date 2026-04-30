@@ -39,10 +39,10 @@ zt build examples/arkanoid/main.fs -o build/arkanoid.sna
 
 ## Tests
 
-`test_examples_arkanoid.py` runs the simulator against the built image and
-asserts on game state (paddle bounds, brick count, score, paddle pixel
-integrity, ball-dx variation, no pixel trails). Drop it under `tests/` and run
-with `pytest tests/test_examples_arkanoid.py`.
+`tests/test_arkanoid.py` builds the example end-to-end and asserts on
+game state (paddle bounds, brick count, score, paddle pixel integrity,
+ball-dx variation, no pixel trails). Run with
+`pytest examples/arkanoid/tests/test_arkanoid.py`.
 
 ## Design notes
 

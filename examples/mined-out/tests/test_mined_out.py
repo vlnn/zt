@@ -12,7 +12,7 @@ import pytest
 from zt.compile.compiler import Compiler
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "mined-out"
+EXAMPLE_DIR = Path(__file__).parent.parent
 MAIN = EXAMPLE_DIR / "main.fs"
 
 
@@ -26,7 +26,7 @@ def built_compiler() -> Compiler:
     return c
 
 
-class TestMinedOutLayout:
+class TestLayout:
 
     @pytest.mark.parametrize("relpath", [
         "main.fs",
@@ -47,7 +47,7 @@ class TestMinedOutLayout:
         )
 
 
-class TestMinedOutCompiles:
+class TestCompiles:
 
     def test_compiles_cleanly(self, built_compiler):
         assert "main" in built_compiler.words, (
@@ -55,7 +55,7 @@ class TestMinedOutCompiles:
         )
 
 
-class TestMinedOutWordsByModule:
+class TestWordsByModule:
 
     @pytest.mark.parametrize("word", [
         "score", "level-no", "ti", "max-level-reached", "initial-bonus-pending",
@@ -184,7 +184,7 @@ class TestMinedOutWordsByModule:
         )
 
 
-class TestMinedOutRequireDedup:
+class TestRequireDedup:
 
     def test_stdlib_grid_registered_once(self, built_compiler):
         grid_paths = [p for p in built_compiler.include_resolver.seen_paths()

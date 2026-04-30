@@ -24,7 +24,7 @@ from zt.sim import (
 )
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sprite-demo"
+EXAMPLE_DIR = Path(__file__).parent.parent
 DYNAMIC = EXAMPLE_DIR / "dynamic.fs"
 
 \

@@ -10,7 +10,7 @@ import pytest
 from zt.compile.compiler import Compiler
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sierpinski"
+EXAMPLE_DIR = Path(__file__).parent.parent
 MAIN = EXAMPLE_DIR / "main.fs"
 
 
@@ -24,7 +24,7 @@ def built_compiler() -> Compiler:
     return c
 
 
-class TestSierpinskiExample:
+class TestExample:
 
     def test_example_files_exist(self):
         assert MAIN.is_file(), "examples/sierpinski/main.fs should exist"

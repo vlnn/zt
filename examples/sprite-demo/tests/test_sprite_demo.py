@@ -17,7 +17,7 @@ from zt.sim import (
 )
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "sprite-demo"
+EXAMPLE_DIR = Path(__file__).parent.parent
 MAIN = EXAMPLE_DIR / "main.fs"
 
 SMILEY = [0x3C, 0x42, 0xA5, 0x81, 0xA5, 0x99, 0x42, 0x3C]
@@ -45,7 +45,7 @@ def ran_machine(built_compiler: Compiler) -> Z80:
     return m
 
 
-class TestSpriteDemoCompiles:
+class TestCompiles:
 
     def test_example_files_exist(self):
         assert MAIN.is_file(), "examples/sprite-demo/main.fs should exist"

@@ -21,7 +21,7 @@ from zt.sim import (
 )
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "mined-out"
+EXAMPLE_DIR = Path(__file__).parent.parent
 
 
 def _run(harness: str) -> tuple[Compiler, Z80]:

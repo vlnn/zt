@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+EXAMPLE_DIR = Path(__file__).resolve().parents[1]
+ROOT = EXAMPLE_DIR.parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from zt.compile.compiler import Compiler
@@ -39,7 +40,7 @@ IMAGE_END_MAX = ACTS2_LO
 
 @pytest.fixture(scope="module")
 def example_dir() -> Path:
-    return ROOT / "examples" / "zlm-tinychat-48k"
+    return EXAMPLE_DIR
 
 
 @pytest.fixture(scope="module")
@@ -169,9 +170,9 @@ def test_rstack_peak_within_budget() -> None:
     pins both the peak and the headroom so future changes that grow stack
     pressure fail loudly rather than silently corrupting acts1.
     """
-    src = (ROOT / "examples" / "zlm-tinychat-48k" / "main.fs").read_text()
+    src = (EXAMPLE_DIR / "main.fs").read_text()
     c = Compiler(
-        include_dirs=[ROOT / "examples" / "zlm-tinychat-48k", ROOT / "stdlib"],
+        include_dirs=[EXAMPLE_DIR, ROOT / "stdlib"],
         origin=ORIGIN,
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
@@ -300,9 +301,9 @@ def test_survives_simulated_im1_corruption() -> None:
     invariant: HELLO query still returns HI even when $5C78 is being
     overwritten throughout execution.
     """
-    src = (ROOT / "examples" / "zlm-tinychat-48k" / "main.fs").read_text()
+    src = (EXAMPLE_DIR / "main.fs").read_text()
     c = Compiler(
-        include_dirs=[ROOT / "examples" / "zlm-tinychat-48k", ROOT / "stdlib"],
+        include_dirs=[EXAMPLE_DIR, ROOT / "stdlib"],
         origin=ORIGIN,
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,

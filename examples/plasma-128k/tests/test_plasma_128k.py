@@ -28,7 +28,7 @@ from zt.sim import (
 )
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "plasma-128k"
+EXAMPLE_DIR = Path(__file__).parent.parent
 MAIN = EXAMPLE_DIR / "main.fs"
 
 

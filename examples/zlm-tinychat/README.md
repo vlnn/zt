@@ -64,7 +64,7 @@ ZEsarUX, or a real 48K via divMMC.
 
 ## Tests
 
-`tests/test_examples_zlm_tinychat_48k.py` has 11 tests:
+`tests/test_zlm_tinychat_48k.py` has 11 tests:
 
 - 9 layout invariants (compile-time): no bank data emitted, image fits
   below `$F9E0`, every hoisted buffer lies outside `[origin, image_end)`,
@@ -73,6 +73,6 @@ ZEsarUX, or a real 48K via divMMC.
   `HELLO\r`, and assert the screen shows `HELLO` followed by `HI`.
 
 ```
-pytest tests/test_examples_zlm_tinychat_48k.py            # fast
-pytest tests/test_examples_zlm_tinychat_48k.py -m slow    # runtime
+pytest tests/test_zlm_tinychat_48k.py            # fast
+pytest tests/test_zlm_tinychat_48k.py -m slow    # runtime
 ```

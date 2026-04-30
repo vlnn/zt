@@ -571,7 +571,7 @@ into whichever screen is currently hidden, then toggles bit 3 of
 `$7FFD` via `RAW-BANK!` — one port write swaps which bank the ULA
 renders from. Zero copying, atomic frame presentation, genuinely
 impossible on a 48K Spectrum. 19 tests in
-`tests/test_examples_plasma_128k.py`; two of them actually run the
+`examples/plasma-128k/tests/test_plasma_128k.py`; two of them actually run the
 simulator through enough plasma frames (~25 s wall clock) to verify
 both screens receive data and bit 3 toggles between draws.
 
@@ -864,7 +864,7 @@ New test files:
 - `tests/test_compiler_banking.py` (14 tests)
 - `tests/test_examples_bank_rotator.py` (14 tests)
 - `tests/test_examples_bank_table.py` (7 tests)
-- `tests/test_examples_plasma_128k.py` (18 tests)
+- `examples/plasma-128k/tests/test_plasma_128k.py` (18 tests)
 - `tests/test_examples_shadow_flip.py` (19 tests)
 - `tests/test_z80_format.py` (39 tests)
 

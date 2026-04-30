@@ -9,12 +9,8 @@ SINGLE_SNAS    := $(patsubst $(EXAMPLES_DIR)/%.fs,$(BUILD_DIR)/%.sna,$(SINGLE_SO
 MULTIFILE_DIRS := $(patsubst $(EXAMPLES_DIR)/%/main.fs,%,$(wildcard $(EXAMPLES_DIR)/*/main.fs))
 MULTIFILE_SNAS := $(patsubst %,$(BUILD_DIR)/%.sna,$(MULTIFILE_DIRS))
 
-BUILD_FLAGS_bank-rotator := --target 128k
-BUILD_FLAGS_bank-table   := --target 128k
-BUILD_FLAGS_shadow-flip  := --target 128k
-BUILD_FLAGS_plasma-128k  := --target 128k --include-dir $(EXAMPLES_DIR)
-BUILD_FLAGS_zlm-tinychat := --target 128k
-BUILD_FLAGS_zlm-emit-test := --target 128k
+BUILD_FLAGS_plasma-128k      := --target 128k --include-dir $(EXAMPLES_DIR)
+BUILD_FLAGS_zlm-tinychat     := --target 128k
 BUILD_FLAGS_zlm-tinychat-48k := --target 48k --origin 0x5C00 --rstack 0xFF80 --dstack 0xFFC0 --no-inline-next --no-stdlib
 
 .PHONY: all examples test clean help

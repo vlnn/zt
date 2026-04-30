@@ -13,7 +13,7 @@ import pytest
 from zt.compile.compiler import Compiler, compile_and_run_with_output
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "reaction"
+EXAMPLE_DIR = Path(__file__).parent.parent
 MAIN = EXAMPLE_DIR / "main.fs"
 APP = EXAMPLE_DIR / "app" / "reaction.fs"
 LIB_RNG = EXAMPLE_DIR / "lib" / "rng.fs"
@@ -30,7 +30,7 @@ def built_compiler() -> Compiler:
     return c
 
 
-class TestReactionFiles:
+class TestFiles:
 
     @pytest.mark.parametrize("relpath", [
         "main.fs",
@@ -44,7 +44,7 @@ class TestReactionFiles:
         )
 
 
-class TestReactionCompiles:
+class TestCompiles:
 
     def test_main_defined(self, built_compiler):
         assert "main" in built_compiler.words, (
@@ -85,7 +85,7 @@ class TestReactionCompiles:
         )
 
 
-class TestReactionBehaviour:
+class TestBehaviour:
 
     def _run(self, snippet: str, **kw) -> bytes:
         source = f"""

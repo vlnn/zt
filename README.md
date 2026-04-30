@@ -60,7 +60,7 @@ The `.map` is a Fuse-compatible symbol map so your debugger shows `greet` and
 
 ### Happy path: the plasma example
 
-`examples/plasma/` is the largest bundled example and exercises most of the
+`examples/plasma4/` is the largest bundled example and exercises most of the
 pipeline — multi-file includes with path deduplication, attribute-memory
 manipulation, a precomputed phase buffer, per-frame timing, and keyboard
 input via `KEY-STATE`.
@@ -68,7 +68,7 @@ input via `KEY-STATE`.
 The source is split across four files that wire together with `REQUIRE`:
 
 ```
-examples/plasma/
+examples/plasma4/
 ├── main.fs                    ← entry point; require app/plasma.fs
 ├── lib/
 │   ├── math.fs                ← : mod32 ( n -- n%32 ) 31 and ;
@@ -148,7 +148,7 @@ player. That's what the second demo clip shows.
 Build it:
 
 ```
-zt build examples/plasma/main.fs -o plasma.sna --map plasma.map
+zt build examples/plasma4/main.fs -o plasma.sna --map plasma.map
 ```
 
 You get a `.sna` that boots straight into the plasma drawn across the
@@ -165,7 +165,7 @@ writes, and stdin as Python attributes:
 
 ```python
 def test_plasma_writes_attrs(tmp_path):
-    out = build_sna(Path("examples/plasma/main.fs"))
+    out = build_sna(Path("examples/plasma4/main.fs"))
     m = Z80()
     m.load(0x4000, out[27:])        # skip SNA header, load RAM
     m.run(max_ticks=500_000)
@@ -214,6 +214,85 @@ regression-gated performance tests.
 Both `--source file.fs` (compile-then-run) and `--image file.sna` (with a
 sibling `.map`) are accepted; `--json` emits the same data for scripting.
 See `zt profile --help` for the full flag list.
+
+### Showcase: a brick-breaker
+
+`examples/arkanoid/` is a small Arkanoid-like — paddle, ball, breakable
+bricks, lives, score — and exercises most of what's needed for a real
+ZX game on top of `plasma`'s attribute work: 8x8 sprite blits,
+pixel-resolution ball motion, per-frame physics, keyboard input, and a
+HUD. Around 5 KB compiled, split across six modules under `lib/`:
+
+```
+examples/arkanoid/
+├── main.fs              ← entry — calls arkanoid then halt
+└── lib/
+    ├── sprites.fs       ball-shifted, paddle-{left,mid,right}, brick-tile, wall-tile
+    ├── bricks.fs        30×4 brick grid via stdlib grid.fs, ball-center collision
+    ├── paddle.fs        char-aligned paddle, throttled O/P motion, paddle-vel tracking
+    ├── ball.fs          physics: walls, ceiling, paddle (zone-based), brick bounces, floor-loss
+    ├── score.fs         score, lives, hud-dirty flag
+    └── game.fs          init-level, game-step, game-loop, top-level arkanoid
+```
+
+The angle of the bounce off the paddle is the gameplay trick worth
+calling out:
+
+```forth
+\ Six 4-pixel zones across a 24-pixel paddle: edges deflect steepest,
+\ centre gentlest. No zero zone — paddle hits always retain horizontal motion.
+\   offset    0..3   4..7   8..11  12..15  16..19  20..23
+\   new dx    -3     -2     -1     +1      +2      +3
+: zone-dx            ( hit-off -- dx )
+    dup  4 < if drop -3 exit then
+    dup  8 < if drop -2 exit then
+    dup 12 < if drop -1 exit then
+    dup 16 < if drop  1 exit then
+    dup 20 < if drop  2 exit then
+    drop  3 ;
+
+: paddle-bounce-dx   ( -- dx )
+    ball-x @ 4 + paddle-left-px - zone-dx
+    paddle-vel @ + clamp-dx ;
+```
+
+Things worth pointing out:
+
+- **Pre-shifted ball, char-aligned bricks.** The ball uses `BLIT8X` /
+  `BLIT8XC` (pre-shifted, pixel-aligned) so it can move at pixel
+  resolution; bricks and paddle pieces use `BLIT8` / `BLIT8C`
+  (char-aligned) since they sit on the 8-pixel grid anyway. Mixing
+  the two avoids paying the pre-shift cost on the static pieces.
+- **Cell-level background restore.** Erasing the ball naively would
+  scrub brick pixels off the screen. Instead, before painting the ball
+  each frame, `restore-old-cells` repaints every cell the previous
+  ball footprint covered to its actual background — a live brick if
+  one's there, blank otherwise. The ball flies through the brick rows
+  without leaving holes.
+- **Variable bounce angles plus paddle "english".** `paddle-bounce-dx`
+  adds the paddle's per-frame column delta (`paddle-vel`) to the
+  zone-derived dx, then clamps to ±3, so a paddle moving into the
+  contact pulls the bounce further in that direction.
+- **HUD dirty-bit.** `mark-hud-dirty` is set only when the score or
+  lives change; the per-frame body skips the ROM `EMIT` path most of
+  the time. Cuts ~2.4k T-states per frame in the common case.
+- **Frame ordering.** Render at the start of the frame (top border,
+  beam not yet on the visible area), physics at the end. The visible
+  image is finalised before the beam reaches it, and physics has the
+  rest of the frame budget.
+
+Build it:
+
+```
+make build/arkanoid.sna
+```
+
+Controls: `O` left, `P` right. Knock out all 120 bricks to wrap to a
+fresh level; you have 3 lives. End-to-end tests covering paddle bounds,
+brick count, score, paddle-pixel integrity, ball-dx variation, and
+no-pixel-trail invariants live in `examples/arkanoid/tests/test_arkanoid.py`.
+The example's own `README.md` has source-layout details and a
+`FUTURE_IMPROVEMENTS.md` lists known limitations and natural extensions.
 
 ### Showcase: a language model on a stock 48K
 
@@ -385,9 +464,9 @@ that uses supported features and falls back to the eager build with a
 warning when it can't (programs using `'`/`[']` for word-address-as-data
 or `in-bank` compile-time banking). Pass `--tree-shake` for strict
 mode (fail rather than fall back) or `--no-tree-shake` to opt out
-entirely. Typical savings: 18–95% of image size on stdlib-using
-programs; the full suite of 24 examples shrinks from 158 KB to 101 KB
-combined.
+entirely. Typical savings: 4–77% of image size on stdlib-using
+programs; the bundled suite of 9 examples shrinks from ~93 KB to
+~74 KB combined.
 
 ### Debug surface
 
@@ -454,9 +533,8 @@ run unchanged on real hardware.
 - **No `.tap` output.** Output formats are `sna`, `z80`, and `bin`.
   Loading on real hardware via `.tap` is on the roadmap.
 
-128K banking *is* supported — see `--target 128k`, the four examples
-under `examples/{plasma-128k,bank-rotator,bank-table,shadow-flip}`, and
-`docs/128k-architecture.md`.
+128K banking *is* supported — see `--target 128k`, the bundled
+`examples/plasma-128k/` example, and `docs/128k-architecture.md`.
 
 Most of the open items above are addressed in `docs/COMPILER-ROADMAP.md`
 and `docs/FORTH-ROADMAP.md`.

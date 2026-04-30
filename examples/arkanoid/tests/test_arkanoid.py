@@ -22,7 +22,7 @@ from zt.sim import (
 )
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "arkanoid"
+EXAMPLE_DIR = Path(__file__).parent.parent
 MAIN = EXAMPLE_DIR / "main.fs"
 
 TICK_BUDGET = 2_000_000
@@ -193,7 +193,6 @@ class TestBricksDestroyed:
         return sum(m.mem[addr + i] for i in range(BRICKS_INITIAL))
 
     def test_all_bricks_alive_after_short_run(self, built_compiler):
-        \
         m = _run(built_compiler, budget=20_000)
         alive = self._bricks_alive(m, built_compiler)
         assert alive == BRICKS_INITIAL, (
@@ -212,7 +211,6 @@ class TestBricksDestroyed:
 class TestScoreAndLives:
 
     def test_lives_initialized(self, built_compiler):
-        \
         m = _run(built_compiler, budget=20_000)
         lives = _read_word(m, "lives", built_compiler)
         assert lives == LIVES_START, (
@@ -266,7 +264,6 @@ class TestSpritesRendered:
         )
 
     def test_paddle_visible_on_paddle_row(self, built_compiler, free_run):
-        \
         any_set = False
         for line in range(8):
             for col in range(32):
@@ -288,8 +285,6 @@ class TestPaddlePhysics:
                    if m.mem[screen_addr(PADDLE_ROW, char_col, line)] != 0)
 
     def test_paddle_pixels_intact_after_play(self, built_compiler, free_run):
-        \
-        paddle_col_addr = built_compiler.words["paddle-col"].data_address
         pcol = _read_word(free_run, "paddle-col", built_compiler)
         per_cell = [self._paddle_cell_filled_rows(free_run, pcol + i)
                     for i in range(PADDLE_W)]
@@ -333,7 +328,6 @@ class TestPaddlePhysics:
         )
 
     def test_paddle_vel_word_exists(self, built_compiler):
-        \
         assert "paddle-vel" in built_compiler.words, (
             "paddle-vel variable should exist to track paddle velocity for "
             "bounce contribution"

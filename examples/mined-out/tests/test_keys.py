@@ -19,7 +19,7 @@ from zt.sim import (
 )
 
 
-EXAMPLE_DIR = Path(__file__).parent.parent / "examples" / "mined-out"
+EXAMPLE_DIR = Path(__file__).parent.parent
 CAPS_CODE = 0x01
 
 
@@ -60,7 +60,7 @@ def _run_with_keys(pressed: set[int]) -> bytes:
     return decode_screen_text(m.mem, row, col)
 
 
-class TestMinedOutCursorKeys:
+class TestCursorKeys:
 
     @pytest.mark.parametrize("pressed,expected,label", [
         (set(),                         b"..",  "no keys → neutral"),
@@ -133,7 +133,7 @@ def _run_replay_frames(pressed: set[int]) -> bytes:
     return decode_screen_text(m.mem, row, col)
 
 
-class TestMinedOutReplaySpeed:
+class TestReplaySpeed:
 
     def test_replay_default_is_fast(self):
         assert _run_replay_frames(set()) == b"F", (
@@ -169,7 +169,7 @@ require app/menu.fs
 """
 
 
-class TestMinedOutValidLevelKey:
+class TestValidLevelKey:
 
     def test_valid_level_key_filters_shift_and_accepts_digits(self):
         c = Compiler(include_dirs=[EXAMPLE_DIR])
