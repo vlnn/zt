@@ -3,6 +3,13 @@
 \ A brick lives in a fixed 30x4 grid. Brick column 0..29 maps to screen
 \ char column 1..30 — char columns 0 and 31 are reserved for side walls.
 \ Brick row 0..3 maps to screen char row 2..5.
+\
+\ Two coordinate systems coexist:
+\   - brick coords (bcol, brow) — index into the 30x4 grid
+\   - cell coords (col, row)    — screen character cell
+\ Words with `cell->` prefix translate from screen cells to brick coords.
+\ brick-count caches the live-brick total so handle-cleared can detect
+\ a cleared level in O(1) instead of scanning the grid each frame.
 
 require core.fs
 require grid.fs
@@ -13,9 +20,10 @@ require sprites.fs
 4  constant bricks-rows
 2  constant bricks-row-base
 1  constant bricks-col-base
-$38 constant background-attr
+$07 constant background-attr
 
 create brick-grid 120 allot
+\ One paper/ink byte per brick row (0..3), giving each row a colour.
 create row-attrs   $42 c, $46 c, $44 c, $45 c,
 
 variable brick-count
@@ -54,6 +62,8 @@ variable brick-count
 : draw-all-bricks    ( -- )
     bricks-rows 0 do i draw-bricks-row loop ;
 
+\ Convert pixel coordinates to brick coordinates. `2/ 2/ 2/` is `/8`
+\ implemented as three signed shifts since zt has no native divide.
 : ball-center-x      ( bx -- cx )      4 + ;
 : ball-center-y      ( by -- cy )      4 + ;
 : pixel->bcol        ( px -- bcol )    2/ 2/ 2/ bricks-col-base - ;
@@ -71,6 +81,8 @@ variable brick-count
 : brick-in-range?    ( bcol brow -- flag )
     brow-in-range? swap bcol-in-range? and ;
 
+\ hit-cell: if a live brick exists at (bcol, brow), erase it, decrement
+\ brick-count, and return -1; otherwise return 0 without side effects.
 : hit-cell           ( bcol brow -- hit? )
     2dup brick-in-range? 0= if 2drop 0 exit then
     2dup brick-alive?    0= if 2drop 0 exit then
@@ -80,6 +92,9 @@ variable brick-count
     2drop
     -1 ;
 
+\ Sample a single point — the ball's centre — against the brick grid.
+\ This is a small approximation: a ball clipping a brick corner only
+\ registers a hit when its centre crosses into the brick cell.
 : ball-hits-brick?   ( bx by -- hit? )
     ball-center-y pixel->brow
     swap ball-center-x pixel->bcol

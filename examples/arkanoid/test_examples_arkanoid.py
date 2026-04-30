@@ -279,3 +279,106 @@ class TestSpritesRendered:
             f"after the run, at least one byte on the paddle row "
             f"({PADDLE_ROW}) should be set"
         )
+
+
+class TestPaddlePhysics:
+
+    def _paddle_cell_filled_rows(self, m: Z80, char_col: int) -> int:
+        return sum(1 for line in range(8)
+                   if m.mem[screen_addr(PADDLE_ROW, char_col, line)] != 0)
+
+    def test_paddle_pixels_intact_after_play(self, built_compiler, free_run):
+        \
+        paddle_col_addr = built_compiler.words["paddle-col"].data_address
+        pcol = _read_word(free_run, "paddle-col", built_compiler)
+        per_cell = [self._paddle_cell_filled_rows(free_run, pcol + i)
+                    for i in range(PADDLE_W)]
+        assert all(rows >= 1 for rows in per_cell), (
+            f"all {PADDLE_W} paddle cells at row {PADDLE_ROW} should retain "
+            f"pixel rows after long play (smart restore should preserve "
+            f"paddle through ball bounces); got rows-per-cell={per_cell}"
+        )
+
+    def test_ball_dx_takes_non_default_values(self, built_compiler):
+        c = built_compiler
+        m = Z80()
+        m.load(c.origin, c.build())
+        m.load(SPECTRUM_FONT_BASE, TEST_FONT)
+        m.pc = c.words["_start"].address
+
+        dx_addr = c.words["ball-dx"].data_address
+        bx_addr = c.words["ball-x"].data_address
+        pcol_addr = c.words["paddle-col"].data_address
+
+        seen: set[int] = set()
+        for _ in range(2000):
+            bx = _u16(m.mem[bx_addr], m.mem[bx_addr + 1])
+            pcol = _u16(m.mem[pcol_addr], m.mem[pcol_addr + 1])
+            target = max(PADDLE_MIN_COL, min(PADDLE_MAX_COL, (bx // 8) - 1))
+            if pcol < target:
+                m.pressed_keys = {ord("P")}
+            elif pcol > target:
+                m.pressed_keys = {ord("O")}
+            else:
+                m.pressed_keys = set()
+            m.run(max_ticks=4_000)
+            if m.halted:
+                break
+            seen.add(_s16(m.mem[dx_addr], m.mem[dx_addr + 1]))
+
+        non_default = seen - {-2, 2, 0}
+        assert non_default, (
+            f"ball-dx should take values other than ±2 across paddle bounces "
+            f"(variable angle physics); only saw {sorted(seen)}"
+        )
+
+    def test_paddle_vel_word_exists(self, built_compiler):
+        \
+        assert "paddle-vel" in built_compiler.words, (
+            "paddle-vel variable should exist to track paddle velocity for "
+            "bounce contribution"
+        )
+
+    def test_no_pixel_trail_in_empty_area(self, built_compiler):
+        c = built_compiler
+        m = Z80()
+        m.load(c.origin, c.build())
+        m.load(SPECTRUM_FONT_BASE, TEST_FONT)
+        m.pc = c.words["_start"].address
+
+        bx_a = c.words['ball-x'].data_address
+        by_a = c.words['ball-y'].data_address
+        pcol_a = c.words['paddle-col'].data_address
+
+        for _ in range(800):
+            bx = _u16(m.mem[bx_a], m.mem[bx_a + 1])
+            pcol = _u16(m.mem[pcol_a], m.mem[pcol_a + 1])
+            target = max(PADDLE_MIN_COL, min(PADDLE_MAX_COL, (bx // 8) - 1))
+            if pcol < target:
+                m.pressed_keys = {ord("P")}
+            elif pcol > target:
+                m.pressed_keys = {ord("O")}
+            else:
+                m.pressed_keys = set()
+            m.run(max_ticks=4_000)
+            if m.halted:
+                break
+
+        bx = _u16(m.mem[bx_a], m.mem[bx_a + 1])
+        by = _u16(m.mem[by_a], m.mem[by_a + 1])
+        ball_cell_col, ball_cell_row = bx // 8, by // 8
+        empty_rows = list(range(7, 22))
+        non_ball_filled = []
+        for cr in empty_rows:
+            for cc in range(1, 31):
+                if abs(cr - ball_cell_row) <= 1 and abs(cc - ball_cell_col) <= 1:
+                    continue
+                if any(m.mem[screen_addr(cr, cc, line)] != 0 for line in range(8)):
+                    non_ball_filled.append((cc, cr))
+
+        assert not non_ball_filled, (
+            f"non-brick rows ({empty_rows[0]}..{empty_rows[-1]}) outside "
+            f"the ball's current footprint should be blank (no trail); "
+            f"ball at cell ({ball_cell_col},{ball_cell_row}); "
+            f"trail cells found: {non_ball_filled[:10]}"
+        )

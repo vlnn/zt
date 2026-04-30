@@ -3,6 +3,10 @@
 \ Position is stored as the leftmost char column (0..29), at fixed row 22.
 \ Motion is throttled by paddle-rate: the paddle steps at most once every
 \ paddle-rate frames so it isn't unplayable on a 50 Hz loop.
+\
+\ paddle-vel records the per-frame column delta (-1, 0, or +1). bounce-paddle
+\ in ball.fs reads it to add some "english" to the ball when the player is
+\ actively moving the paddle into the contact.
 
 require core.fs
 require sprites.fs
@@ -17,6 +21,7 @@ require sprites.fs
 variable paddle-col
 variable paddle-old-col
 variable paddle-tick
+variable paddle-vel
 
 79 constant key-O
 80 constant key-P
@@ -42,18 +47,21 @@ variable paddle-tick
 : erase-paddle       ( -- )    paddle-old-col @ erase-paddle-at ;
 : paddle-save-pos    ( -- )    paddle-col @ paddle-old-col ! ;
 
+\ Throttle: only return -1 (true) every paddle-rate-th call. Each call
+\ increments the tick; on overflow it resets and signals "step now". This
+\ keeps the paddle from gliding 50 cells per second when O or P is held.
 : paddle-can-step?   ( -- flag )
     paddle-tick @ 1+ paddle-tick !
     paddle-tick @ paddle-rate < if 0 exit then
     0 paddle-tick !
     -1 ;
 
-: clamp-paddle       ( -- )
-    paddle-col @ paddle-min-col < if paddle-min-col paddle-col ! exit then
-    paddle-col @ paddle-max-col > if paddle-max-col paddle-col ! then ;
-
-: move-left          ( -- )    -1 paddle-col +! clamp-paddle ;
-: move-right         ( -- )     1 paddle-col +! clamp-paddle ;
+\ Both clamp at the screen edge before mutating, not after, so we never
+\ briefly write a column outside the legal range.
+: move-left          ( -- )
+    paddle-col @ paddle-min-col > if -1 paddle-col +! then ;
+: move-right         ( -- )
+    paddle-col @ paddle-max-col < if  1 paddle-col +! then ;
 
 : paddle-input       ( -- )
     paddle-can-step? 0= if exit then
@@ -64,8 +72,31 @@ variable paddle-tick
 : paddle-right-px    ( -- px )    paddle-col @ paddle-w + 8 * 1- ;
 : paddle-top-px      ( -- py )    paddle-row 8 * ;
 
+\ When the paddle moves one column, two of the three new cells overlap two
+\ of the three old cells. Only the cell that was paddle and is no longer
+\ paddle needs explicit blanking — the new draw-paddle will REPLACE-blit
+\ the rest. paddle-trail-col returns that one trailing cell.
+: paddle-trail-col   ( -- col )
+    paddle-col @ paddle-old-col @ > if
+        paddle-old-col @
+    else
+        paddle-old-col @ paddle-w + 1-
+    then ;
+
+: erase-paddle-trail ( -- )
+    brick-blank paddle-trail-col paddle-row blit8 ;
+
+: paddle-changed?    ( -- flag )
+    paddle-col @ paddle-old-col @ <> ;
+
+\ paddle-step is the one-frame entry point called by game-step. It always
+\ resets paddle-vel first (so a stationary frame reads as zero velocity),
+\ runs input, and only erases-and-redraws when the column actually changed.
 : paddle-step        ( -- )
-    erase-paddle
+    0 paddle-vel !
     paddle-input
+    paddle-changed? 0= if exit then
+    paddle-col @ paddle-old-col @ - paddle-vel !
+    erase-paddle-trail
     draw-paddle
     paddle-save-pos ;

@@ -1,4 +1,8 @@
 \ Score and lives state for arkanoid.
+\
+\ hud-dirty is a one-bit flag set by add-brick / lose-life. game.fs reads
+\ it once per frame and only repaints the HUD digits when set, so a
+\ stationary score doesn't pay the cost of digit emit on every frame.
 
 require core.fs
 
