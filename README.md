@@ -217,6 +217,8 @@ See `zt profile --help` for the full flag list.
 
 ### Showcase: a brick-breaker
 
+https://github.com/user-attachments/assets/ccd2a1de-936c-486b-bd21-b7f134375118
+
 `examples/arkanoid/` is a small Arkanoid-like — paddle, ball, breakable
 bricks, lives, score — and exercises most of what's needed for a real
 ZX game on top of `plasma`'s attribute work: 8x8 sprite blits,
