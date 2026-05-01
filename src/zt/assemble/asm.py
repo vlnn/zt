@@ -86,6 +86,13 @@ class Asm:
     def jr_nc_to(self, target: str) -> None:    self._emit_jr(0x30, target)
     def jr_c_to(self, target: str) -> None:     self._emit_jr(0x38, target)
     def djnz_to(self, target: str) -> None:     self._emit_jr(0x10, target)
+
+    def jr(self, target: str) -> None:    self.jr_to(target)
+    def jr_nz(self, target: str) -> None: self.jr_nz_to(target)
+    def jr_z(self, target: str) -> None:  self.jr_z_to(target)
+    def jr_nc(self, target: str) -> None: self.jr_nc_to(target)
+    def jr_c(self, target: str) -> None:  self.jr_c_to(target)
+    def djnz(self, target: str) -> None:  self.djnz_to(target)
     def ld_c_a(self):    self.code.append(0x4F)
     def sub_e(self):     self.code.append(0x93)
     def dec_a(self):     self.code.append(0x3D)

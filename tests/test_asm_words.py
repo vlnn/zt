@@ -14,14 +14,16 @@ def make_compiler() -> Compiler:
 
 
 def _body_bytes(c: Compiler, name: str) -> bytes:
+    """Bytes the user wrote between ::: name and ; — dispatch tail stripped."""
     word = c.words[name]
     end = next(
         (w.address for w in c.words.values() if w.address > word.address),
         c.asm.here,
     )
     start = word.address - c.origin
-    stop = end - c.origin
-    return bytes(c.asm.code[start:stop])
+    stop = end - c.origin - 3  # strip trailing JP NEXT (3 bytes)
+    resolved = c.asm.resolve()
+    return bytes(resolved[start:stop])
 
 
 class TestEmptyBody:
@@ -38,8 +40,8 @@ class TestEmptyBody:
         c = make_compiler()
         c.compile_source("::: nop-word ( -- ) ;")
         body = _body_bytes(c, "nop-word")
-        assert body == b"\xc3" + b"\x00\x00", (
-            "empty ::: body should be exactly `JP NEXT` (dispatch with inline_next=False)"
+        assert body == b"", (
+            "empty ::: body should emit no user bytes (dispatch tail handled separately)"
         )
 
     def test_address_points_at_emitted_code(self):
@@ -57,7 +59,7 @@ class TestMnemonicEmission:
         c = make_compiler()
         c.compile_source("::: just-a ( -- ) ld_a_l ;")
         body = _body_bytes(c, "just-a")
-        assert body == b"\x7d" + b"\xc3\x00\x00", (
+        assert body == b"\x7d", (
             "ld_a_l should emit 0x7D, then dispatch as JP NEXT"
         )
 
@@ -65,7 +67,7 @@ class TestMnemonicEmission:
         c = make_compiler()
         c.compile_source("::: load-3000 ( -- ) 3000 ld_hl_nn ;")
         body = _body_bytes(c, "load-3000")
-        assert body == b"\x21\xb8\x0b" + b"\xc3\x00\x00", (
+        assert body == b"\x21\xb8\x0b", (
             "3000 ld_hl_nn should emit 0x21 followed by little-endian 3000"
         )
 
@@ -81,7 +83,7 @@ class TestMnemonicEmission:
         c = make_compiler()
         c.compile_source(source)
         body = _body_bytes(c, "w")
-        assert body == expected + b"\xc3\x00\x00", (
+        assert body == expected, (
             f"body of {source!r} should emit {expected!r} then dispatch"
         )
 
@@ -91,7 +93,7 @@ class TestMnemonicEmission:
             "::: x-to-3000 ( x -- ) ld_a_l 3000 ld_hl_nn ld_ind_hl_a pop_hl ;"
         )
         body = _body_bytes(c, "x-to-3000")
-        assert body == b"\x7d\x21\xb8\x0b\x77\xe1" + b"\xc3\x00\x00", (
+        assert body == b"\x7d\x21\xb8\x0b\x77\xe1", (
             "x-to-3000 should compile to LD A,L; LD HL,3000; LD (HL),A; POP HL; JP NEXT"
         )
 
@@ -170,7 +172,7 @@ class TestTimesInsideAsmWord:
         c = make_compiler()
         c.compile_source("::: w ( -- ) [TIMES] 3 inc_a ;")
         body = _body_bytes(c, "w")
-        assert body == b"\x3c\x3c\x3c" + b"\xc3\x00\x00", (
+        assert body == b"\x3c\x3c\x3c", (
             "[TIMES] 3 inc_a inside ::: should emit three 0x3C bytes then dispatch"
         )
 
@@ -187,8 +189,8 @@ class TestTimesInsideAsmWord:
         c = make_compiler()
         c.compile_source("::: w ( -- ) [TIMES] 0 inc_a ;")
         body = _body_bytes(c, "w")
-        assert body == b"\xc3\x00\x00", (
-            "[TIMES] 0 inside ::: should consume the body and emit only dispatch"
+        assert body == b"", (
+            "[TIMES] 0 inside ::: should consume the body without emitting any user bytes"
         )
 
 
@@ -198,7 +200,7 @@ class TestRawBytesAndWords:
         c = make_compiler()
         c.compile_source("::: w ( -- ) 42 byte ;")
         body = _body_bytes(c, "w")
-        assert body == b"\x2a" + b"\xc3\x00\x00", (
+        assert body == b"\x2a", (
             "42 byte inside ::: should emit a single 0x2A byte then dispatch"
         )
 
@@ -206,7 +208,7 @@ class TestRawBytesAndWords:
         c = make_compiler()
         c.compile_source("::: w ( -- ) 12345 word ;")
         body = _body_bytes(c, "w")
-        assert body == b"\x39\x30" + b"\xc3\x00\x00", (
+        assert body == b"\x39\x30", (
             "12345 word inside ::: should emit 0x39 0x30 (LE) then dispatch"
         )
 
@@ -220,7 +222,7 @@ class TestRawBytesAndWords:
         c = make_compiler()
         c.compile_source(source)
         body = _body_bytes(c, "w")
-        assert body == expected + b"\xc3\x00\x00", (
+        assert body == expected, (
             f"{source!r} should emit {expected!r} then dispatch"
         )
 
@@ -233,3 +235,118 @@ class TestRawBytesAndWords:
         c = make_compiler()
         with pytest.raises(CompileError, match="unknown word 'byte'"):
             c.compile_source(": w byte ;")
+
+
+class TestLabels:
+
+    def test_label_declares_target_for_backward_jump(self):
+        c = make_compiler()
+        c.compile_source("::: w ( -- ) label loop nop jp loop ;")
+        body = _body_bytes(c, "w")
+        loop_addr = c.words["w"].address
+        lo, hi = loop_addr & 0xFF, (loop_addr >> 8) & 0xFF
+        assert body == bytes([0x00, 0xC3, lo, hi]), (
+            "label loop / nop / jp loop should emit nop then a 3-byte jump back to loop"
+        )
+
+    def test_forward_jump_resolves_at_definition_end(self):
+        c = make_compiler()
+        c.compile_source("::: w ( -- ) jp ahead nop label ahead ;")
+        body = _body_bytes(c, "w")
+        ahead_addr = c.words["w"].address + 4
+        lo, hi = ahead_addr & 0xFF, (ahead_addr >> 8) & 0xFF
+        assert body == bytes([0xC3, lo, hi, 0x00]), (
+            "forward jp to ahead should patch the address to point past the nop"
+        )
+
+    @pytest.mark.parametrize("mnemonic,opcode", [
+        ("jp",    0xC3),
+        ("jp_z",  0xCA),
+        ("jp_nz", 0xC2),
+        ("jp_p",  0xF2),
+        ("jp_m",  0xFA),
+        ("call",  0xCD),
+    ], ids=["jp", "jp_z", "jp_nz", "jp_p", "jp_m", "call"])
+    def test_absolute_jump_family(self, mnemonic, opcode):
+        c = make_compiler()
+        c.compile_source(f"::: w ( -- ) label here {mnemonic} here ;")
+        body = _body_bytes(c, "w")
+        here_addr = c.words["w"].address
+        lo, hi = here_addr & 0xFF, (here_addr >> 8) & 0xFF
+        assert body == bytes([opcode, lo, hi]), (
+            f"{mnemonic} here should emit {opcode:#x} followed by little-endian here address"
+        )
+
+    @pytest.mark.parametrize("mnemonic,opcode", [
+        ("jr",    0x18),
+        ("jr_z",  0x28),
+        ("jr_nz", 0x20),
+        ("jr_c",  0x38),
+        ("jr_nc", 0x30),
+        ("djnz",  0x10),
+    ], ids=["jr", "jr_z", "jr_nz", "jr_c", "jr_nc", "djnz"])
+    def test_relative_jump_family(self, mnemonic, opcode):
+        c = make_compiler()
+        c.compile_source(f"::: w ( -- ) label here nop {mnemonic} here ;")
+        body = _body_bytes(c, "w")
+        assert body[0] == 0x00, "first byte should be the nop at label here"
+        assert body[1] == opcode, f"second instruction should start with {opcode:#x}"
+        assert body[2] == 0xFD, (
+            f"{mnemonic} here from offset 1 to label at offset 0 should encode -3 as 0xFD"
+        )
+
+    def test_duplicate_label_inside_one_body(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="duplicate label"):
+            c.compile_source("::: w ( -- ) label x nop label x ;")
+
+    def test_unresolved_label_at_semicolon(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="undefined label 'missing'"):
+            c.compile_source("::: w ( -- ) jp missing ;")
+
+    def test_labels_are_scoped_to_definition(self):
+        c = make_compiler()
+        c.compile_source(
+            "::: a ( -- ) label loop jp loop ;\n"
+            "::: b ( -- ) label loop jp loop ;"
+        )
+        assert "a" in c.words and "b" in c.words, (
+            "the same label name in two ::: bodies should not collide"
+        )
+
+    def test_label_must_have_a_name(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="label name must be a word"):
+            c.compile_source("::: w ( -- ) label 42 ;")
+
+    def test_jump_target_must_be_a_word(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="label name must be a word"):
+            c.compile_source("::: w ( -- ) jp 42 ;")
+
+
+class TestLabelsEndToEnd:
+
+    def test_loop_increments_memory_cell(self):
+        from zt.sim import Z80
+        c = make_compiler()
+        c.compile_source(
+            "::: bump-3000-n-times ( n -- )\n"
+            "  ld_b_l 3000 ld_hl_nn\n"
+            "  label top\n"
+            "    ld_a_ind_hl inc_a ld_ind_hl_a\n"
+            "    djnz top\n"
+            "  pop_hl ;\n"
+            ": main 5 bump-3000-n-times halt ;"
+        )
+        c.compile_main_call()
+        image = c.build()
+        m = Z80()
+        m.load(c.origin, image)
+        m.pc = c.words["_start"].address
+        m.run()
+        assert m.halted, "program should halt cleanly"
+        assert m.mem[3000] == 5, (
+            "djnz loop with B=5 should increment (3000) exactly 5 times"
+        )

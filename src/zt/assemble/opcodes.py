@@ -6,7 +6,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-OperandKind = Optional[Literal["n", "d", "nn"]]
+OperandKind = Optional[Literal["n", "d", "nn", "label"]]
 
 
 @dataclass(frozen=True)

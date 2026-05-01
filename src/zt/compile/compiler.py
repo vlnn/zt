@@ -633,11 +633,32 @@ class Compiler:
             raise CompileError("::: not allowed inside a colon definition", tok)
         name_tok = self._next_token(tok)
         code_addr = self.asm.here
-        self._assemble_asm_body(tok)
+        self._asm_word_name = name_tok.value
+        self._asm_fixup_snapshot = (
+            len(self.asm.fixups), len(self.asm.rel_fixups),
+        )
+        try:
+            self._assemble_asm_body(tok)
+            self._verify_asm_labels_resolved(tok)
+        finally:
+            self._asm_word_name = None
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="prim",
             source_file=name_tok.source, source_line=name_tok.line,
         )
+
+    def _scoped_label(self, local: str) -> str:
+        return f"__asm__{self._asm_word_name}__{local}"
+
+    def _verify_asm_labels_resolved(self, tok: Token) -> None:
+        abs_start, rel_start = self._asm_fixup_snapshot
+        prefix = f"__asm__{self._asm_word_name}__"
+        for _, name in (
+            list(self.asm.fixups[abs_start:]) + list(self.asm.rel_fixups[rel_start:])
+        ):
+            if name.startswith(prefix) and name not in self.asm.labels:
+                local = name[len(prefix):]
+                raise CompileError(f"undefined label '{local}'", tok)
 
     @macro("[times]")
     def _macro_times(self, _compiler: Compiler, tok: Token) -> None:
@@ -747,7 +768,26 @@ class Compiler:
         if spec.operand is None:
             method()
             return
+        if spec.operand == "label":
+            self._emit_label_op(method, tok)
+            return
         method(self._host_pop(tok))
+
+    def _emit_label_op(self, method, tok: Token) -> None:
+        name_tok = self._next_token(tok)
+        if name_tok.kind != "word":
+            raise CompileError(
+                f"label name must be a word, got {name_tok.kind} '{name_tok.value}'",
+                name_tok,
+            )
+        try:
+            method(self._scoped_label(name_tok.value))
+        except ValueError as e:
+            if "duplicate label" in str(e):
+                raise CompileError(
+                    f"duplicate label '{name_tok.value}'", name_tok,
+                )
+            raise
 
     @directive(",")
     def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:
