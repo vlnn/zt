@@ -148,3 +148,32 @@ class TestCcf:
         assert stack[-1] == 0, (
             "scf then ccf should leave carry clear; 0 + 0 + carry should be 0"
         )
+
+
+class TestLdirOverlapPropagation:
+
+    def test_ldir_with_dest_one_ahead_propagates_seed_byte(self):
+        """LDIR copies one byte at a time, re-reading (HL) each iteration. When
+        DE = HL + 1, every iteration reads the byte just written by the previous
+        one. This is the mechanism behind seed-and-propagate fills, and it's
+        also the trap people fall into when they treat LDIR as a memcpy: a
+        forward overlap doesn't copy the buffer, it broadcasts mem[HL] across
+        the whole destination."""
+        m, _ = _run(
+            "::: setup-then-ldir ( -- )\n"
+            "  77 ld_a_n  4000 ld_hl_nn  ld_ind_hl_a\n"
+            "  300 ld_bc_nn  4001 ld_de_nn  4000 ld_hl_nn\n"
+            "  ldir ;\n"
+            ": main setup-then-ldir halt ;"
+        )
+        assert m.mem[4000] == 77, "seed byte at 4000 should remain"
+        for offset in range(1, 301):
+            assert m.mem[4000 + offset] == 77, (
+                f"LDIR with overlap should fill mem[{4000+offset}] with the seed; "
+                f"got {m.mem[4000 + offset]} — if zero, sim is treating LDIR as "
+                f"a snapshot copy rather than byte-by-byte propagation"
+            )
+        assert m.mem[4301] == 0, (
+            "LDIR with BC=300 starting at 4001 should write through 4300 only, "
+            "leaving 4301 untouched"
+        )

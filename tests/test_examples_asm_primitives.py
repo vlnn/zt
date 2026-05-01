@@ -125,3 +125,56 @@ class TestBit0Predicate:
         assert result == [expected_flag], (
             f"bit0? on {value} should yield {expected_flag} (low bit only)"
         )
+
+
+class TestFillByte:
+
+    def test_fills_n_bytes_with_seed(self):
+        m, _ = _run_with_memory(": main 3000 5 65 fill-byte halt ;")
+        for i in range(5):
+            assert m.mem[3000 + i] == 65, (
+                f"fill-byte should set 5 consecutive bytes to 65; "
+                f"position {i} is {m.mem[3000 + i]}"
+            )
+        assert m.mem[3005] == 0, (
+            "fill-byte should not write past the requested count"
+        )
+
+    def test_count_zero_writes_nothing(self):
+        m, _ = _run_with_memory(": main 3000 0 65 fill-byte halt ;")
+        assert m.mem[3000] == 0, (
+            "fill-byte with count == 0 should not write any bytes — "
+            "this guards against LDIR's BC=0 → 65536 behaviour"
+        )
+
+    def test_count_one_writes_exactly_one_byte(self):
+        m, _ = _run_with_memory(": main 3000 1 65 fill-byte halt ;")
+        assert m.mem[3000] == 65, "fill-byte with count == 1 should plant the seed"
+        assert m.mem[3001] == 0, (
+            "fill-byte with count == 1 should not propagate — "
+            "this guards against LDIR running with BC=0 after dec_bc"
+        )
+
+    def test_count_two_writes_exactly_two_bytes(self):
+        m, _ = _run_with_memory(": main 3000 2 65 fill-byte halt ;")
+        assert m.mem[3000] == 65, "first byte should be seeded directly"
+        assert m.mem[3001] == 65, "second byte should be propagated by LDIR"
+        assert m.mem[3002] == 0, "fill should stop after exactly 2 bytes"
+
+    def test_consumes_all_three_args(self):
+        result = _run(": main 99 3000 3 65 fill-byte halt ;")
+        assert result == [99], (
+            "fill-byte should consume addr, count, and byte (3 stack items)"
+        )
+
+    def test_large_count_fills_byte_by_byte_via_ldir(self):
+        m, _ = _run_with_memory(": main 16384 300 65 fill-byte halt ;")
+        for offset in range(300):
+            assert m.mem[16384 + offset] == 65, (
+                f"fill-byte over 300 bytes should set every position to 65; "
+                f"position {offset} (addr {16384+offset}) is {m.mem[16384 + offset]} — "
+                f"if some are 0, LDIR isn't propagating byte-by-byte as expected"
+            )
+        assert m.mem[16383] == 0 and m.mem[16684] == 0, (
+            "fill-byte should not touch bytes outside the [addr, addr+count) range"
+        )

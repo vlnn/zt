@@ -39,6 +39,29 @@
     dec_ind_hl
     pop_hl ;
 
+( ----- LDIR-based fill ----- )
+
+( Fill `count` bytes starting at `addr` with `byte`. Seeds the first byte )
+( manually, then uses LDIR to propagate the seed across the rest by      )
+( pointing HL at the seed and DE one byte ahead. Boundary cases need     )
+( explicit guards: LDIR with BC == 0 means 65536, not zero.              )
+
+::: fill-byte  ( addr count byte -- )
+    pop_bc
+    pop_de
+    ld_a_b or_c
+    jr_z done
+    ld_a_l
+    ld_ind_de_a
+    dec_bc
+    ld_a_b or_c
+    jr_z done
+    ld_h_d ld_l_e
+    inc_de
+    ldir
+    label done
+    pop_hl ;
+
 ( ----- Bit testing on low byte ----- )
 
 ( Returns 1 if low bit of TOS is set, else 0. )
