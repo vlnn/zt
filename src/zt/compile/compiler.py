@@ -780,14 +780,30 @@ class Compiler:
                 f"label name must be a word, got {name_tok.kind} '{name_tok.value}'",
                 name_tok,
             )
+        is_declaration = method.__name__ == "label"
+        if is_declaration:
+            target = self._scoped_label(name_tok.value)
+        else:
+            target = self._resolve_asm_target(name_tok.value)
         try:
-            method(self._scoped_label(name_tok.value))
+            method(target)
         except ValueError as e:
             if "duplicate label" in str(e):
                 raise CompileError(
                     f"duplicate label '{name_tok.value}'", name_tok,
                 )
             raise
+
+    def _resolve_asm_target(self, name: str) -> str:
+        scoped = self._scoped_label(name)
+        if scoped in self.asm.labels:
+            return scoped
+        if name in self.words:
+            synth = f"__word__{name}"
+            if synth not in self.asm.labels:
+                self.asm.labels[synth] = self.words[name].address
+            return synth
+        return scoped
 
     @directive(",")
     def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:

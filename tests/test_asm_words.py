@@ -350,3 +350,105 @@ class TestLabelsEndToEnd:
         assert m.mem[3000] == 5, (
             "djnz loop with B=5 should increment (3000) exactly 5 times"
         )
+
+
+class TestCrossBodyByName:
+
+    def test_call_resolves_to_other_word(self):
+        c = make_compiler()
+        c.compile_source(
+            "::: helper ( -- ) inc_a ;\n"
+            "::: caller ( -- ) call helper ;"
+        )
+        body = _body_bytes(c, "caller")
+        helper_addr = c.words["helper"].address
+        lo, hi = helper_addr & 0xFF, (helper_addr >> 8) & 0xFF
+        assert body == bytes([0xCD, lo, hi]), (
+            "call helper should emit 0xCD followed by helper's address (little-endian)"
+        )
+
+    def test_jp_resolves_to_other_word(self):
+        c = make_compiler()
+        c.compile_source(
+            "::: target ( -- ) inc_a ;\n"
+            "::: caller ( -- ) jp target ;"
+        )
+        body = _body_bytes(c, "caller")
+        target_addr = c.words["target"].address
+        lo, hi = target_addr & 0xFF, (target_addr >> 8) & 0xFF
+        assert body == bytes([0xC3, lo, hi]), (
+            "jp target should emit 0xC3 followed by target's address"
+        )
+
+    @pytest.mark.parametrize("mnemonic,opcode", [
+        ("jp",    0xC3),
+        ("jp_z",  0xCA),
+        ("jp_nz", 0xC2),
+        ("jp_p",  0xF2),
+        ("jp_m",  0xFA),
+        ("call",  0xCD),
+    ])
+    def test_all_absolute_jumps_resolve_word_names(self, mnemonic, opcode):
+        c = make_compiler()
+        c.compile_source(
+            "::: t ( -- ) inc_a ;\n"
+            f"::: w ( -- ) {mnemonic} t ;"
+        )
+        body = _body_bytes(c, "w")
+        addr = c.words["t"].address
+        assert body == bytes([opcode, addr & 0xFF, (addr >> 8) & 0xFF]), (
+            f"{mnemonic} t should resolve t to its dictionary address"
+        )
+
+    def test_local_label_with_word_name_uses_word(self):
+        c = make_compiler()
+        c.compile_source(
+            "::: helper ( -- ) inc_a ;\n"
+            "::: w ( -- ) call helper ;"
+        )
+        helper_addr = c.words["helper"].address
+        body = _body_bytes(c, "w")
+        assert body[1] == helper_addr & 0xFF and body[2] == (helper_addr >> 8) & 0xFF, (
+            "when name matches a global word, call should resolve to the word's address"
+        )
+
+    def test_label_declaration_is_always_local(self):
+        c = make_compiler()
+        c.compile_source(
+            "::: dup-the-data ( -- ) inc_a ;\n"
+            "::: w ( -- ) label dup-the-data jr dup-the-data ;"
+        )
+        body = _body_bytes(c, "w")
+        assert body == bytes([0x18, 0xFE]), (
+            "label whose name matches a word should still declare a local; "
+            "jr uses the local (jr to self at offset 0 from PC after = -2 = 0xFE)"
+        )
+
+    def test_call_to_undeclared_name_errors_at_semicolon(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="undefined label 'no-such-thing'"):
+            c.compile_source("::: w ( -- ) call no-such-thing ;")
+
+    def test_jp_tail_call_runtime_correctness(self):
+        from zt.sim import Z80
+        c = make_compiler()
+        c.compile_source(
+            "::: store-1-at-3000 ( -- )\n"
+            "  1 ld_a_n  3000 ld_hl_nn  ld_ind_hl_a ;\n"
+            "::: store-2-at-3001-then-tail ( -- )\n"
+            "  2 ld_a_n  3001 ld_hl_nn  ld_ind_hl_a\n"
+            "  jp store-1-at-3000 ;\n"
+            ": main store-2-at-3001-then-tail halt ;"
+        )
+        c.compile_main_call()
+        image = c.build()
+        m = Z80()
+        m.load(c.origin, image)
+        m.pc = c.words["_start"].address
+        m.run()
+        assert m.halted, "program should halt cleanly"
+        assert m.mem[3001] == 2, "first half: 2 should land at 3001"
+        assert m.mem[3000] == 1, (
+            "second half: jp tail-call to store-1-at-3000 should run, "
+            "leaving 1 at 3000; subsequent dispatch should return to main"
+        )

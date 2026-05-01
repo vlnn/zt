@@ -48,3 +48,14 @@ class TestVocabCoverage:
             assert name == spec.mnemonic, (
                 f"VOCAB key {name!r} should equal spec.mnemonic {spec.mnemonic!r}"
             )
+
+    @pytest.mark.parametrize("mnemonic,opcode", [
+        ("sub_e", 0x93),
+        ("sub_l", 0x95),
+        ("sub_h", 0x94),
+    ], ids=["sub_e", "sub_l", "sub_h"])
+    def test_sub_register_family_in_opcodes(self, mnemonic, opcode):
+        spec = lookup(mnemonic)
+        assert spec.encoding == (opcode,), (
+            f"{mnemonic} should be a single-byte opcode {opcode:#x} in OPCODES"
+        )

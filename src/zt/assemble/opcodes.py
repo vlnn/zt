@@ -78,6 +78,7 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _no("xor_a",        0xAF),
     _no("sub_l",        0x95),
     _no("sub_h",        0x94),
+    _no("sub_e",        0x93),
     _no("sbc_a_a",      0x9F),
     _no("add_a_e",      0x83),
     _no("adc_a_d",      0x8A),

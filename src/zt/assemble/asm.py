@@ -93,10 +93,6 @@ class Asm:
     def jr_nc(self, target: str) -> None: self.jr_nc_to(target)
     def jr_c(self, target: str) -> None:  self.jr_c_to(target)
     def djnz(self, target: str) -> None:  self.djnz_to(target)
-    def ld_c_a(self):    self.code.append(0x4F)
-    def sub_e(self):     self.code.append(0x93)
-    def dec_a(self):     self.code.append(0x3D)
-    def jp_nz(self, target): self.code.append(0xC2); self.word(target)
 
     def resolve(self) -> bytes:
         """Patch all recorded fixups with real label addresses and return the final code bytes."""
