@@ -110,6 +110,55 @@ and `tests/test_examples_asm_primitives.py` runs each one through the
 simulator. Treat that pair as the executable spec — if you change the
 examples, run the tests.
 
+## Block operations: `LDIR` and the seed-and-propagate trick
+
+Z80's `LDIR` instruction is a hardware loop:
+
+```
+repeat:
+    LD (DE), (HL)     ; copy one byte
+    INC HL            ; advance source
+    INC DE            ; advance destination
+    DEC BC            ; one fewer to go
+    jump-if-nonzero repeat
+```
+
+It runs strictly byte-by-byte, re-reading `(HL)` on every iteration. Two
+consequences worth knowing.
+
+**As a memcpy.** If source and destination don't overlap (or the
+destination is *behind* the source), `LDIR` is the fastest way to copy
+a region — 21 T-states per byte versus ~80 for a Forth `c@ c! 1+ 1+`
+loop. Set `HL = src`, `DE = dst`, `BC = count`, and emit `ldir`.
+
+**As a fill, via overlap.** If `DE = HL + 1`, every iteration reads the
+byte the previous iteration just wrote. So `LDIR` from 4000 to 4001 with
+`BC = 300` doesn't copy 300 bytes — it propagates the single byte at
+4000 across 4001 through 4300. This is the seed-and-propagate fill: plant
+one byte at the start, point `HL` at it and `DE` one ahead, and `LDIR`
+fans the seed across the whole region. The `fill-byte` example in
+`examples/asm-primitives.fs` does exactly this.
+
+**`BC == 0` means 65536.** `LDIR` decrements first, tests after. So a
+zero count overwrites a quarter of the address space. Always guard with
+something like:
+
+```
+ld_a_b or_c           ( flags = BC == 0 ? )
+jr_z done             ( skip the LDIR if so )
+```
+
+This trap is the one place where `:::` is genuinely more demanding than
+`:`: a Forth `do` loop with count 0 just doesn't iterate, but `LDIR`
+needs an explicit early-out.
+
+**The classic gotcha.** People reach for `LDIR` as a memcpy on
+*forward-overlapping* regions (e.g., shifting a buffer one byte right)
+and get a single byte broadcast across the destination instead of the
+buffer they expected. The fix is to either copy backwards (which would
+need `LDDR` — not currently in OPCODES) or to copy via a temporary
+buffer.
+
 ## When to reach for `:::`, when to write Python
 
 `:::` is a slice of `primitives.py`. It's the right tool when the body is

@@ -265,19 +265,11 @@ cost. Same algorithm.
     rot rot 0 do  2dup c! 1+  loop 2drop ;
 ```
 
-**`:::` version:** Z80's `LDIR` block-move instruction repeats `LD (DE),
-(HL); INC HL; INC DE; DEC BC` until `BC == 0` — strictly byte-by-byte,
-re-reading from `(HL)` each iteration. That last detail is the trick:
-when the source and destination *overlap with destination one ahead of
-source*, `LDIR` reads the byte just written through its previous
-iteration. So `LDIR` from 4000 to 4001 with `BC = 300` doesn't copy a
-buffer — it propagates the single byte at 4000 across 4001-4300. We
-exploit that to fill: seed one byte, then point `HL` at the seed and
-`DE` one ahead, and `LDIR` fans the seed out across the whole region.
-
-In any other context this overlap behaviour is the classic LDIR
-gotcha — people reach for it as a memcpy and get garbage when their
-regions touch. Here, it's the mechanism.
+**`:::` version:** Z80's `LDIR` instruction can fill a region by
+seeding one byte and propagating it via byte-by-byte overlap. See the
+"Block operations" section of `docs/asm-words.md` for why this works
+and what the gotchas are. The body below seeds, then `LDIR`s with `HL`
+pointing at the seed and `DE` one byte ahead.
 
 ```forth
 ::: fill-byte  ( addr count byte -- )
@@ -297,9 +289,9 @@ regions touch. Here, it's the mechanism.
     pop_hl ;                        ( drop original byte; new TOS )
 ```
 
-The boundary cases (`count == 0`, `count == 1`) need explicit guards
-because `LDIR` with `BC == 0` would interpret it as 65536 — exactly
-the kind of subtle thing that makes `:::` more demanding than `:`.
+The two boundary guards (`count == 0` and `count == 1`) are there
+because `LDIR` with `BC == 0` interprets it as 65536 — exactly the kind
+of subtle thing that makes `:::` more demanding than `:`.
 
 The point isn't that any of these is universally right. It's that you
 pick based on profiling: is `fill-byte` even hot? Most of the time the
