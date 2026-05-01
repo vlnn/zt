@@ -308,4 +308,4 @@ when measurement isn't enough.**
 - `examples/mined-out/app/board.fs` — well-factored small words with
   stack effects throughout.
 - `docs/asm-words.md` — the `:::` reference and macro layer.
-- `examples/asm-primitives.fs` — `:::` examples that compile and run.
+- `examples/asm-primitives/asm-primitives.fs` — `:::` examples that compile and run.

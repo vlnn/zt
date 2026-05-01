@@ -105,7 +105,7 @@ control that doesn't belong in any one of those layers.
     pop_hl ;
 ```
 
-The full set of working examples lives in `examples/asm-primitives.fs`,
+The full set of working examples lives in `examples/asm-primitives/asm-primitives.fs`,
 and `tests/test_examples_asm_primitives.py` runs each one through the
 simulator. Treat that pair as the executable spec — if you change the
 examples, run the tests.
@@ -137,7 +137,7 @@ byte the previous iteration just wrote. So `LDIR` from 4000 to 4001 with
 4000 across 4001 through 4300. This is the seed-and-propagate fill: plant
 one byte at the start, point `HL` at it and `DE` one ahead, and `LDIR`
 fans the seed across the whole region. The `fill-byte` example in
-`examples/asm-primitives.fs` does exactly this.
+`examples/asm-primitives/asm-primitives.fs` does exactly this.
 
 **`BC == 0` means 65536.** `LDIR` decrements first, tests after. So a
 zero count overwrites a quarter of the address space. Always guard with

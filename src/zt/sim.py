@@ -74,6 +74,9 @@ DEFAULT_DATA_STACK_TOP_128K = 0xBF00
 DEFAULT_RETURN_STACK_TOP_128K = 0xBE00
 DEFAULT_MAX_TICKS = 10_000_000
 
+FRAME_T_STATES_48K = 69_888
+FRAME_T_STATES_128K = 70_908
+
 FLAG_C = 0x01
 FLAG_N = 0x02
 FLAG_PV = 0x04
@@ -126,12 +129,16 @@ class ForthResult:
     page_writes: list[int] = field(default_factory=list)
     chars_out: bytes = b""
     profile: ProfileReport | None = None
+    interrupt_count: int = 0
 
 
 class Z80:
     __slots__ = (
         "mem", "pc", "sp", "a", "f", "b", "c", "d", "e", "h", "l",
-        "ix", "iy", "halted", "iff", "_outputs", "_ticks", "_t_states",
+        "ix", "iy", "halted", "iff", "iff2", "i", "im_mode",
+        "bus_byte", "t_states_per_frame",
+        "_next_int_at", "_ei_pending", "_halt_waiting", "interrupt_count",
+        "_outputs", "_ticks", "_t_states",
         "input_buffer", "_input_pos", "_ops", "_op_costs",
         "pressed_keys", "_port_reads_at_pos",
         "mode", "_banks", "port_7ffd",
@@ -148,6 +155,15 @@ class Z80:
         self.ix = self.iy = 0
         self.halted = False
         self.iff = False
+        self.iff2 = False
+        self.i = 0
+        self.im_mode = 0
+        self.bus_byte = 0xFF
+        self.t_states_per_frame = FRAME_T_STATES_128K if mode == "128k" else FRAME_T_STATES_48K
+        self._next_int_at = self.t_states_per_frame
+        self._ei_pending = False
+        self._halt_waiting = False
+        self.interrupt_count = 0
         self._outputs: list[tuple[int, int]] = []
         self._ticks = 0
         self._t_states = 0
@@ -355,6 +371,58 @@ class Z80:
             self._ticks += 1
             if profiler is not None:
                 profiler.sample(pc, self._t_states - prev_t_states)
+
+    def fire_interrupt(self) -> None:
+        if not self.iff:
+            return
+        self.halted = False
+        self._halt_waiting = False
+        self._push(self.pc)
+        self.iff = False
+        self.iff2 = False
+        if self.im_mode == 2:
+            vector_addr = ((self.i << 8) | self.bus_byte) & 0xFFFF
+            self.pc = self._rw(vector_addr)
+            self._t_states += 19
+        else:
+            self.pc = 0x0038
+            self._t_states += 13
+        self.interrupt_count += 1
+
+    def run_until(self, t_state_target: int) -> None:
+        while True:
+            if self._should_auto_fire():
+                self.fire_interrupt()
+                self._next_int_at += self.t_states_per_frame
+                continue
+            if self._t_states >= t_state_target:
+                return
+            if self.halted:
+                return
+            if self._halt_waiting:
+                if not self.iff:
+                    self._halt_waiting = False
+                    return
+                self._tick_halt_wait()
+                continue
+            if self.iff and self._rb(self.pc) == 0x76:
+                self.pc = (self.pc + 1) & 0xFFFF
+                self._halt_waiting = True
+                self._tick_halt_wait()
+                continue
+            self._ei_pending = False
+            self._step()
+
+    def _should_auto_fire(self) -> bool:
+        return (
+            self.iff
+            and not self._ei_pending
+            and self._t_states >= self._next_int_at
+        )
+
+    def _tick_halt_wait(self) -> None:
+        self._t_states += 4
+        self._ei_pending = False
 
     def _step(self) -> None:
         op = self._fetch()
@@ -771,9 +839,12 @@ class Z80:
 
     def _op_di(self, op: int) -> None:
         self.iff = False
+        self.iff2 = False
 
     def _op_ei(self, op: int) -> None:
         self.iff = True
+        self.iff2 = True
+        self._ei_pending = True
 
     def _op_cb_prefix(self, op: int) -> None:
         self._exec_cb()
@@ -942,6 +1013,29 @@ class Z80:
         elif op == 0x7B:
             self.sp = self._rw(self._fetch_word())
             self._t_states += 20
+        elif op == 0x46:
+            self.im_mode = 0
+            self._t_states += 8
+        elif op == 0x56:
+            self.im_mode = 1
+            self._t_states += 8
+        elif op == 0x5E:
+            self.im_mode = 2
+            self._t_states += 8
+        elif op == 0x47:
+            self.i = self.a
+            self._t_states += 9
+        elif op == 0x57:
+            self.a = self.i
+            self.f = (self.f & FLAG_C) | self._flag_sz(self.i) | (FLAG_PV if self.iff2 else 0)
+            self._t_states += 9
+        elif op == 0x45:
+            self.pc = self._pop()
+            self.iff = self.iff2
+            self._t_states += 14
+        elif op == 0x4D:
+            self.pc = self._pop()
+            self._t_states += 14
         else:
             raise RuntimeError(f"unimplemented ED opcode {op:#04x} at {(self.pc - 2) & 0xFFFF:#06x}")
 
@@ -1100,6 +1194,7 @@ class ForthMachine:
             page_writes=page_writes,
             chars_out=self._extract_chars_out(m),
             profile=profiler.report() if profiler is not None else None,
+            interrupt_count=m.interrupt_count,
         )
 
     def _make_profiler(

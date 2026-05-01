@@ -238,6 +238,14 @@ OPCODES: tuple[OpcodeSpec, ...] = (
     _n ("add_a_n",      0xC6),
     _nn("ld_sp_ind_nn", 0xED, 0x7B),
     _nn("ld_ind_nn_sp", 0xED, 0x73),
+
+    _no("im_0",         0xED, 0x46),
+    _no("im_1",         0xED, 0x56),
+    _no("im_2",         0xED, 0x5E),
+    _no("ld_i_a",       0xED, 0x47),
+    _no("ld_a_i",       0xED, 0x57),
+    _no("reti",         0xED, 0x4D),
+    _no("retn",         0xED, 0x45),
 )
 
 

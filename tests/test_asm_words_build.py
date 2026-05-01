@@ -35,10 +35,10 @@ class TestAsmWordsSurviveCliBuild:
 
     def test_examples_demo_builds(self, tmp_path):
         rc, stdout, stderr = _build(
-            PROJECT_ROOT / "examples" / "asm-primitives-demo.fs", tmp_path,
+            PROJECT_ROOT / "examples" / "asm-primitives" / "main.fs", tmp_path,
         )
         assert rc == 0, (
-            f"examples/asm-primitives-demo.fs should build via the CLI, "
+            f"examples/asm-primitives/main.fs should build via the CLI, "
             f"got returncode {rc}\nstdout: {stdout}\nstderr: {stderr}"
         )
         sna = tmp_path / "out.sna"
@@ -50,7 +50,7 @@ class TestAsmWordsSurviveCliBuild:
         """asm-primitives.fs is a library — no `main`. Building it should
         fail with a clear error, not crash inside the tree-shaker."""
         rc, stdout, stderr = _build(
-            PROJECT_ROOT / "examples" / "asm-primitives.fs", tmp_path,
+            PROJECT_ROOT / "examples" / "asm-primitives" / "asm-primitives.fs", tmp_path,
         )
         combined = stdout + stderr
         assert rc != 0, "library file without main should fail to build"

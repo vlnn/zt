@@ -3,6 +3,7 @@ ZT      := $(PYTHON) -m zt.cli
 EXAMPLES_DIR := examples
 BUILD_DIR    := build
 
+
 SINGLE_SOURCES := $(wildcard $(EXAMPLES_DIR)/*.fs)
 SINGLE_SNAS    := $(patsubst $(EXAMPLES_DIR)/%.fs,$(BUILD_DIR)/%.sna,$(SINGLE_SOURCES))
 

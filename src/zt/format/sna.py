@@ -48,7 +48,8 @@ def _build_sna_ram(code: bytes, origin: int, sp: int, entry: int) -> bytearray:
 def build_sna(code: bytes, origin: int,
               data_stack_top: int = 0xFF00,
               border: int = 7,
-              entry: int | None = None) -> bytes:
+              entry: int | None = None,
+              im2_table: bool = False) -> bytes:
     if origin < SNA_RAM_BASE:
         raise ValueError(f"origin {origin:#06x} below Spectrum RAM at {SNA_RAM_BASE:#06x}")
     if origin + len(code) > 0x10000:
@@ -58,7 +59,11 @@ def build_sna(code: bytes, origin: int,
         raise ValueError(f"data_stack_top {data_stack_top:#06x} leaves no room for PC push")
     if entry is None:
         entry = origin
-    return bytes(_build_sna_header(sp, border)) + bytes(_build_sna_ram(code, origin, sp, entry))
+    ram = _build_sna_ram(code, origin, sp, entry)
+    if im2_table:
+        from zt.assemble.im2_table import inject_im2_table_into_ram48k
+        ram = bytearray(inject_im2_table_into_ram48k(bytes(ram)))
+    return bytes(_build_sna_header(sp, border)) + bytes(ram)
 
 
 def build_sna_128(
@@ -68,15 +73,25 @@ def build_sna_128(
     data_stack_top: int = 0xFF00,
     border: int = 7,
     port_7ffd: int | None = None,
+    im2_table: bool = False,
 ) -> bytes:
     _validate_128k_inputs(banks, entry, paged_bank)
     padded = _pad_all_banks(banks)
     port = (paged_bank | 0x10) if port_7ffd is None else port_7ffd
     padded = _set_bankm_shadow(padded, port)
+    if im2_table:
+        padded = _inject_im2_table_into_slot2_bank(padded)
     header = _build_sna_header(data_stack_top, border)
     initial = _initial_48k_image(padded, paged_bank)
     tail = _tail_128k(padded, paged_bank, entry, port)
     return bytes(header) + initial + tail
+
+
+def _inject_im2_table_into_slot2_bank(padded: dict[int, bytes]) -> dict[int, bytes]:
+    from zt.assemble.im2_table import inject_im2_table_into_bank
+    return {**padded, _BANK_AT_SLOT_8000: inject_im2_table_into_bank(
+        padded[_BANK_AT_SLOT_8000], bank_origin=0x8000,
+    )}
 
 
 def _validate_128k_inputs(banks: dict[int, bytes], entry: int, paged_bank: int) -> None:

@@ -340,6 +340,62 @@ Load the resulting `.sna` in Fuse, ZEsarUX, or a real 48K via divMMC.
 
 ---
 
+### Showcase: concurrent foreground + ISR via IM 2
+
+zt supports the Z80's interrupt mode 2 — the dispatch path that real
+Spectrum games and music drivers use to run code at every ULA frame
+boundary while the foreground thread keeps going. Three Forth primitives
+cover the user-facing surface:
+
+- `IM2-HANDLER! ( addr -- )` installs a Z80 routine as the IM 2 handler.
+  It writes the address into a fixed JP slot, sets `I` to the vector-table
+  page, and switches the CPU to IM 2. EI is left to the caller so install
+  is atomic.
+- `IM2-HANDLER@ ( -- addr )` reads back the currently installed handler.
+- `IM2-OFF ( -- )` reverts to IM 1 with interrupts disabled.
+
+The 257-byte vector table at `$B800–$B900` and the 3-byte JP slot at
+`$B9B9` are auto-emitted into the `.sna` whenever any IM 2 primitive is
+reachable from `_start` (compile-time liveness check). Programs that
+don't use IM 2 stay byte-for-byte identical to before.
+
+`examples/im2-rainbow/` is the worked demo. The handler cycles the border
+through the eight Spectrum colours once per frame; the foreground word
+loops `random-letter emit` indefinitely. Both run together — you see the
+border stripe at exactly 50 Hz while the screen continuously fills with
+random uppercase letters.
+
+```
+examples/im2-rainbow/
+├── main.fs              ← entry; clears screen, calls rainbow
+├── app/
+│   └── rainbow.fs       ← ISR, random-letter, install + spew loop
+└── tests/
+    ├── test_random_letter.fs    ← Forth unit test on the helper
+    └── test_im2_rainbow.py      ← acceptance: build + run + assert
+                                   3 frame interrupts, border cycle
+                                   1..7,0, JP slot populated
+```
+
+Build:
+
+```
+zt build examples/im2-rainbow/main.fs -o build/im2-rainbow.sna
+```
+
+The handler itself is hand-written Z80 inside a `:::` block — IM 2 ISRs
+need to push/pop everything they touch, end with `EI; RETI`, and avoid
+Forth's NEXT machinery entirely. Eight cycle-counted instructions read
+the tick counter, advance it modulo 8, write the byte to port `$FE`, and
+unwind back to the foreground.
+
+For the design, the simulator-side mechanics (frame-rate auto-fire,
+EI-pending one-instruction delay, the 257-byte floating-bus trick), and
+the milestone-by-milestone test counts, see
+[`docs/im2-architecture.md`](docs/im2-architecture.md).
+
+---
+
 ## Part 2 — How it works (internal reasoning)
 
 ### Execution model: indirect-threaded code

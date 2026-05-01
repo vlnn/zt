@@ -228,6 +228,14 @@ def _emit_warnings(compiler: Compiler) -> None:
         print(msg, file=sys.stderr)
 
 
+_IM2_PRIMITIVE_NAMES = ("im2-handler!", "im2-handler@", "im2-off")
+
+
+def _image_uses_im2(compiler: Compiler) -> bool:
+    liveness = compiler.compute_liveness()
+    return any(name in liveness.words for name in _IM2_PRIMITIVE_NAMES)
+
+
 def _build_image(compiler: Compiler, args: argparse.Namespace) -> bytes:
     """Decide between tree-shaken and eager build per the tree-shake policy:
 
@@ -392,6 +400,7 @@ def _write_output(image: bytes, args: argparse.Namespace,
             paged_bank=args.paged_bank,
             data_stack_top=args.dstack,
             border=args.border,
+            im2_table=_image_uses_im2(compiler),
         )
         args.output.write_bytes(sna)
         return
@@ -408,7 +417,8 @@ def _write_output(image: bytes, args: argparse.Namespace,
             sys.exit(1)
         sna = build_sna(image, args.origin, args.dstack,
                         border=args.border,
-                        entry=compiler.words["_start"].address)
+                        entry=compiler.words["_start"].address,
+                        im2_table=_image_uses_im2(compiler))
         args.output.write_bytes(sna)
         return
     if fmt == "bin":

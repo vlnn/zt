@@ -1658,6 +1658,55 @@ def create_128k_query(a: Asm) -> None:
     a.dispatch()
 
 
+def create_ei(a: Asm) -> None:
+    """`EI ( -- )` — enable interrupts; data stack untouched."""
+    a.label("EI")
+    a.alias("ei", "EI")
+    a.ei()
+    a.dispatch()
+
+
+def create_di(a: Asm) -> None:
+    """`DI ( -- )` — disable interrupts; data stack untouched."""
+    a.label("DI")
+    a.alias("di", "DI")
+    a.di()
+    a.dispatch()
+
+
+def create_im2_handler_store(a: Asm) -> None:
+    """`IM2-HANDLER! ( addr -- )` — atomically install addr as the IM 2 handler."""
+    from zt.assemble.im2_table import IM2_HANDLER_SLOT_ADDR, IM2_TABLE_PAGE
+    a.label("IM2-HANDLER!")
+    a.alias("im2-handler!", "IM2-HANDLER!")
+    a.di()
+    a.ld_ind_nn_hl(IM2_HANDLER_SLOT_ADDR + 1)
+    a.ld_a_n(IM2_TABLE_PAGE)
+    a.ld_i_a()
+    a.im_2()
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_im2_handler_fetch(a: Asm) -> None:
+    """`IM2-HANDLER@ ( -- addr )` — return the address last installed by IM2-HANDLER!."""
+    from zt.assemble.im2_table import IM2_HANDLER_SLOT_ADDR
+    a.label("IM2-HANDLER@")
+    a.alias("im2-handler@", "IM2-HANDLER@")
+    a.push_hl()
+    a.ld_hl_ind_nn(IM2_HANDLER_SLOT_ADDR + 1)
+    a.dispatch()
+
+
+def create_im2_off(a: Asm) -> None:
+    """`IM2-OFF ( -- )` — disable interrupts and revert to IM 1; data stack untouched."""
+    a.label("IM2-OFF")
+    a.alias("im2-off", "IM2-OFF")
+    a.di()
+    a.im_1()
+    a.dispatch()
+
+
 
 CORE_PRIMITIVES = [
     create_next, create_docol, create_exit,
@@ -1703,6 +1752,8 @@ CORE_PRIMITIVES = [
     create_wait_frame,
     create_bank_store, create_bank_fetch,
     create_raw_bank_store, create_128k_query,
+    create_ei, create_di,
+    create_im2_handler_store, create_im2_handler_fetch, create_im2_off,
 ]
 
 PRIMITIVES = [
