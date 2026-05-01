@@ -12,16 +12,8 @@ require rand.fs
 
 variable border-tick
 
-::: rainbow-isr ( -- )
-    push_af
-    ' border-tick ld_a_ind_nn
-    inc_a
-    7 and_n
-    $FE out_n_a
-    ' border-tick ld_ind_nn_a
-    pop_af
-    ei
-    reti ;
+: rainbow-isr  ( -- )
+    border-tick @ 1+ 7 and  dup border-tick !  border ;
 
 : random-letter  ( -- ch )
     27 random  dup 26 = if  drop 32  else  65 +  then ;

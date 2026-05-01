@@ -1674,12 +1674,72 @@ def create_di(a: Asm) -> None:
     a.dispatch()
 
 
+def create_im2_shim(a: Asm) -> None:
+    """`__im2_shim__` — Z80-level prologue/epilogue around a Forth-level IM 2 handler.
+
+    Saves AF/HL/BC/DE/IX/IY, then dispatches into the handler thread, which
+    holds the user xt followed by the xt of `__im2_exit__`. The user word's
+    EXIT lands on the second cell and hops to `__im2_exit__`, which closes
+    the shim with EI; RETI.
+    """
+    a.label("__im2_shim__")
+    a.push_af()
+    a.push_hl()
+    a.push_bc()
+    a.push_de()
+    a.push_ix()
+    a.push_iy()
+    a.ld_ix_nn("__im2_thread__")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.push_de()
+    a.ret()
+
+
+def create_im2_exit(a: Asm) -> None:
+    """`__im2_exit__` — primitive closing the IM 2 shim with EI; RETI.
+
+    Reached from NEXT after the user handler's EXIT dispatches the second cell
+    of `__im2_thread__`. Restores foreground state and returns to the
+    interrupted instruction.
+    """
+    a.label("__im2_exit__")
+    a.pop_iy()
+    a.pop_ix()
+    a.pop_de()
+    a.pop_bc()
+    a.pop_hl()
+    a.pop_af()
+    a.ei()
+    a.reti()
+
+
+def create_im2_thread(a: Asm) -> None:
+    """`__im2_thread__` — 4-byte mutable thread driving the IM 2 shim.
+
+    Cell 0 (writable): the user xt installed by `IM2-HANDLER!`.
+    Cell 1 (link-time constant): xt of `__im2_exit__`.
+    """
+    a.label("__im2_thread__")
+    a.word(0)
+    a.word("__im2_exit__")
+
+
 def create_im2_handler_store(a: Asm) -> None:
-    """`IM2-HANDLER! ( addr -- )` — atomically install addr as the IM 2 handler."""
+    """`IM2-HANDLER! ( xt -- )` — install xt as the colon-level IM 2 handler.
+
+    The xt must be a `:` colon word with stack-neutral effect ( -- ). The shim
+    auto-saves/restores AF/HL/BC/DE/IX/IY and finishes with EI; RETI, so the
+    body is plain Forth — no `:::` boilerplate.
+    """
     from zt.assemble.im2_table import IM2_HANDLER_SLOT_ADDR, IM2_TABLE_PAGE
     a.label("IM2-HANDLER!")
     a.alias("im2-handler!", "IM2-HANDLER!")
     a.di()
+    a.ld_ind_nn_hl("__im2_thread__")
+    a.ld_hl_nn("__im2_shim__")
     a.ld_ind_nn_hl(IM2_HANDLER_SLOT_ADDR + 1)
     a.ld_a_n(IM2_TABLE_PAGE)
     a.ld_i_a()
@@ -1689,12 +1749,11 @@ def create_im2_handler_store(a: Asm) -> None:
 
 
 def create_im2_handler_fetch(a: Asm) -> None:
-    """`IM2-HANDLER@ ( -- addr )` — return the address last installed by IM2-HANDLER!."""
-    from zt.assemble.im2_table import IM2_HANDLER_SLOT_ADDR
+    """`IM2-HANDLER@ ( -- xt )` — return the xt last installed by IM2-HANDLER!."""
     a.label("IM2-HANDLER@")
     a.alias("im2-handler@", "IM2-HANDLER@")
     a.push_hl()
-    a.ld_hl_ind_nn(IM2_HANDLER_SLOT_ADDR + 1)
+    a.ld_hl_ind_nn("__im2_thread__")
     a.dispatch()
 
 
@@ -1753,6 +1812,7 @@ CORE_PRIMITIVES = [
     create_bank_store, create_bank_fetch,
     create_raw_bank_store, create_128k_query,
     create_ei, create_di,
+    create_im2_shim, create_im2_exit, create_im2_thread,
     create_im2_handler_store, create_im2_handler_fetch, create_im2_off,
 ]
 

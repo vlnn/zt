@@ -334,9 +334,6 @@ primitives (one byte + dispatch each); useful in their own right.
 
 ## Non-goals (kept from the plan)
 
-- **Forth-level ISRs.** Saving HL=TOS, BC=NEXT, etc. across an
-  interrupt boundary is doable but invasive. Defer to v2 once a second
-  use case appears.
 - **Chained handlers.** Single handler slot. If two subsystems need
   ISR time, they share a hand-written dispatcher in user code.
 - **NMI ($0066).** No use case in zt today.
@@ -353,6 +350,27 @@ primitives (one byte + dispatch each); useful in their own right.
   generally.
 - **`--im2-table-page N` CLI override.** Not needed for AY work. Easy
   to add as a follow-up polish PR.
+
+## Shipped after v1: Forth-level ISRs via the shim
+
+`IM2-HANDLER!` now takes the xt of a `:` colon word. A built-in
+shim (`__im2_shim__`) saves AF/HL/BC/DE/IX/IY on entry, dispatches into
+a 4-byte mutable thread (`__im2_thread__`) holding `[user_xt,
+__im2_exit_xt]`, and the user word's normal EXIT lands on the second
+cell which calls the `__im2_exit__` primitive. That primitive restores
+the saved state and finishes with `EI; RETI`.
+
+Net effect: a frame ISR can be one line of plain Forth instead of a
+register-saving Z80 routine. The motivating example went from a 50-line
+`:::` body in `examples/im2-music` to a 3-line colon definition. The
+shim adds ~140 T-states per fire on top of the user body — 0.2% of CPU
+at 50 Hz. Power users wanting the raw path can hand-emit a `:::` ISR
+and install its address by manually writing `$B9BA` (the JP slot
+operand) instead of going through `IM2-HANDLER!`.
+
+The constraint: the user word must be stack-neutral (`( -- )`) on both
+the data stack and the return stack. The shim doesn't swap to a
+private SP, so any imbalance leaks into the foreground's stacks.
 
 ---
 

@@ -23,6 +23,9 @@ from zt.sim import FRAME_T_STATES_48K, ForthMachine
 def _asm_with_next() -> Asm:
     a = Asm(0x8000, inline_next=False)
     a.label("NEXT")
+    a.label("__im2_thread__")
+    a.label("__im2_shim__")
+    a.label("__im2_exit__")
     return a
 
 
@@ -33,6 +36,7 @@ def _compile(creator) -> bytes:
 
 
 _DISPATCH_TO_NEXT = bytes([0xC3, 0x00, 0x80])
+_PLACEHOLDER_ADDR = 0x8000
 
 
 class TestIm2HandlerStoreBytes:
@@ -41,40 +45,54 @@ class TestIm2HandlerStoreBytes:
         out = _compile(create_im2_handler_store)
         assert out[0] == 0xF3, "IM2-HANDLER! must start with DI to install atomically"
 
-    def test_then_writes_hl_into_jp_slot_operand(self):
+    def test_then_writes_xt_to_thread_cell_zero(self):
+        out = _compile(create_im2_handler_store)
+        assert out[1] == 0x22, \
+            "after DI, expect LD (nn),HL writing the user xt into __im2_thread__ cell 0"
+        assert (out[2] | (out[3] << 8)) == _PLACEHOLDER_ADDR, \
+            "operand should be the address of __im2_thread__ (placeholder $8000 in this asm)"
+
+    def test_then_loads_shim_address_into_hl(self):
+        out = _compile(create_im2_handler_store)
+        assert out[4] == 0x21, "next: LD HL,nn loading the shim address (opcode 0x21)"
+        assert (out[5] | (out[6] << 8)) == _PLACEHOLDER_ADDR, \
+            "operand should be the address of __im2_shim__ (placeholder $8000 in this asm)"
+
+    def test_then_writes_shim_into_jp_slot_operand(self):
         out = _compile(create_im2_handler_store)
         operand_addr = IM2_HANDLER_SLOT_ADDR + 1
-        assert out[1] == 0x22, "after DI, expect LD (nn),HL (opcode 0x22)"
-        assert out[2] == operand_addr & 0xFF, \
-            f"low byte of LD (nn),HL operand should be {operand_addr & 0xFF:#04x} ($B9BA low)"
-        assert out[3] == (operand_addr >> 8) & 0xFF, \
-            f"high byte of LD (nn),HL operand should be {(operand_addr >> 8) & 0xFF:#04x} ($B9BA high)"
+        assert out[7] == 0x22, \
+            "next: LD (nn),HL writing the shim address into the JP-slot operand at $B9BA"
+        assert (out[8] | (out[9] << 8)) == operand_addr, \
+            f"operand should be {operand_addr:#06x} ($B9BA)"
 
     def test_then_loads_table_page_into_a(self):
         out = _compile(create_im2_handler_store)
-        assert out[4] == 0x3E, "expect LD A,n (opcode 0x3E)"
-        assert out[5] == IM2_TABLE_PAGE, \
+        assert out[10] == 0x3E, "expect LD A,n (opcode 0x3E)"
+        assert out[11] == IM2_TABLE_PAGE, \
             f"immediate byte should be IM2_TABLE_PAGE = {IM2_TABLE_PAGE:#04x}"
 
     def test_then_copies_a_into_i(self):
         out = _compile(create_im2_handler_store)
-        assert out[6:8] == bytes([0xED, 0x47]), \
+        assert out[12:14] == bytes([0xED, 0x47]), \
             "expect LD I,A (ED 47) after loading the page byte"
 
     def test_then_switches_to_im_2(self):
         out = _compile(create_im2_handler_store)
-        assert out[8:10] == bytes([0xED, 0x5E]), \
+        assert out[14:16] == bytes([0xED, 0x5E]), \
             "expect IM 2 (ED 5E) right after LD I,A"
 
     def test_then_pops_fresh_tos_and_dispatches(self):
         out = _compile(create_im2_handler_store)
-        assert out[10] == 0xE1, "expect POP HL to load fresh TOS after consuming addr"
-        assert out[11:14] == _DISPATCH_TO_NEXT, "then JP NEXT"
+        assert out[16] == 0xE1, "expect POP HL to load fresh TOS after consuming xt"
+        assert out[17:20] == _DISPATCH_TO_NEXT, "then JP NEXT"
 
-    def test_total_length_is_14(self):
+    def test_total_length_is_20(self):
         out = _compile(create_im2_handler_store)
-        assert len(out) == 14, \
-            "IM2-HANDLER! should be DI + LD(nn),HL + LD A,n + LD I,A + IM 2 + POP HL + dispatch = 14 bytes"
+        assert len(out) == 20, (
+            "IM2-HANDLER! should be DI + LD(thread),HL + LD HL,shim + LD(slot+1),HL "
+            "+ LD A,n + LD I,A + IM 2 + POP HL + dispatch = 20 bytes"
+        )
 
     def test_does_not_emit_ei(self):
         out = _compile(create_im2_handler_store)
@@ -88,14 +106,35 @@ class TestIm2HandlerStoreExecution:
     def fm(self):
         return ForthMachine()
 
-    def _install(self, fm, addr):
-        fm.run([fm.label("LIT"), addr, fm.label("IM2-HANDLER!"), fm.label("HALT")])
+    def _install(self, fm, xt):
+        fm.run([fm.label("LIT"), xt, fm.label("IM2-HANDLER!"), fm.label("HALT")])
 
-    def test_writes_handler_address_into_jp_slot_operand(self, fm):
+    def test_writes_xt_to_thread_cell_zero(self, fm):
         self._install(fm, 0xC123)
         m = fm._last_m
-        assert m._rw(IM2_HANDLER_SLOT_ADDR + 1) == 0xC123, \
-            "IM2-HANDLER! should store the address into the JP-slot operand at $B9BA"
+        thread_addr = fm.label("__im2_thread__")
+        assert m._rw(thread_addr) == 0xC123, (
+            "IM2-HANDLER! should store the user xt into the first cell of __im2_thread__"
+        )
+
+    def test_writes_shim_address_into_jp_slot_operand(self, fm):
+        self._install(fm, 0xC123)
+        m = fm._last_m
+        shim_addr = fm.label("__im2_shim__")
+        assert m._rw(IM2_HANDLER_SLOT_ADDR + 1) == shim_addr, (
+            f"IM2-HANDLER! should patch the JP slot operand at $B9BA so the IM 2 "
+            f"vector dispatches into __im2_shim__ ({shim_addr:#06x}); "
+            f"got {m._rw(IM2_HANDLER_SLOT_ADDR + 1):#06x}"
+        )
+
+    def test_does_not_overwrite_thread_cell_one(self, fm):
+        self._install(fm, 0xC123)
+        m = fm._last_m
+        thread_addr = fm.label("__im2_thread__")
+        assert m._rw(thread_addr + 2) == fm.label("__im2_exit__"), (
+            "cell 1 of the thread must keep pointing at __im2_exit__ — "
+            "IM2-HANDLER! only writes cell 0"
+        )
 
     def test_sets_i_register_to_table_page(self, fm):
         self._install(fm, 0xC000)
@@ -118,13 +157,12 @@ class TestIm2HandlerFetchBytes:
         out = _compile(create_im2_handler_fetch)
         assert out[0] == 0xE5, "IM2-HANDLER@ must PUSH HL first to preserve current TOS"
 
-    def test_then_loads_jp_slot_operand_into_hl(self):
+    def test_then_loads_thread_cell_zero_into_hl(self):
         out = _compile(create_im2_handler_fetch)
-        operand_addr = IM2_HANDLER_SLOT_ADDR + 1
         assert out[1] == 0x2A, "expect LD HL,(nn) (opcode 0x2A)"
-        assert out[2] == operand_addr & 0xFF
-        assert out[3] == (operand_addr >> 8) & 0xFF, \
-            "operand should be $B9BA — the JP-slot's address-bytes location"
+        assert (out[2] | (out[3] << 8)) == _PLACEHOLDER_ADDR, (
+            "operand should be the address of __im2_thread__ (placeholder $8000 in this asm)"
+        )
 
     def test_then_dispatches(self):
         out = _compile(create_im2_handler_fetch)

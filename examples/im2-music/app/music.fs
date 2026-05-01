@@ -46,50 +46,26 @@ $0F constant ay-volume-max
 : max-volume-a  ( -- )   ay-volume-max 8 ay-set ;
 : music-init    ( -- )   enable-tones max-volume-a ;
 
-::: music-isr  ( -- )
-    push_af  push_hl  push_bc  push_de
+: cycle-border    ( -- )
+    border-tick @ 1+ 7 and  dup border-tick !  border ;
 
-    ' border-tick ld_a_ind_nn
-    inc_a
-    7 and_n
-    $FE out_n_a
-    ' border-tick ld_ind_nn_a
+: advance-tick    ( -- )  1 music-tick +! ;
 
-    ' music-tick ld_a_ind_nn
-    inc_a
-    ' music-tick ld_ind_nn_a
+: note-index      ( -- i )  music-tick @ 3 rshift ;
 
-    rrca  rrca  rrca
-    7 and_n
-    add_a_a
-    ld_e_a
-    0 ld_d_n
-    ' tone-table ld_hl_nn
-    add_hl_de
+: current-period  ( -- p )  note-index tone-period ;
 
-    ld_a_ind_hl
-    ld_e_a
-    inc_hl
-    ld_a_ind_hl
-    ld_d_a
+: low-byte        ( n -- lo )  255 and ;
+: high-byte       ( n -- hi )  8 rshift ;
 
-    $FFFD ld_bc_nn
-    0 ld_a_n
-    out_c_a
-    $BFFD ld_bc_nn
-    ld_a_e
-    out_c_a
+: play-channel-a  ( period -- )
+    dup low-byte   0 ay-set
+        high-byte  1 ay-set ;
 
-    $FFFD ld_bc_nn
-    1 ld_a_n
-    out_c_a
-    $BFFD ld_bc_nn
-    ld_a_d
-    out_c_a
-
-    pop_de  pop_bc  pop_hl  pop_af
-    ei
-    reti ;
+: music-isr  ( -- )
+    cycle-border
+    advance-tick
+    current-period play-channel-a ;
 
 : random-letter   ( -- ch )
     27 random  dup 26 = if  drop 32  else  65 +  then ;

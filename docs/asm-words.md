@@ -175,3 +175,30 @@ convention. It's not the right tool when:
 A good heuristic: if you'd write the same thing in `primitives.py` as
 five lines and three `Asm` method calls, it belongs in `:::`. If it's
 twenty lines with helpers, put it in `primitives.py`.
+
+## ISRs: prefer `:` over `:::`
+
+For IM 2 handlers, write a normal `:` colon word and install it with
+`IM2-HANDLER! ( xt -- )`. The shim emitted by `IM2-HANDLER!` saves
+AF/HL/BC/DE/IX/IY on entry and ends with `EI; RETI` on exit, so the
+body is plain Forth — no `push_af … pop_af`, no manual `ei reti`, no
+register bookkeeping.
+
+```forth
+variable border-tick
+
+: rainbow-isr  ( -- )
+    border-tick @ 1+ 7 and  dup border-tick !  border ;
+
+: main  ['] rainbow-isr im2-handler!  ei  begin again ;
+```
+
+The body must be stack-neutral on both stacks. The shim doesn't swap to
+a private SP, so `>R` without a matching `R>` (or pushing a literal
+without consuming it) leaks into the foreground.
+
+Use `:::` for an ISR only when the per-fire budget genuinely demands
+the ~140-T-state shim be skipped — tracker drivers, raster splits.
+You're then on the hook for `push af … pop af … ei reti` yourself, and
+you install by writing `$B9BA` directly instead of through
+`IM2-HANDLER!` (which would route through the shim).

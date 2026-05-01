@@ -1,5 +1,79 @@
 # Changes
 
+## IM 2 handlers can now be plain `:` colon words
+
+`IM2-HANDLER!` previously took a raw Z80 entry-point address; the user had to
+hand-roll a `:::` body that saved registers, did the work, and ended in
+`EI; RETI`. This is now a built-in.
+
+**New surface.** `IM2-HANDLER! ( xt -- )` takes the xt of a colon word.
+Three new primitives back it:
+
+- **`__im2_shim__`** — Z80-level prologue/epilogue. Saves
+  AF/HL/BC/DE/IX/IY on entry, dispatches into the handler thread,
+  finishes through `__im2_exit__`. Pointed at by the JP slot at `$B9BA`
+  every time `IM2-HANDLER!` runs.
+- **`__im2_exit__`** — primitive reached after the user word's EXIT
+  dispatches the second cell of the thread. Restores the saved state
+  and ends with `EI; RETI`.
+- **`__im2_thread__`** — 4-byte mutable thread. Cell 0 holds the user
+  xt (written by `IM2-HANDLER!`). Cell 1 holds the xt of `__im2_exit__`
+  (resolved at link time).
+
+**Cost.** ~140 T-states of overhead per fire on top of the user body.
+0.2% of CPU at 50 Hz. The shim, exit primitive, and thread total ~30
+bytes, all gated by liveness when `IM2-HANDLER!` itself is dead.
+
+**User constraint.** The colon word must be stack-neutral (`( -- )`) on
+both the data and return stacks. The shim doesn't swap to a private SP.
+
+**Breaking change.** `IM2-HANDLER!`'s signature is now `( xt -- )`,
+not `( addr -- )`. Code that previously installed a raw `:::` ISR via
+`IM2-HANDLER!` no longer works — the shim adds 6 register pushes the
+old ISR's manual `EI; RETI` doesn't account for. Two existing demos
+(`examples/im2-rainbow`, `examples/im2-music`) are migrated. Power
+users wanting the raw path emit a `:::` ISR and patch the JP slot
+operand at `$B9BA` directly.
+
+**Demo size.** The motivating case shrank dramatically:
+
+```forth
+\ before — :::-Z80 inside the rainbow demo
+::: rainbow-isr
+    push_af
+    ' border-tick ld_a_ind_nn
+    inc_a  7 and_n
+    $FE out_n_a
+    ' border-tick ld_ind_nn_a
+    pop_af  ei  reti ;
+
+\ after — plain Forth
+: rainbow-isr
+    border-tick @ 1+ 7 and  dup border-tick !  border ;
+```
+
+The AY-music demo's 50-line `:::` ISR became three composed colon words
+(`cycle-border`, `advance-tick`, `current-period play-channel-a`),
+each individually unit-testable.
+
+## Tests
+
+- New: `tests/test_im2_colon_isr.py` — 8 end-to-end tests covering the
+  colon-word path, including nested calls and a busy foreground.
+- Updated: `tests/test_primitives_im2.py` — byte-level tests rewritten
+  for the new 20-byte `IM2-HANDLER!` body and the thread-based fetch.
+
+4463 / 4463 green.
+
+## Documentation
+
+- `docs/im2-architecture.md` — moved Forth-level ISRs out of "non-goals"
+  into a "Shipped after v1" section that describes the shim and trade-offs.
+
+---
+
+# Earlier changes
+
 Three new Z80 primitives for 2-bit-quantized neural network kernels (z80ai-style),
 plus the simulator and opcode-table additions they needed.
 
