@@ -810,12 +810,12 @@ class Compiler:
         value = self._host_pop(tok)
         self._emit_cell(value & 0xFFFF, tok)
 
-    @directive("'")
+    @macro("'")
     def _directive_tick(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
         word = self.words.get(name_tok.value)
         if word is None:
-            raise CompileError(f"' unknown word '{name_tok.value}'", name_tok)
+            raise CompileError(f"unknown word '{name_tok.value}' after '", name_tok)
         addr = word.data_address if word.data_address is not None else word.address
         self._host_stack.append(addr)
         self._uses_word_address_data = True
