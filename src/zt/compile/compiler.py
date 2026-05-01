@@ -45,8 +45,10 @@ from zt.compile.tokenizer import Token, tokenize
 from zt.compile.word_registry import (
     collected_directives,
     collected_immediates,
+    collected_macros,
     directive,
     immediate,
+    macro,
 )
 
 
@@ -132,6 +134,7 @@ class Compiler:
         self._register_primitives()
         self._register_directives()
         self._register_immediates()
+        self._register_macros()
 
     @property
     def source_map(self) -> list[SourceEntry]:
@@ -172,6 +175,18 @@ class Compiler:
                 name=name, address=0, kind="prim",
                 immediate=True, compile_action=action.__get__(self, type(self)),
             ))
+
+    def _register_macros(self) -> None:
+        self._macros: set[str] = set()
+        for name, action in collected_macros(type(self)):
+            self.words.register(Word(
+                name=name, address=0, kind="prim",
+                immediate=True, compile_action=action.__get__(self, type(self)),
+            ))
+            self._macros.add(name)
+
+    def _is_macro(self, name: str) -> bool:
+        return name in self._macros
 
     def compile_source(self, text: str, source: str = "<input>") -> None:
         self._tokens = TokenStream(tokenize(text, source))
@@ -611,6 +626,128 @@ class Compiler:
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
         )
+
+    @directive(":::")
+    def _directive_asm_word(self, _compiler: Compiler, tok: Token) -> None:
+        if self.state == "compile":
+            raise CompileError("::: not allowed inside a colon definition", tok)
+        name_tok = self._next_token(tok)
+        code_addr = self.asm.here
+        self._assemble_asm_body(tok)
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=code_addr, kind="prim",
+            source_file=name_tok.source, source_line=name_tok.line,
+        )
+
+    @macro("[times]")
+    def _macro_times(self, _compiler: Compiler, tok: Token) -> None:
+        count_tok = self._next_token(tok)
+        body_tok = self._next_token(tok)
+        count = self._parse_macro_count(count_tok)
+        self._tokens.splice_in([body_tok] * count)
+
+    @macro("[defined]")
+    def _macro_defined(self, _compiler: Compiler, tok: Token) -> None:
+        name_tok = self._next_token(tok)
+        flag = 1 if name_tok.value in self.words else 0
+        self._host_stack.append(flag)
+
+    @macro("[if]")
+    def _macro_if(self, _compiler: Compiler, tok: Token) -> None:
+        flag = self._host_pop(tok)
+        if not flag:
+            self._skip_to_branch_terminator(tok, accept_else=True)
+
+    @macro("[else]")
+    def _macro_else(self, _compiler: Compiler, tok: Token) -> None:
+        self._skip_to_branch_terminator(tok, accept_else=False)
+
+    @macro("[then]")
+    def _macro_then(self, _compiler: Compiler, tok: Token) -> None:
+        pass
+
+    @macro("[string]")
+    def _macro_string(self, _compiler: Compiler, tok: Token) -> None:
+        starter = self._next_token(tok)
+        if starter.kind != "word" or starter.value not in ('s"', '."'):
+            raise CompileError(
+                f"[string] expects an s\" or .\" string, got {starter.value!r}",
+                starter,
+            )
+        body = self._next_string_token(starter)
+        spliced: list[Token] = []
+        for byte in body.value.encode("latin-1"):
+            spliced.append(self._synthetic_token(str(byte), "number", body))
+            spliced.append(self._synthetic_token("c,", "word", body))
+        self._tokens.splice_in(spliced)
+
+    def _synthetic_token(self, value: str, kind, near: Token) -> Token:
+        return Token(
+            value=value, kind=kind,
+            line=near.line, col=near.col, source=near.source,
+        )
+
+    def _skip_to_branch_terminator(
+        self, opener: Token, *, accept_else: bool,
+    ) -> None:
+        depth = 1
+        while True:
+            tok = self._next_token(opener)
+            if tok.kind != "word":
+                continue
+            if tok.value == "[if]":
+                depth += 1
+            elif tok.value == "[then]":
+                depth -= 1
+                if depth == 0:
+                    return
+            elif tok.value == "[else]" and accept_else and depth == 1:
+                return
+
+    def _parse_macro_count(self, tok: Token) -> int:
+        if tok.kind != "number":
+            raise CompileError(
+                f"[TIMES] count must be a number, got {tok.value!r}", tok,
+            )
+        count = parse_number(tok.value)
+        if count < 0:
+            raise CompileError(
+                f"[TIMES] count must be non-negative, got {count}", tok,
+            )
+        return count
+
+    def _assemble_asm_body(self, opener: Token) -> None:
+        from zt.assemble.asm_vocab import lookup, UnknownMnemonic
+        while True:
+            tok = self._next_token(opener)
+            if tok.kind == "word" and tok.value == ";":
+                self.asm.dispatch()
+                return
+            if tok.kind == "word" and tok.value == ":::":
+                raise CompileError("nested ::: definition", tok)
+            if tok.kind == "number":
+                self._host_stack.append(parse_number(tok.value))
+                continue
+            if tok.kind == "word" and self._is_macro(tok.value):
+                self.words[tok.value].compile_action(self, tok)
+                continue
+            if tok.kind == "word":
+                try:
+                    spec = lookup(tok.value)
+                except UnknownMnemonic:
+                    raise CompileError(
+                        f"unknown asm mnemonic '{tok.value}'", tok,
+                    )
+                self._emit_asm_op(spec, tok)
+                continue
+            raise CompileError(f"unexpected token '{tok.value}'", tok)
+
+    def _emit_asm_op(self, spec, tok: Token) -> None:
+        method = getattr(self.asm, spec.mnemonic)
+        if spec.operand is None:
+            method()
+            return
+        method(self._host_pop(tok))
 
     @directive(",")
     def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:
