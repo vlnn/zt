@@ -7,6 +7,8 @@ A Python-hosted toolchain that takes a `.fs` Forth source file and emits a Spect
 generated image uses indirect-threaded code so most of a program is a flat list of
 16-bit word addresses, with hand-written Z80 primitives at the leaves.
 
+> **New here?** [`docs/getting-started.md`](docs/getting-started.md) is the 60-second tour — install, build an example, write hello world, and pointers into the rest of the docs.
+
 ---
 
 ## Part 1 — Getting started (external onboarding)
