@@ -383,10 +383,21 @@ class Z80:
 
         reg(0x1A, self._op_ld_a_ind_de, 7)
         reg(0x0A, self._op_ld_a_ind_bc, 7)
+        reg(0x12, self._op_ld_ind_de_a, 7)
+        reg(0x02, self._op_ld_ind_bc_a, 7)
+        reg(0x34, self._op_inc_ind_hl, 11)
+        reg(0x35, self._op_dec_ind_hl, 11)
         reg(0x3A, self._op_ld_a_ind_nn, 13)
         reg(0x32, self._op_ld_ind_nn_a, 13)
         reg(0x22, self._op_ld_ind_nn_hl, 16)
         reg(0x2A, self._op_ld_hl_ind_nn, 16)
+
+        reg(0x3F, self._op_ccf, 4)
+        reg(0x17, self._op_rla, 4)
+        reg(0x1F, self._op_rra, 4)
+        reg(0xCE, self._op_adc_a_n, 7)
+        reg(0xDE, self._op_sbc_a_n, 7)
+        reg(0xEE, self._op_xor_n, 7)
 
         for op in range(0x40, 0x80):
             if op != 0x76:
@@ -514,6 +525,18 @@ class Z80:
 
     def _op_ld_a_ind_bc(self, op: int) -> None:
         self.a = self._rb(self.bc)
+
+    def _op_ld_ind_de_a(self, op: int) -> None:
+        self._wb(self.de, self.a)
+
+    def _op_ld_ind_bc_a(self, op: int) -> None:
+        self._wb(self.bc, self.a)
+
+    def _op_inc_ind_hl(self, op: int) -> None:
+        self._wb(self.hl, self._inc8(self._rb(self.hl)))
+
+    def _op_dec_ind_hl(self, op: int) -> None:
+        self._wb(self.hl, self._dec8(self._rb(self.hl)))
 
     def _op_ld_a_ind_nn(self, op: int) -> None:
         self.a = self._rb(self._fetch_word())
@@ -652,6 +675,32 @@ class Z80:
         c = (self.a >> 7) & 1
         self.a = ((self.a << 1) | c) & 0xFF
         self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if c else 0)
+
+    def _op_rla(self, op: int) -> None:
+        old_c = 1 if (self.f & FLAG_C) else 0
+        new_c = (self.a >> 7) & 1
+        self.a = ((self.a << 1) | old_c) & 0xFF
+        self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if new_c else 0)
+
+    def _op_rra(self, op: int) -> None:
+        old_c = 1 if (self.f & FLAG_C) else 0
+        new_c = self.a & 1
+        self.a = ((self.a >> 1) | (old_c << 7)) & 0xFF
+        self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | (FLAG_C if new_c else 0)
+
+    def _op_ccf(self, op: int) -> None:
+        new_c = 0 if (self.f & FLAG_C) else FLAG_C
+        self.f = (self.f & (FLAG_Z | FLAG_S | FLAG_PV)) | new_c
+
+    def _op_adc_a_n(self, op: int) -> None:
+        self.a = self._add8(self.a, self._fetch(), self.f & FLAG_C)
+
+    def _op_sbc_a_n(self, op: int) -> None:
+        self.a = self._sub8(self.a, self._fetch(), self.f & FLAG_C)
+
+    def _op_xor_n(self, op: int) -> None:
+        self.a ^= self._fetch()
+        self.f = self._flag_sz(self.a)
 
     def _op_cpl(self, op: int) -> None:
         self.a ^= 0xFF
