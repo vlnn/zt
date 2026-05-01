@@ -80,6 +80,10 @@ def _emit_live_primitives(new_asm: Asm, compiler: Compiler, liveness: Liveness) 
         if not _blob_is_live(blob, liveness):
             continue
         emit_blob(new_asm, blob)
+    for blob in getattr(compiler, "_asm_word_blobs", ()):
+        if not _blob_is_live(blob, liveness):
+            continue
+        emit_blob(new_asm, blob)
 
 
 def _blob_is_live(blob, liveness: Liveness) -> bool:

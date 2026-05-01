@@ -115,6 +115,7 @@ class Compiler:
         self._host_stack: list[int] = []
         self._uses_word_address_literal: bool = False
         self._uses_word_address_data: bool = False
+        self._asm_word_blobs: list = []
         self.string_pool: StringPool = StringPool()
         self.emitter: CodeEmitter = CodeEmitter(
             asm=outer_asm, words=self.words, origin=origin,
@@ -633,10 +634,11 @@ class Compiler:
             raise CompileError("::: not allowed inside a colon definition", tok)
         name_tok = self._next_token(tok)
         code_addr = self.asm.here
+        body_start = len(self.asm.code)
+        fixup_count = len(self.asm.fixups)
+        rel_fixup_count = len(self.asm.rel_fixups)
         self._asm_word_name = name_tok.value
-        self._asm_fixup_snapshot = (
-            len(self.asm.fixups), len(self.asm.rel_fixups),
-        )
+        self._asm_fixup_snapshot = (fixup_count, rel_fixup_count)
         try:
             self._assemble_asm_body(tok)
             self._verify_asm_labels_resolved(tok)
@@ -645,6 +647,44 @@ class Compiler:
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="prim",
             source_file=name_tok.source, source_line=name_tok.line,
+        )
+        self._asm_word_blobs.append(self._snapshot_asm_blob(
+            name_tok.value, code_addr, body_start,
+            fixup_count, rel_fixup_count,
+        ))
+
+    def _snapshot_asm_blob(
+        self, name: str, code_addr: int, body_start: int,
+        fixup_start: int, rel_fixup_start: int,
+    ):
+        from types import MappingProxyType
+        from zt.assemble.primitive_blob import PrimitiveBlob
+        body_bytes = bytes(self.asm.code[body_start:])
+        prefix = f"__asm__{name}__"
+        labels = {
+            label: addr - code_addr
+            for label, addr in self.asm.labels.items()
+            if label == name or label.startswith(prefix)
+        }
+        labels[name] = 0
+        body_fixups = tuple(
+            (off - body_start, ref)
+            for off, ref in self.asm.fixups[fixup_start:]
+        )
+        body_rel_fixups = tuple(
+            (off - body_start, ref)
+            for off, ref in self.asm.rel_fixups[rel_fixup_start:]
+        )
+        deps = frozenset(
+            ref for _, ref in body_fixups + body_rel_fixups
+            if ref not in labels
+        )
+        return PrimitiveBlob(
+            label_offsets=MappingProxyType(labels),
+            code=body_bytes,
+            fixups=body_fixups,
+            rel_fixups=body_rel_fixups,
+            external_deps=deps,
         )
 
     def _scoped_label(self, local: str) -> str:
@@ -1178,8 +1218,15 @@ class Compiler:
         return compute_liveness(
             roots=self._liveness_roots(),
             bodies=self._liveness_bodies(),
-            prim_deps=self._blob_registry.dependency_graph(),
+            prim_deps=self._all_prim_deps(),
         )
+
+    def _all_prim_deps(self) -> dict[str, frozenset[str]]:
+        deps = dict(self._blob_registry.dependency_graph())
+        for blob in self._asm_word_blobs:
+            for label in blob.label_offsets:
+                deps[label] = blob.external_deps
+        return deps
 
     def _liveness_roots(self) -> list[str]:
         return ["main", "halt", "next", "docol"]
