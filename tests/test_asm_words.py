@@ -452,3 +452,73 @@ class TestCrossBodyByName:
             "second half: jp tail-call to store-1-at-3000 should run, "
             "leaving 1 at 3000; subsequent dispatch should return to main"
         )
+
+
+class TestTickInsideAsmWord:
+
+    def test_tick_pushes_word_address_to_host_stack(self):
+        c = make_compiler()
+        c.compile_source(
+            ": helper ;\n"
+            "::: w ( -- ) ' helper ld_hl_nn pop_hl ;"
+        )
+        helper_addr = c.words["helper"].address
+        body = _body_bytes(c, "w")
+        assert body == bytes([0x21, helper_addr & 0xFF, (helper_addr >> 8) & 0xFF, 0xE1]), (
+            "' helper ld_hl_nn should emit LD HL, <helper-addr>; pop_hl follows"
+        )
+
+    def test_tick_inside_asm_runtime(self):
+        from zt.sim import Z80
+        c = make_compiler()
+        c.compile_source(
+            ": target ;\n"
+            "::: store-target-addr ( -- )\n"
+            "  ' target ld_hl_nn  3000 ld_ind_nn_hl ;\n"
+            ": main store-target-addr halt ;"
+        )
+        c.compile_main_call()
+        image = c.build()
+        m = Z80()
+        m.load(c.origin, image)
+        m.pc = c.words["_start"].address
+        m.run()
+        target_addr = c.words["target"].address
+        stored_lo = m.mem[3000]
+        stored_hi = m.mem[3001]
+        assert (stored_hi << 8) | stored_lo == target_addr, (
+            f"' target ld_hl_nn should load HL with target's address ({target_addr:#x}); "
+            "store at 3000 should reflect that address little-endian"
+        )
+
+    def test_tick_unknown_word_in_asm(self):
+        c = make_compiler()
+        with pytest.raises(CompileError, match="unknown word 'no-such'"):
+            c.compile_source("::: w ( -- ) ' no-such ld_hl_nn ;")
+
+
+class TestBracketTickInInlinedColon:
+
+    def test_bracket_tick_in_force_inline_compiles_to_literal(self):
+        c = make_compiler()
+        c.compile_source(": target ;\n:: w ['] target ;")
+        body = c.words["w"].body
+        target_addr = c.words["target"].address
+        from zt.compile.ir import Literal
+        literals = [cell for cell in body if isinstance(cell, Literal)]
+        assert any(lit.value == target_addr for lit in literals), (
+            f"['] target inside :: should compile a Literal cell whose value "
+            f"is target's address ({target_addr:#x})"
+        )
+
+    def test_bracket_tick_runtime_in_inlined_word(self):
+        from zt.compile.compiler import compile_and_run
+        result = compile_and_run(
+            ": target ;\n"
+            ":: push-target-addr ['] target ;\n"
+            ": main push-target-addr halt ;"
+        )
+        assert len(result) == 1, "stack should have exactly one value pushed by ['] target"
+        assert result[0] != 0, (
+            "['] target should push target's actual address, not zero"
+        )
