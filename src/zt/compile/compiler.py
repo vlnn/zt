@@ -68,6 +68,13 @@ class Word:
     force_inline: bool = False
 
 
+@dataclass(frozen=True)
+class WordAddressRef:
+    asm_addr: int
+    target: str
+    owner: str
+
+
 class CompileError(Exception):
     def __init__(self, message: str, token: Token | None = None) -> None:
         self.token = token
@@ -115,6 +122,10 @@ class Compiler:
         self._tokens: TokenStream = TokenStream([])
         self._host_stack: list[int] = []
         self._uses_word_address_data: bool = False
+        self._pending_tick: tuple[str, int] | None = None
+        self._tick_unsafe: bool = False
+        self._word_address_refs: list[WordAddressRef] = []
+        self._inside_asm_body: bool = False
         self._asm_word_blobs: list = []
         self.string_pool: StringPool = StringPool()
         self.emitter: CodeEmitter = CodeEmitter(
@@ -202,9 +213,18 @@ class Compiler:
 
     def _compile_token(self, tok: Token) -> None:
         if self.state == "interpret":
+            self._invalidate_pending_tick_unless_paired(tok)
             self._interpret_token(tok)
         else:
             self._compile_state_token(tok)
+
+    def _invalidate_pending_tick_unless_paired(self, tok: Token) -> None:
+        if self._pending_tick is None:
+            return
+        if tok.kind == "word" and tok.value in {",", "'"}:
+            return
+        self._tick_unsafe = True
+        self._pending_tick = None
 
     def _interpret_token(self, tok: Token) -> None:
         if tok.kind == "word" and tok.value == ":":
@@ -649,11 +669,14 @@ class Compiler:
         rel_fixup_count = len(self.asm.rel_fixups)
         self._asm_word_name = name_tok.value
         self._asm_fixup_snapshot = (fixup_count, rel_fixup_count)
+        self._inside_asm_body = True
         try:
             self._assemble_asm_body(tok)
             self._verify_asm_labels_resolved(tok)
         finally:
             self._asm_word_name = None
+            self._inside_asm_body = False
+            self._pending_tick = None
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="prim",
             source_file=name_tok.source, source_line=name_tok.line,
@@ -858,7 +881,36 @@ class Compiler:
     @directive(",")
     def _directive_comma(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
+        asm_addr = self.asm.here
         self._emit_cell(value & 0xFFFF, tok)
+        self._capture_pending_tick_at(asm_addr, value)
+
+    def _capture_pending_tick_at(self, asm_addr: int, value: int) -> None:
+        if self._pending_tick is None:
+            return
+        target, expected = self._pending_tick
+        self._pending_tick = None
+        if value != expected:
+            self._tick_unsafe = True
+            return
+        owner = self._latest_data_word_at(asm_addr)
+        if owner is None:
+            self._tick_unsafe = True
+            return
+        self._word_address_refs.append(
+            WordAddressRef(asm_addr=asm_addr, target=target, owner=owner)
+        )
+
+    def _latest_data_word_at(self, asm_addr: int) -> str | None:
+        best_addr = -1
+        best_name: str | None = None
+        for word in self.words.values():
+            if word.data_address is None:
+                continue
+            if word.data_address <= asm_addr and word.data_address > best_addr:
+                best_addr = word.data_address
+                best_name = word.name
+        return best_name
 
     @macro("'")
     def _directive_tick(self, _compiler: Compiler, tok: Token) -> None:
@@ -869,6 +921,12 @@ class Compiler:
         addr = word.data_address if word.data_address is not None else word.address
         self._host_stack.append(addr)
         self._uses_word_address_data = True
+        if self._inside_asm_body:
+            self._tick_unsafe = True
+            return
+        if self._pending_tick is not None:
+            self._tick_unsafe = True
+        self._pending_tick = (name_tok.value, addr)
 
     @directive("c,")
     def _directive_c_comma(self, _compiler: Compiler, tok: Token) -> None:
@@ -1228,7 +1286,20 @@ class Compiler:
             roots=self._liveness_roots(),
             bodies=self._liveness_bodies(),
             prim_deps=self._all_prim_deps(),
+            data_refs=self._liveness_data_refs(),
         )
+
+    def _liveness_data_refs(self) -> dict[str, list[str]]:
+        refs: dict[str, list[str]] = {}
+        for ref in self._word_address_refs:
+            refs.setdefault(ref.owner, []).append(ref.target)
+        return refs
+
+    def word_address_refs_by_owner(self) -> dict[str, list[WordAddressRef]]:
+        refs: dict[str, list[WordAddressRef]] = {}
+        for ref in self._word_address_refs:
+            refs.setdefault(ref.owner, []).append(ref)
+        return refs
 
     def _all_prim_deps(self) -> dict[str, frozenset[str]]:
         deps = dict(self._blob_registry.dependency_graph())

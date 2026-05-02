@@ -149,6 +149,72 @@ class TestWordLiteralContribution:
         )
 
 
+class TestDataRefs:
+
+    def test_data_ref_pulls_target_when_owner_is_live(self):
+        bodies = {"main": [ColonRef("frames")]}
+        data_refs = {"frames": ["smiley-shifted"]}
+        result = compute_liveness(
+            roots=["main"], bodies=bodies, prim_deps={}, data_refs=data_refs,
+        )
+        assert "smiley-shifted" in result.words, (
+            "data ref from a live owner should pull its target into the live set"
+        )
+
+    def test_data_ref_target_is_dead_when_owner_is_dead(self):
+        bodies = {"main": [PrimRef("dup")]}
+        data_refs = {"unused-frames": ["unused-shifted"]}
+        result = compute_liveness(
+            roots=["main"], bodies=bodies, prim_deps={}, data_refs=data_refs,
+        )
+        assert "unused-shifted" not in result.words, (
+            "data ref from a dead owner should not resurrect its target"
+        )
+        assert "unused-frames" not in result.words, (
+            "the dead owner itself stays dead"
+        )
+
+    def test_data_ref_target_walked_transitively(self):
+        bodies = {
+            "main": [ColonRef("frames")],
+            "smiley-shifted": [PrimRef("emit"), ColonRef("inner")],
+            "inner": [PrimRef("dup")],
+        }
+        data_refs = {"frames": ["smiley-shifted"]}
+        result = compute_liveness(
+            roots=["main"], bodies=bodies, prim_deps={}, data_refs=data_refs,
+        )
+        assert {"frames", "smiley-shifted", "emit", "inner", "dup"} <= result.words, (
+            "transitive deps of a data-ref target should all be live"
+        )
+
+    def test_owner_with_no_data_refs_in_mapping_works(self):
+        bodies = {"main": [ColonRef("frames")]}
+        result = compute_liveness(
+            roots=["main"], bodies=bodies, prim_deps={}, data_refs={},
+        )
+        assert "frames" in result.words, (
+            "absent data_refs should not break liveness for words without refs"
+        )
+
+    def test_data_refs_default_to_empty_when_omitted(self):
+        bodies = {"main": [ColonRef("frames")]}
+        result = compute_liveness(roots=["main"], bodies=bodies, prim_deps={})
+        assert "frames" in result.words, (
+            "data_refs should be optional; omitting it should match passing {}"
+        )
+
+    def test_two_targets_from_one_owner_both_kept(self):
+        bodies = {"main": [ColonRef("table")]}
+        data_refs = {"table": ["a", "b"]}
+        result = compute_liveness(
+            roots=["main"], bodies=bodies, prim_deps={}, data_refs=data_refs,
+        )
+        assert {"a", "b"} <= result.words, (
+            "every target listed for a live owner should be live"
+        )
+
+
 class TestPrimitiveDepGraph:
 
     def test_primitive_deps_walked_transitively(self):

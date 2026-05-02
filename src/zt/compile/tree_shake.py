@@ -23,18 +23,19 @@ def build_tree_shaken_image(compiler: Compiler) -> tuple[bytes, int]:
     _emit_live_primitives(new_asm, compiler, liveness)
     word_addrs = _allocate_colons(new_asm, compiler, liveness)
     _emit_live_strings(new_asm, compiler, liveness, word_addrs)
-    _emit_live_data_words(new_asm, compiler, liveness, word_addrs)
+    new_data_addrs = _emit_live_data_words(new_asm, compiler, liveness, word_addrs)
+    _patch_data_word_refs(new_asm, compiler, liveness, word_addrs, new_data_addrs)
     _patch_colon_bodies(new_asm, compiler, liveness, word_addrs)
     start_addr = _emit_start(new_asm, compiler, word_addrs)
     image = new_asm.resolve()
-    _commit_to_compiler(compiler, new_asm, word_addrs, liveness, start_addr)
+    _commit_to_compiler(compiler, new_asm, word_addrs, new_data_addrs, liveness, start_addr)
     return image, start_addr
 
 
 def _commit_to_compiler(
     compiler: Compiler, new_asm: Asm,
-    word_addrs: dict[str, int], liveness: Liveness,
-    start_addr: int,
+    word_addrs: dict[str, int], new_data_addrs: dict[str, int],
+    liveness: Liveness, start_addr: int,
 ) -> None:
     from zt.compile.compiler import Word
     compiler.asm = new_asm
@@ -43,21 +44,28 @@ def _commit_to_compiler(
         del compiler.words[name]
     for name, word in list(compiler.words.items()):
         if name in word_addrs:
-            compiler.words[name] = _word_with_address(word, word_addrs[name])
+            compiler.words[name] = _word_with_address(
+                word, word_addrs[name], new_data_addrs.get(name),
+            )
         elif word.kind == "prim" and name in new_asm.labels:
-            compiler.words[name] = _word_with_address(word, new_asm.labels[name])
+            compiler.words[name] = _word_with_address(
+                word, new_asm.labels[name], None,
+            )
     compiler.words["_start"] = Word(name="_start", address=start_addr, kind="prim")
 
 
-def _word_with_address(word: "Word", new_address: int) -> "Word":
+def _word_with_address(word: "Word", new_address: int, new_data_address: int | None) -> "Word":
     from dataclasses import replace
-    return replace(word, address=new_address)
+    if new_data_address is None:
+        return replace(word, address=new_address)
+    return replace(word, address=new_address, data_address=new_data_address)
 
 
 def _reject_unsupported_features(compiler: Compiler) -> None:
-    if getattr(compiler, "_uses_word_address_data", False):
+    if getattr(compiler, "_tick_unsafe", False):
         raise NotImplementedError(
-            "tick `'` (word-address-as-data) is not yet supported by tree-shaking"
+            "tick `'` (word-address-as-data) used outside the simple `' name ,` "
+            "idiom is not yet supported by tree-shaking"
         )
     if compiler.banks():
         raise NotImplementedError(
@@ -117,8 +125,9 @@ def _emit_live_strings(
 def _emit_live_data_words(
     new_asm: Asm, compiler: Compiler, liveness: Liveness,
     word_addrs: dict[str, int],
-) -> None:
+) -> dict[str, int]:
     boundaries = _data_boundaries(compiler)
+    new_data_addrs: dict[str, int] = {}
     for word in compiler.words.values():
         if word.name not in liveness.words:
             continue
@@ -127,8 +136,38 @@ def _emit_live_data_words(
             word_addrs[word.name] = _emit_pusher(new_asm, value)
         elif word.kind == "variable":
             data_bytes = _extract_data_bytes(compiler, word, boundaries)
-            code_addr, _ = _emit_variable(new_asm, data_bytes)
+            code_addr, data_addr = _emit_variable(new_asm, data_bytes)
             word_addrs[word.name] = code_addr
+            new_data_addrs[word.name] = data_addr
+    return new_data_addrs
+
+
+def _patch_data_word_refs(
+    new_asm: Asm, compiler: Compiler, liveness: Liveness,
+    word_addrs: dict[str, int], new_data_addrs: dict[str, int],
+) -> None:
+    refs_by_owner = compiler.word_address_refs_by_owner()
+    for owner, refs in refs_by_owner.items():
+        if owner not in liveness.words:
+            continue
+        old_data_addr = compiler.words[owner].data_address
+        new_data_addr = new_data_addrs[owner]
+        for ref in refs:
+            offset_in_data = ref.asm_addr - old_data_addr
+            byte_offset = new_data_addr - new_asm.origin + offset_in_data
+            new_target = _resolved_ref_target(compiler, ref.target, word_addrs, new_data_addrs)
+            new_asm.code[byte_offset] = new_target & 0xFF
+            new_asm.code[byte_offset + 1] = (new_target >> 8) & 0xFF
+
+
+def _resolved_ref_target(
+    compiler: Compiler, target: str,
+    word_addrs: dict[str, int], new_data_addrs: dict[str, int],
+) -> int:
+    target_word = compiler.words[target]
+    if target_word.data_address is not None:
+        return new_data_addrs[target]
+    return word_addrs[target]
 
 
 def _emit_pusher(new_asm: Asm, value: int) -> int:

@@ -19,7 +19,9 @@ def compute_liveness(
     roots: Iterable[str],
     bodies: Mapping[str, Sequence[Cell]],
     prim_deps: Mapping[str, Iterable[str]],
+    data_refs: Mapping[str, Iterable[str]] | None = None,
 ) -> Liveness:
+    refs = data_refs or {}
     words: set[str] = set()
     strings: set[str] = set()
     worklist: list[str] = list(roots)
@@ -28,7 +30,7 @@ def compute_liveness(
         if name in words:
             continue
         words.add(name)
-        worklist.extend(_dependencies_of(name, bodies, prim_deps, strings))
+        worklist.extend(_dependencies_of(name, bodies, prim_deps, refs, strings))
     return Liveness(words=frozenset(words), strings=frozenset(strings))
 
 
@@ -36,13 +38,17 @@ def _dependencies_of(
     name: str,
     bodies: Mapping[str, Sequence[Cell]],
     prim_deps: Mapping[str, Iterable[str]],
+    data_refs: Mapping[str, Iterable[str]],
     strings: set[str],
 ) -> Iterable[str]:
+    deps: list[str] = []
     if name in bodies:
-        return _cells_dependencies(bodies[name], strings)
+        deps.extend(_cells_dependencies(bodies[name], strings))
     if name in prim_deps:
-        return list(prim_deps[name])
-    return ()
+        deps.extend(prim_deps[name])
+    if name in data_refs:
+        deps.extend(data_refs[name])
+    return deps
 
 
 def _cells_dependencies(

@@ -525,6 +525,91 @@ class TestBracketTickSupport:
         )
 
 
+class TestTickCommaSupport:
+
+    def test_tick_comma_pushes_target_address_at_runtime(self, parity):
+        result = parity('''
+            create payload 1234 ,
+            create tbl ' payload ,
+            : main tbl @ @ ;
+        ''')
+        assert result["tree_shaken_stack"] == result["eager_stack"], (
+            "tbl @ @ (deref through ' payload ,) should yield the same value "
+            "in eager and tree-shaken images"
+        )
+        assert result["tree_shaken_stack"] == [1234], (
+            "deref through tbl should land on payload's stored 1234"
+        )
+
+    def test_target_only_referenced_via_tick_comma_survives(self):
+        c = _compile('''
+            create reachable-only-by-tick 7 ,
+            create tbl ' reachable-only-by-tick ,
+            : main tbl @ @ ;
+        ''')
+        c.build_tree_shaken()
+        assert "reachable-only-by-tick" in c.words, (
+            "a create-word referenced only via ' x , in another create's data "
+            "must survive tree-shaking; otherwise the patched cell would "
+            "point at the wrong address"
+        )
+
+    def test_dead_owner_does_not_resurrect_tick_target(self):
+        c = _compile('''
+            create live-payload 7 ,
+            create dead-payload 99 ,
+            create dead-tbl ' dead-payload ,
+            : main live-payload @ ;
+        ''')
+        c.build_tree_shaken()
+        assert "dead-tbl" not in c.words, (
+            "an unreferenced create-table should be dropped"
+        )
+        assert "dead-payload" not in c.words, (
+            "a target reachable only via a dead owner's ' x , should also be "
+            "dropped"
+        )
+
+    def test_three_addresses_in_one_table(self, parity):
+        result = parity('''
+            create a 100 ,
+            create b 200 ,
+            create c 300 ,
+            create tbl ' a , ' b , ' c ,
+            : main tbl 2 + @ @ ;
+        ''')
+        assert result["tree_shaken_stack"] == result["eager_stack"], (
+            "tbl[1] dereferenced should match between eager and tree-shaken"
+        )
+        assert result["tree_shaken_stack"] == [200], (
+            "tbl[1] -> b -> 200"
+        )
+
+    def test_tick_to_colon_word_in_table_points_at_post_shake_address(self):
+        c = _compile('''
+            : sentinel 555 ;
+            create tbl ' sentinel ,
+            : main tbl @ drop ;
+        ''')
+        image, _ = c.build_tree_shaken()
+        tbl = c.words["tbl"]
+        offset = tbl.data_address - c.origin
+        cell = image[offset] | (image[offset + 1] << 8)
+        assert cell == c.words["sentinel"].address, (
+            f"after tree-shake, tbl[0] should hold sentinel's NEW code address "
+            f"({c.words['sentinel'].address:#06x}), got {cell:#06x}"
+        )
+
+    def test_tick_in_constant_idiom_still_bails_out(self):
+        c = _compile('''
+            : main 1 ;
+            ' main constant main-addr
+            : run main-addr ;
+        ''')
+        with pytest.raises(NotImplementedError, match="tick|address-as-data"):
+            c.build_tree_shaken()
+
+
 class TestUnsupportedFeaturesRoutedClearly:
 
     def test_tick_directive_rejected(self):
