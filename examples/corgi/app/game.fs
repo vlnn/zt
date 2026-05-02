@@ -29,15 +29,13 @@ variable game-over
     ." The road is back to the WEST." cr ;
 
 : describe-room
-    here-room @
-    case
-        kitchen of kitchen-desc endof
-        hallway of hallway-desc endof
-        garden  of garden-desc  endof
-        road    of road-desc    endof
-        well    of well-desc    endof
+    here-room @ {
+        kitchen kitchen-desc
+        hallway hallway-desc
+        garden  garden-desc
+        road    road-desc
         well-desc
-    endcase ;
+    } ;
 
 : bone-name    ." bone" ;
 : stick-name   ." stick" ;
@@ -171,21 +169,20 @@ variable show-inv?
     ."   QUIT      stop the game" cr ;
 
 : show-msg
-    last-msg @
-    case
-        msg-welcome      of print-welcome   endof
-        msg-no-exit      of print-no-exit   endof
-        msg-too-scary    of print-too-scary endof
-        msg-bravely-east of print-brave     endof
-        msg-took         of print-took      endof
-        msg-dropped      of print-dropped   endof
-        msg-nothing-here of print-nothing   endof
-        msg-jaws-empty   of print-empty     endof
-        msg-bark         of print-bark      endof
-        msg-help         of print-help      endof
-        msg-unknown      of print-unknown   endof
-        msg-celebrate    of print-celebrate endof
-    endcase ;
+    last-msg @ {
+        msg-welcome      print-welcome
+        msg-no-exit      print-no-exit
+        msg-too-scary    print-too-scary
+        msg-bravely-east print-brave
+        msg-took         print-took
+        msg-dropped      print-dropped
+        msg-nothing-here print-nothing
+        msg-jaws-empty   print-empty
+        msg-bark         print-bark
+        msg-help         print-help
+        msg-unknown      print-unknown
+        msg-celebrate    print-celebrate
+    } ;
 
 : maybe-inventory
     show-inv? @ if 0 show-inv? ! list-inventory then ;
@@ -246,24 +243,23 @@ variable show-inv?
 : do-empty      msg-quiet last-msg ! ;
 : do-unknown    msg-unknown last-msg ! ;
 
-: dispatch      ( c -- )
-    case
-        0     of do-empty     endof
-        key-n of do-north     endof
-        key-s of do-south     endof
-        key-e of do-east      endof
-        key-w of do-west      endof
-        key-l of do-look      endof
-        key-t of do-take      endof
-        key-g of do-take      endof
-        key-d of do-drop      endof
-        key-i of do-inventory endof
-        key-b of do-bark      endof
-        key-h of do-help      endof
-        key-? of do-help      endof
-        key-q of do-quit      endof
+: dispatch      ( c -- ) {
+        0     do-empty
+        key-n do-north
+        key-s do-south
+        key-e do-east
+        key-w do-west
+        key-l do-look
+        key-t do-take
+        key-g do-take
+        key-d do-drop
+        key-i do-inventory
+        key-b do-bark
+        key-h do-help
+        key-? do-help
+        key-q do-quit
         do-unknown
-    endcase ;
+    } ;
 
 : prompt        ." > " ;
 

@@ -1183,6 +1183,59 @@ class Compiler:
         for placeholder in payload["endcase_patches"]:
             self._patch_placeholder(placeholder, target)
 
+    # --- immediate words: { ... } pair-dispatch ---
+
+    @immediate("{")
+    def _immediate_lbrace(self, _compiler: Compiler, tok: Token) -> None:
+        if self.state != "compile":
+            raise CompileError("{ only works inside : ... ;", tok)
+        body = self._collect_until_rbrace(tok)
+        pairs, default_tok = self._split_pairs_and_default(body)
+        end_patches: list[int] = []
+        for key_tok, action_tok in pairs:
+            self._compile_dispatch_arm(key_tok, action_tok, end_patches, tok)
+        self._emit_word_ref(self.words["drop"], tok)
+        if default_tok is not None:
+            self._compile_state_token(default_tok)
+        target = self.asm.here
+        for placeholder in end_patches:
+            self._patch_placeholder(placeholder, target)
+
+    @immediate("}")
+    def _immediate_rbrace(self, _compiler: Compiler, tok: Token) -> None:
+        raise CompileError("} without matching {", tok)
+
+    def _collect_until_rbrace(self, opener: Token) -> list[Token]:
+        tokens: list[Token] = []
+        while self._tokens.has_more():
+            next_tok = self._tokens.next()
+            if next_tok.kind == "word" and next_tok.value == "}":
+                return tokens
+            tokens.append(next_tok)
+        raise CompileError("{ without matching }", opener)
+
+    def _split_pairs_and_default(
+        self, body: list[Token],
+    ) -> tuple[list[tuple[Token, Token]], Token | None]:
+        if len(body) % 2 == 0:
+            pairs = list(zip(body[0::2], body[1::2]))
+            return pairs, None
+        pairs = list(zip(body[:-1:2], body[1:-1:2]))
+        return pairs, body[-1]
+
+    def _compile_dispatch_arm(
+        self, key_tok: Token, action_tok: Token,
+        end_patches: list[int], opener: Token,
+    ) -> None:
+        self._compile_state_token(key_tok)
+        self._emit_word_ref(self.words["over"], opener)
+        self._emit_word_ref(self.words["="], opener)
+        skip_placeholder = self._compile_zbranch_placeholder(opener)
+        self._emit_word_ref(self.words["drop"], opener)
+        self._compile_state_token(action_tok)
+        end_patches.append(self._compile_branch_placeholder(opener))
+        self._patch_placeholder(skip_placeholder, self.asm.here)
+
     # --- immediate words: brackets, tick, recurse ---
 
     @immediate("[")
