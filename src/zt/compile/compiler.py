@@ -66,6 +66,7 @@ class Word:
     source_line: int | None = None
     data_address: int | None = None
     force_inline: bool = False
+    bank: int | None = None
 
 
 @dataclass(frozen=True)
@@ -330,6 +331,7 @@ class Compiler:
             name=name, address=addr, kind="colon",
             force_inline=force_inline,
             source_file=tok.source, source_line=tok.line,
+            bank=self._active_bank,
         )
 
     def _warn_if_redefining(
@@ -636,6 +638,7 @@ class Compiler:
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
         )
 
     @directive("constant")
@@ -646,6 +649,7 @@ class Compiler:
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="constant",
             source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
         )
 
     @directive("create")
@@ -656,6 +660,7 @@ class Compiler:
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
         )
 
     @directive(":::")
@@ -680,6 +685,7 @@ class Compiler:
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="prim",
             source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
         )
         self._asm_word_blobs.append(self._snapshot_asm_blob(
             name_tok.value, code_addr, body_start,

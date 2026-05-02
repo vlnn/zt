@@ -610,6 +610,119 @@ class TestTickCommaSupport:
             c.build_tree_shaken()
 
 
+    def test_banked_colon_rejected(self):
+        from zt.compile.compiler import Compiler
+
+        c = Compiler(
+            origin=0x8000, optimize=False, inline_next=True,
+            inline_primitives=True, include_sprites=False,
+        )
+        c.compile_source(
+            "0 in-bank : banked-helper 1 ; end-bank\n"
+            ": main banked-helper drop ;\n",
+            source="<banked>",
+        )
+        c.compile_main_call()
+        with pytest.raises(NotImplementedError, match="banked colon|colon.*bank"):
+            c.build_tree_shaken()
+
+    def test_banked_owner_with_tick_ref_rejected(self):
+        from zt.compile.compiler import Compiler
+
+        c = Compiler(
+            origin=0x8000, optimize=False, inline_next=True,
+            inline_primitives=True, include_sprites=False,
+        )
+        c.compile_source(
+            "create target 1 ,\n"
+            "0 in-bank create banked-table ' target , end-bank\n"
+            ": main 1 ;\n",
+            source="<banked>",
+        )
+        c.compile_main_call()
+        with pytest.raises(NotImplementedError, match="banked.*tick|tick.*bank"):
+            c.build_tree_shaken()
+
+
+class TestBankedDataSurvivesTreeShake:
+
+    def _make_compiler_with_banks(self):
+        from zt.compile.compiler import Compiler
+        return Compiler(
+            origin=0x8000, optimize=False, inline_next=True,
+            inline_primitives=True, include_sprites=False,
+        )
+
+    def test_banked_data_word_address_unchanged(self):
+        c = self._make_compiler_with_banks()
+        c.compile_source(
+            "0 in-bank create weights $AA c, $BB c, $CC c, end-bank\n"
+            ": main weights c@ drop ;\n",
+            source="<banked>",
+        )
+        c.compile_main_call()
+        before = c.words["weights"].data_address
+        c.build_tree_shaken()
+        after = c.words["weights"].data_address
+        assert before == after, (
+            f"a banked create-word's data_address should not move during tree-shake; "
+            f"before={before:#06x}, after={after:#06x}"
+        )
+
+    def test_bank_contents_unchanged_after_tree_shake(self):
+        c = self._make_compiler_with_banks()
+        c.compile_source(
+            "0 in-bank create weights $AA c, $BB c, $CC c, end-bank\n"
+            ": main weights c@ drop ;\n",
+            source="<banked>",
+        )
+        c.compile_main_call()
+        bank0_before = bytes(c.bank_image(0))
+        c.build_tree_shaken()
+        bank0_after = bytes(c.bank_image(0))
+        assert bank0_before == bank0_after, (
+            "tree-shake should not modify bank contents in the V1 scope"
+        )
+
+    def test_main_code_referencing_banked_data_keeps_resolving(self):
+        c = self._make_compiler_with_banks()
+        c.compile_source(
+            "0 in-bank create weights $42 c, end-bank\n"
+            ": main weights c@ drop ;\n",
+            source="<banked>",
+        )
+        c.compile_main_call()
+        weights_addr = c.words["weights"].data_address
+        image, _ = c.build_tree_shaken()
+        main_word = c.words["main"]
+        body_start = main_word.address + 3
+        offset = body_start - c.origin
+        first_cell = image[offset] | (image[offset + 1] << 8)
+        assert first_cell == c.words["weights"].address, (
+            f"main's first body cell should resolve to weights' code address "
+            f"({c.words['weights'].address:#06x}), got {first_cell:#06x}; "
+            f"weights data_address is {weights_addr:#06x}"
+        )
+
+    def test_unused_main_words_still_pruned_when_banks_present(self):
+        c = self._make_compiler_with_banks()
+        c.compile_source(
+            "0 in-bank create weights $42 c, end-bank\n"
+            ": dead-helper 99 + ;\n"
+            ": main weights c@ drop ;\n",
+            source="<banked>",
+        )
+        c.compile_main_call()
+        c.build_tree_shaken()
+        assert "dead-helper" not in c.words, (
+            "tree-shake should still prune unused main-bank colons even when "
+            "banks are present"
+        )
+        assert "weights" in c.words, (
+            "the live banked word must be preserved"
+        )
+
+
 class TestUnsupportedFeaturesRoutedClearly:
 
     def test_tick_directive_rejected(self):
@@ -619,20 +732,4 @@ class TestUnsupportedFeaturesRoutedClearly:
             : run main-addr ;
         ''')
         with pytest.raises(NotImplementedError, match="tick|address-as-data"):
-            c.build_tree_shaken()
-
-    def test_banked_code_rejected(self):
-        from zt.compile.compiler import Compiler
-
-        c = Compiler(
-            origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=False,
-        )
-        c.compile_source(
-            "0 in-bank create banked-data $42 c, end-bank\n"
-            ": main 1 ;\n",
-            source="<banked>",
-        )
-        c.compile_main_call()
-        with pytest.raises(NotImplementedError, match="banked code|in-bank"):
             c.build_tree_shaken()

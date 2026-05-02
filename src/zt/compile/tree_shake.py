@@ -67,14 +67,31 @@ def _reject_unsupported_features(compiler: Compiler) -> None:
             "tick `'` (word-address-as-data) used outside the simple `' name ,` "
             "idiom is not yet supported by tree-shaking"
         )
-    if compiler.banks():
-        raise NotImplementedError(
-            "banked code (in-bank/end-bank) is not yet supported by tree-shaking"
-        )
+    _reject_banked_colons(compiler)
+    _reject_banked_tick_owners(compiler)
     for word in compiler.words.values():
         if word.kind not in {"prim", "colon", "constant", "variable"}:
             raise NotImplementedError(
                 f"word kind {word.kind!r} is not yet supported by tree-shaking"
+            )
+
+
+def _reject_banked_colons(compiler: Compiler) -> None:
+    for word in compiler.words.values():
+        if word.kind == "colon" and word.bank is not None:
+            raise NotImplementedError(
+                f"banked colon '{word.name}' (in bank {word.bank}) is not yet "
+                f"supported by tree-shaking; only banked data is supported"
+            )
+
+
+def _reject_banked_tick_owners(compiler: Compiler) -> None:
+    for ref in getattr(compiler, "_word_address_refs", ()):
+        owner_word = compiler.words.get(ref.owner)
+        if owner_word is not None and owner_word.bank is not None:
+            raise NotImplementedError(
+                f"banked owner '{ref.owner}' has tick-comma reference to "
+                f"'{ref.target}'; cross-bank tick refs are not yet supported"
             )
 
 
@@ -131,6 +148,9 @@ def _emit_live_data_words(
     for word in compiler.words.values():
         if word.name not in liveness.words:
             continue
+        if word.bank is not None:
+            _preserve_banked_addresses(word, word_addrs, new_data_addrs)
+            continue
         if word.kind == "constant":
             value = _extract_pusher_value(compiler, word.address)
             word_addrs[word.name] = _emit_pusher(new_asm, value)
@@ -140,6 +160,14 @@ def _emit_live_data_words(
             word_addrs[word.name] = code_addr
             new_data_addrs[word.name] = data_addr
     return new_data_addrs
+
+
+def _preserve_banked_addresses(
+    word: Word, word_addrs: dict[str, int], new_data_addrs: dict[str, int],
+) -> None:
+    word_addrs[word.name] = word.address
+    if word.data_address is not None:
+        new_data_addrs[word.name] = word.data_address
 
 
 def _patch_data_word_refs(
