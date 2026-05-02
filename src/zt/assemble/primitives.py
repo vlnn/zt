@@ -1766,9 +1766,33 @@ def create_im2_off(a: Asm) -> None:
     a.dispatch()
 
 
+def create_execute(a: Asm) -> None:
+    """`EXECUTE ( xt -- )` — invoke the word at xt; consumes xt and runs the
+    target's body, then returns to the caller's threaded context.
+
+    Reuses the engine's `PUSH; RET` dispatch idiom: place xt on the Z80 stack
+    and `RET` to it. Works for primitives (jumps to their entry), colon words
+    (jumps to their `CALL DOCOL` prologue), and constants (jumps to the small
+    pusher). `IX` is left untouched so the threaded interpreter resumes at the
+    cell after EXECUTE in the caller.
+
+    Bytes: EB E1 D5 C9 (four total).
+
+    Note: not inlinable inside `::` definitions — its `RET` is an indirect call
+    rather than the dispatch tail the splicer strips. The compiler raises a
+    CompileError if EXECUTE appears in a `::` body (see `_first_non_inlinable_cell`).
+    """
+    a.label("EXECUTE")
+    a.alias("execute", "EXECUTE")
+    a.ex_de_hl()
+    a.pop_hl()
+    a.push_de()
+    a.ret()
+
+
 
 PRIMITIVES = [
-    create_next, create_docol, create_exit,
+    create_next, create_docol, create_exit, create_execute,
     create_dup, create_drop, create_swap, create_over,
     create_rot, create_nip, create_tuck,
     create_2dup, create_2drop, create_2swap,

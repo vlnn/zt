@@ -30,20 +30,23 @@ variable game-over
 
 : describe-room
     here-room @
-    dup kitchen = if drop kitchen-desc exit then
-    dup hallway = if drop hallway-desc exit then
-    dup garden  = if drop garden-desc  exit then
-    dup road    = if drop road-desc    exit then
-    drop well-desc ;
+    case
+        kitchen of kitchen-desc endof
+        hallway of hallway-desc endof
+        garden  of garden-desc  endof
+        road    of road-desc    endof
+        well    of well-desc    endof
+        well-desc
+    endcase ;
 
 : bone-name    ." bone" ;
 : stick-name   ." stick" ;
 : ball-name    ." red ball" ;
 
-: print-item-name  ( id -- )
-    dup bone  = if drop bone-name  exit then
-    dup stick = if drop stick-name exit then
-    drop ball-name ;
+create item-printers
+    ' bone-name , ' stick-name , ' ball-name ,
+
+: print-item-name  ( id -- )  2 *  item-printers + @ execute ;
 
 : announce-here  ( id -- )
     ." There is a " print-item-name ." here." cr ;
@@ -107,6 +110,20 @@ variable cmd-len
     skip-spaces dup 0= if 2drop 0 exit then
     drop c@ lower ;
 
+110 constant key-n
+115 constant key-s
+101 constant key-e
+119 constant key-w
+108 constant key-l
+116 constant key-t
+103 constant key-g
+100 constant key-d
+105 constant key-i
+98  constant key-b
+104 constant key-h
+63  constant key-?
+113 constant key-q
+
 variable last-msg
 variable last-item
 variable show-inv?
@@ -127,7 +144,14 @@ variable show-inv?
 
 : print-took       ." You take the "  last-item @ print-item-name ." ." cr ;
 : print-dropped    ." You drop the "  last-item @ print-item-name ." ." cr ;
-
+: print-welcome    ." Time for a walk!" cr ;
+: print-no-exit    ." You bonk your snoot. No way that direction." cr ;
+: print-too-scary  ." TOO SCARY! You whimper and pad back to safety." cr ;
+: print-brave      ." Holding the stick high, you brave the well." cr ;
+: print-nothing    ." There is nothing here to take." cr ;
+: print-empty      ." Your jaws are empty." cr ;
+: print-bark       ." WOOF!" cr ;
+: print-unknown    ." Awoo? You twirl in confusion." cr ;
 : print-celebrate
     cr
     ." *** GOOD CORGI! ***" cr
@@ -148,19 +172,20 @@ variable show-inv?
 
 : show-msg
     last-msg @
-    dup msg-welcome      = if drop ." Time for a walk!" cr exit then
-    dup msg-no-exit      = if drop ." You bonk your snoot. No way that direction." cr exit then
-    dup msg-too-scary    = if drop ." TOO SCARY! You whimper and pad back to safety." cr exit then
-    dup msg-bravely-east = if drop ." Holding the stick high, you brave the well." cr exit then
-    dup msg-took         = if drop print-took     exit then
-    dup msg-dropped      = if drop print-dropped  exit then
-    dup msg-nothing-here = if drop ." There is nothing here to take." cr exit then
-    dup msg-jaws-empty   = if drop ." Your jaws are empty." cr exit then
-    dup msg-bark         = if drop ." WOOF!" cr exit then
-    dup msg-help         = if drop print-help     exit then
-    dup msg-unknown      = if drop ." Awoo? You twirl in confusion." cr exit then
-    dup msg-celebrate    = if drop print-celebrate exit then
-    drop ;
+    case
+        msg-welcome      of print-welcome   endof
+        msg-no-exit      of print-no-exit   endof
+        msg-too-scary    of print-too-scary endof
+        msg-bravely-east of print-brave     endof
+        msg-took         of print-took      endof
+        msg-dropped      of print-dropped   endof
+        msg-nothing-here of print-nothing   endof
+        msg-jaws-empty   of print-empty     endof
+        msg-bark         of print-bark      endof
+        msg-help         of print-help      endof
+        msg-unknown      of print-unknown   endof
+        msg-celebrate    of print-celebrate endof
+    endcase ;
 
 : maybe-inventory
     show-inv? @ if 0 show-inv? ! list-inventory then ;
@@ -218,23 +243,27 @@ variable show-inv?
 : do-help       msg-help last-msg ! ;
 : do-quit       1 game-over ! ;
 : do-inventory  1 show-inv? ! msg-quiet last-msg ! ;
+: do-empty      msg-quiet last-msg ! ;
+: do-unknown    msg-unknown last-msg ! ;
 
 : dispatch      ( c -- )
-    dup 110 = if drop do-north     exit then
-    dup 115 = if drop do-south     exit then
-    dup 101 = if drop do-east      exit then
-    dup 119 = if drop do-west      exit then
-    dup 108 = if drop do-look      exit then
-    dup 116 = if drop do-take      exit then
-    dup 103 = if drop do-take      exit then
-    dup 100 = if drop do-drop      exit then
-    dup 105 = if drop do-inventory exit then
-    dup  98 = if drop do-bark      exit then
-    dup 104 = if drop do-help      exit then
-    dup  63 = if drop do-help      exit then
-    dup 113 = if drop do-quit      exit then
-    dup   0 = if drop msg-quiet last-msg ! exit then
-    drop msg-unknown last-msg ! ;
+    case
+        0     of do-empty     endof
+        key-n of do-north     endof
+        key-s of do-south     endof
+        key-e of do-east      endof
+        key-w of do-west      endof
+        key-l of do-look      endof
+        key-t of do-take      endof
+        key-g of do-take      endof
+        key-d of do-drop      endof
+        key-i of do-inventory endof
+        key-b of do-bark      endof
+        key-h of do-help      endof
+        key-? of do-help      endof
+        key-q of do-quit      endof
+        do-unknown
+    endcase ;
 
 : prompt        ." > " ;
 

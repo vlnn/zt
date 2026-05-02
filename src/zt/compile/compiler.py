@@ -503,6 +503,11 @@ class Compiler:
                 name = cell.name.lower()
                 if name == "halt":
                     continue
+                if name == "execute":
+                    return (
+                        f"execute at position {i} is not inlinable in :: bodies "
+                        f"(uses indirect-call dispatch); use : instead"
+                    )
                 if name not in self._creators_by_name:
                     return f"unknown primitive '{cell.name}' at position {i}"
                 continue
@@ -1140,6 +1145,43 @@ class Compiler:
         self._emit_word_ref(self.words["unloop"], tok)
         placeholder = self._compile_branch_placeholder(tok)
         do_info["leaves"].append(placeholder)
+
+    # --- immediate words: CASE/OF/ENDOF/ENDCASE ---
+
+    @immediate("case")
+    def _immediate_case(self, _compiler: Compiler, tok: Token) -> None:
+        if self.state != "compile":
+            raise CompileError("CASE only works inside : ... ;", tok)
+        self._push_control("case", {"endcase_patches": []})
+
+    @immediate("of")
+    def _immediate_of(self, _compiler: Compiler, tok: Token) -> None:
+        if self.control_stack.find_innermost("case") is None:
+            raise CompileError("OF without matching CASE", tok)
+        self._emit_word_ref(self.words["over"], tok)
+        self._emit_word_ref(self.words["="], tok)
+        placeholder = self._compile_zbranch_placeholder(tok)
+        self._emit_word_ref(self.words["drop"], tok)
+        self._push_control("of", placeholder)
+
+    @immediate("endof")
+    def _immediate_endof(self, _compiler: Compiler, tok: Token) -> None:
+        of_placeholder = self._pop_control("of", tok)
+        case_frame = self.control_stack.find_innermost("case")
+        if case_frame is None:
+            raise CompileError("ENDOF without matching CASE", tok)
+        endcase_placeholder = self._compile_branch_placeholder(tok)
+        self._patch_placeholder(of_placeholder, self.asm.here)
+        _tag, payload = case_frame
+        payload["endcase_patches"].append(endcase_placeholder)
+
+    @immediate("endcase")
+    def _immediate_endcase(self, _compiler: Compiler, tok: Token) -> None:
+        payload = self._pop_control("case", tok)
+        self._emit_word_ref(self.words["drop"], tok)
+        target = self.asm.here
+        for placeholder in payload["endcase_patches"]:
+            self._patch_placeholder(placeholder, target)
 
     # --- immediate words: brackets, tick, recurse ---
 
