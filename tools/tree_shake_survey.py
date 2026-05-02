@@ -36,6 +36,7 @@ EXAMPLES = (
     Example("mined-out",        "examples/mined-out/main.fs"),
     Example("sprite-demo",      "examples/sprite-demo/main.fs"),
     Example("im2-rainbow",      "examples/im2-rainbow/main.fs"),
+    Example("im2-rainbow-flat",  "examples/im2-rainbow.fs"),
     Example("im2-music",        "examples/im2-music/main.fs"),
     Example("im2-bach",         "examples/im2-bach/main.fs"),
     Example("shadow-flip",      "examples/shadow-flip/main.fs",

@@ -825,6 +825,9 @@ class Compiler:
                 return
             if tok.kind == "word" and tok.value == ":::":
                 raise CompileError("nested ::: definition", tok)
+            if tok.kind == "word" and tok.value == "'":
+                self._asm_body_tick(tok)
+                continue
             if tok.kind == "number":
                 self._host_stack.append(parse_number(tok.value))
                 continue
@@ -841,6 +844,22 @@ class Compiler:
                 self._emit_asm_op(spec, tok)
                 continue
             raise CompileError(f"unexpected token '{tok.value}'", tok)
+
+    def _asm_body_tick(self, tok: Token) -> None:
+        name_tok = self._next_token(tok)
+        word = self.words.get(name_tok.value)
+        if word is None:
+            raise CompileError(f"unknown word '{name_tok.value}' after '", name_tok)
+        label = self._asm_body_tick_label(name_tok.value, word)
+        self._host_stack.append(label)
+
+    def _asm_body_tick_label(self, name: str, word: Word) -> str:
+        if word.data_address is not None:
+            label = f"__word_data__{name}"
+            if label not in self.asm.labels:
+                self.asm.labels[label] = word.data_address
+            return label
+        return self._resolve_asm_target(name)
 
     def _emit_asm_op(self, spec, tok: Token) -> None:
         method = getattr(self.asm, spec.mnemonic)
@@ -1310,9 +1329,18 @@ class Compiler:
     def _all_prim_deps(self) -> dict[str, frozenset[str]]:
         deps = dict(self._blob_registry.dependency_graph())
         for blob in self._asm_word_blobs:
+            translated = frozenset(
+                self._translate_synthetic_dep(name) for name in blob.external_deps
+            )
             for label in blob.label_offsets:
-                deps[label] = blob.external_deps
+                deps[label] = translated
         return deps
+
+    def _translate_synthetic_dep(self, name: str) -> str:
+        for prefix in ("__word_data__", "__word__"):
+            if name.startswith(prefix):
+                return name[len(prefix):]
+        return name
 
     def _liveness_roots(self) -> list[str]:
         return ["main", "halt", "next", "docol"]

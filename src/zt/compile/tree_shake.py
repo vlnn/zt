@@ -26,10 +26,31 @@ def build_tree_shaken_image(compiler: Compiler) -> tuple[bytes, int]:
     new_data_addrs = _emit_live_data_words(new_asm, compiler, liveness, word_addrs)
     _patch_data_word_refs(new_asm, compiler, liveness, word_addrs, new_data_addrs)
     _patch_colon_bodies(new_asm, compiler, liveness, word_addrs)
+    _bind_synthetic_word_labels(new_asm, word_addrs, new_data_addrs)
     start_addr = _emit_start(new_asm, compiler, word_addrs)
     image = new_asm.resolve()
     _commit_to_compiler(compiler, new_asm, word_addrs, new_data_addrs, liveness, start_addr)
     return image, start_addr
+
+
+def _bind_synthetic_word_labels(
+    new_asm: Asm,
+    word_addrs: dict[str, int],
+    new_data_addrs: dict[str, int],
+) -> None:
+    referenced = {name for _, name in new_asm.fixups}
+    referenced.update(name for _, name in new_asm.rel_fixups)
+    for name in referenced:
+        if name in new_asm.labels:
+            continue
+        if name.startswith("__word_data__"):
+            target = name[len("__word_data__"):]
+            if target in new_data_addrs:
+                new_asm.labels[name] = new_data_addrs[target]
+        elif name.startswith("__word__"):
+            target = name[len("__word__"):]
+            if target in word_addrs:
+                new_asm.labels[name] = word_addrs[target]
 
 
 def _commit_to_compiler(

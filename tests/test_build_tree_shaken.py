@@ -723,6 +723,81 @@ class TestBankedDataSurvivesTreeShake:
         )
 
 
+class TestAsmBodyTickSupport:
+
+    def _make_compiler(self):
+        from zt.compile.compiler import Compiler
+        return Compiler(
+            origin=0x8000, optimize=False, inline_next=True,
+            inline_primitives=True, include_sprites=False,
+        )
+
+    def test_asm_body_tick_does_not_set_tick_unsafe(self):
+        c = self._make_compiler()
+        c.compile_source(
+            "variable target-var\n"
+            "::: read-target ( -- ) ' target-var ld_hl_ind_nn ret ;\n"
+            ": main 1 ;\n"
+        )
+        c.compile_main_call()
+        assert c._tick_unsafe is False, (
+            "an asm-body `' name <op>` with a proper fixup should NOT mark "
+            "_tick_unsafe; that flag is for the data-area `'` regime only"
+        )
+
+    def test_asm_body_tick_target_survives_tree_shake_via_live_asm_word(self):
+        c = self._make_compiler()
+        c.compile_source(
+            "variable target-var\n"
+            "::: store-target ( -- ) ' target-var ld_hl_ind_nn ret ;\n"
+            ": main store-target halt ;\n"
+        )
+        c.compile_main_call()
+        c.build_tree_shaken()
+        assert "target-var" in c.words, (
+            "a variable referenced only through an asm-word's tick should "
+            "survive tree-shake when the asm-word itself is live"
+        )
+
+    def test_asm_body_tick_target_dies_when_asm_word_is_dead(self):
+        c = self._make_compiler()
+        c.compile_source(
+            "variable orphan-var\n"
+            "::: dead-asm-word ( -- ) ' orphan-var ld_hl_ind_nn ret ;\n"
+            ": main 1 ;\n"
+        )
+        c.compile_main_call()
+        c.build_tree_shaken()
+        assert "dead-asm-word" not in c.words, (
+            "an unreferenced asm-word should be pruned"
+        )
+        assert "orphan-var" not in c.words, (
+            "a variable referenced only by a dead asm-word should also be pruned"
+        )
+
+    def test_asm_body_tick_resolves_to_correct_address_after_shake(self):
+        c = self._make_compiler()
+        c.compile_source(
+            "variable target-var\n"
+            "::: load-target ( -- ) ' target-var ld_hl_ind_nn ret ;\n"
+            ": main load-target halt ;\n"
+        )
+        c.compile_main_call()
+        image, _ = c.build_tree_shaken()
+        target_addr = c.words["target-var"].data_address
+        asm_word_addr = c.words["load-target"].address
+        offset = asm_word_addr - c.origin
+        assert image[offset] == 0x2A, (
+            f"first byte at load-target should be LD HL,(nn) opcode (0x2A), "
+            f"got {image[offset]:#04x}"
+        )
+        embedded = image[offset + 1] | (image[offset + 2] << 8)
+        assert embedded == target_addr, (
+            f"the nn operand should resolve to target-var's post-shake "
+            f"data_address ({target_addr:#06x}), got {embedded:#06x}"
+        )
+
+
 class TestUnsupportedFeaturesRoutedClearly:
 
     def test_tick_directive_rejected(self):
