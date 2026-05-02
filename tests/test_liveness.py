@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef
+from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef, WordLiteral
 from zt.compile.liveness import Liveness, compute_liveness
 
 
@@ -75,6 +75,7 @@ class TestCellKindContributions:
         (PrimRef("dup"), "dup"),
         (ColonRef("foo"), "foo"),
         (Literal(42), "lit"),
+        (WordLiteral("foo"), "foo"),
         (Branch(kind="0branch", target=Label(0)), "0branch"),
     ])
     def test_cell_kind_contributes_word(self, cell, expected_word):
@@ -106,6 +107,45 @@ class TestCellKindContributions:
         result = compute_liveness(roots=["main"], bodies=bodies, prim_deps={})
         assert "lit" in result.words, (
             "even a zero Literal should keep the 'lit' primitive live"
+        )
+
+
+class TestWordLiteralContribution:
+
+    def test_word_literal_pulls_in_lit_primitive(self):
+        bodies = {"main": [WordLiteral("isr")]}
+        result = compute_liveness(roots=["main"], bodies=bodies, prim_deps={})
+        assert "lit" in result.words, (
+            "WordLiteral compiles to LIT+addr at runtime, so 'lit' must be live"
+        )
+
+    def test_word_literal_marks_referenced_word_live(self):
+        bodies = {"main": [WordLiteral("isr")], "isr": [PrimRef("exit")]}
+        result = compute_liveness(roots=["main"], bodies=bodies, prim_deps={})
+        assert "isr" in result.words, (
+            "WordLiteral('isr') should make 'isr' live just like a direct call would"
+        )
+
+    def test_word_literal_pulls_in_referenced_word_transitively(self):
+        bodies = {
+            "main": [WordLiteral("isr")],
+            "isr": [PrimRef("border"), ColonRef("helper")],
+            "helper": [PrimRef("dup")],
+        }
+        result = compute_liveness(roots=["main"], bodies=bodies, prim_deps={})
+        assert {"main", "isr", "helper", "border", "dup", "lit"} <= result.words, (
+            "WordLiteral target's transitive deps should all be live"
+        )
+
+    def test_unreferenced_word_only_used_via_dead_word_literal_stays_dead(self):
+        bodies = {
+            "main": [PrimRef("dup")],
+            "dead": [WordLiteral("orphan")],
+            "orphan": [PrimRef("emit")],
+        }
+        result = compute_liveness(roots=["main"], bodies=bodies, prim_deps={})
+        assert "orphan" not in result.words, (
+            "'orphan' reached only through a dead-word's WordLiteral should stay dead"
         )
 
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from zt.compile.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef, StringRef
+from zt.compile.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef, StringRef, WordLiteral
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +62,9 @@ def _collect_cell_dependency(
             deps.append(name)
         case Literal():
             deps.append("lit")
+        case WordLiteral(name):
+            deps.append("lit")
+            deps.append(name)
         case Branch(kind=kind):
             deps.append(kind)
         case StringRef(label):

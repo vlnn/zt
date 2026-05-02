@@ -457,6 +457,74 @@ create scratch 32 allot
         )
 
 
+class TestBracketTickSupport:
+
+    def test_bracket_tick_pushes_target_address(self, parity):
+        result = parity('''
+            : helper 99 ;
+            : main ['] helper drop 7 ;
+        ''')
+        assert result["tree_shaken_stack"] == result["eager_stack"], (
+            "['] helper drop should leave the same stack in both images"
+        )
+        assert result["tree_shaken_stack"] == [7], (
+            "after [']/drop the literal 7 should be on top"
+        )
+
+    def test_word_only_reachable_via_bracket_tick_survives_tree_shake(self):
+        c = _compile('''
+            : reachable-only-by-tick 1 + ;
+            : main ['] reachable-only-by-tick drop ;
+        ''')
+        c.build_tree_shaken()
+        assert "reachable-only-by-tick" in c.words, (
+            "a colon referenced only via ['] should remain in the word table "
+            "after tree-shaking; otherwise its address would be unresolvable"
+        )
+
+    def test_word_only_reachable_via_bracket_tick_runs_through_main(self, parity):
+        result = parity('''
+            : reachable-only-by-tick 42 ;
+            : main ['] reachable-only-by-tick drop 5 ;
+        ''')
+        assert result["tree_shaken_stack"] == result["eager_stack"], (
+            "main using ['] on an otherwise-dead word should run identically "
+            "in eager and tree-shaken images"
+        )
+        assert result["tree_shaken_stack"] == [5], (
+            "after pushing & dropping the address, only the literal 5 stays"
+        )
+
+    def test_dead_caller_with_bracket_tick_does_not_resurrect_target(self):
+        c = _compile('''
+            : live-helper 7 ;
+            : dead-helper 99 ;
+            : dead-caller ['] dead-helper drop ;
+            : main live-helper ;
+        ''')
+        c.build_tree_shaken()
+        assert "dead-caller" not in c.words, (
+            "a colon never called should be removed by tree-shaking"
+        )
+        assert "dead-helper" not in c.words, (
+            "a target reachable only through a dead [']-caller should also be removed"
+        )
+
+    def test_bracket_tick_inside_force_inlined_word_parity(self, parity):
+        result = parity('''
+            : target 42 ;
+            :: push-target ['] target ;
+            : main push-target drop 9 ;
+        ''')
+        assert result["tree_shaken_stack"] == result["eager_stack"], (
+            "['] inside a force-inlined :: word should still resolve to the "
+            "post-shake target address; eager and tree-shaken stacks should match"
+        )
+        assert result["tree_shaken_stack"] == [9], (
+            "after push-target/drop, only the literal 9 remains"
+        )
+
+
 class TestUnsupportedFeaturesRoutedClearly:
 
     def test_tick_directive_rejected(self):
@@ -466,14 +534,6 @@ class TestUnsupportedFeaturesRoutedClearly:
             : run main-addr ;
         ''')
         with pytest.raises(NotImplementedError, match="tick|address-as-data"):
-            c.build_tree_shaken()
-
-    def test_bracket_tick_rejected(self):
-        c = _compile('''
-            : helper 1 + ;
-            : main 7 ['] helper drop ;
-        ''')
-        with pytest.raises(NotImplementedError, match="bracket-tick|\\[']"):
             c.build_tree_shaken()
 
     def test_banked_code_rejected(self):

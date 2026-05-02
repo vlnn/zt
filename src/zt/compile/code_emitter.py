@@ -7,7 +7,7 @@ from typing import Any
 
 from zt.assemble.asm import Asm
 from zt.compile.source import SourceEntry
-from zt.compile.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef
+from zt.compile.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef, WordLiteral
 from zt.compile.tokenizer import Token
 
 
@@ -63,6 +63,12 @@ class CodeEmitter:
         self.emit_cell(lit_addr, tok)
         self.emit_cell(masked, tok)
         self.append_ir(Literal(masked))
+
+    def compile_word_literal(self, word: Any, tok: Token) -> None:
+        lit_addr = self.words["lit"].address
+        self.emit_cell(lit_addr, tok)
+        self.emit_cell(word.address, tok)
+        self.append_ir(WordLiteral(word.name))
 
     def emit_word_ref(self, word: Any, tok: Token) -> None:
         self.emit_cell(word.address, tok)

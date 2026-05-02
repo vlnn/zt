@@ -3,7 +3,10 @@ Tests for `resolve()`: lowering cell lists to Z80 bytes, including literals, for
 """
 import pytest
 
-from zt.compile.ir import Branch, ColonRef, Label, Literal, PrimRef, StringRef, cell_size, resolve
+from zt.compile.ir import (
+    Branch, ColonRef, Label, Literal, PrimRef, StringRef, WordLiteral,
+    cell_size, resolve,
+)
 
 
 @pytest.fixture
@@ -62,6 +65,39 @@ class TestLiteral:
         assert out[2:] == expected_tail, (
             f"Literal({value:#06x}) should emit value bytes {expected_tail!r} after lit_addr"
         )
+
+
+class TestWordLiteral:
+
+    def test_word_literal_emits_lit_addr_then_target_addr(self, word_addrs):
+        out = resolve([WordLiteral("my-word")], word_addrs)
+        assert out == bytes([0x08, 0x10, 0x00, 0x91]), (
+            "WordLiteral should emit lit_addr then word's address, both little-endian"
+        )
+
+    @pytest.mark.parametrize("name, expected_tail", [
+        ("dup",      bytes([0x00, 0x10])),
+        ("swap",     bytes([0x04, 0x10])),
+        ("my-word",  bytes([0x00, 0x91])),
+    ])
+    def test_word_literal_tail_is_target_address(self, word_addrs, name, expected_tail):
+        out = resolve([WordLiteral(name)], word_addrs)
+        assert out[2:] == expected_tail, (
+            f"WordLiteral({name!r}) should emit the target's address as tail bytes"
+        )
+
+    def test_word_literal_size_is_four(self):
+        assert cell_size(WordLiteral("dup")) == 4, (
+            "WordLiteral should be 4 bytes (lit_addr + target_addr)"
+        )
+
+    def test_unresolved_word_literal_raises_with_name(self, word_addrs):
+        with pytest.raises(KeyError, match="missing"):
+            resolve([WordLiteral("missing")], word_addrs)
+
+    def test_word_literal_without_lit_in_table_raises(self):
+        with pytest.raises(KeyError, match="lit"):
+            resolve([WordLiteral("dup")], word_addrs={"dup": 0x1000})
 
 
 class TestBranchForwardLabel:

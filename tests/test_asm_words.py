@@ -499,16 +499,14 @@ class TestTickInsideAsmWord:
 
 class TestBracketTickInInlinedColon:
 
-    def test_bracket_tick_in_force_inline_compiles_to_literal(self):
+    def test_bracket_tick_in_force_inline_compiles_to_word_literal(self):
         c = make_compiler()
         c.compile_source(": target ;\n:: w ['] target ;")
         body = c.words["w"].body
-        target_addr = c.words["target"].address
-        from zt.compile.ir import Literal
-        literals = [cell for cell in body if isinstance(cell, Literal)]
-        assert any(lit.value == target_addr for lit in literals), (
-            f"['] target inside :: should compile a Literal cell whose value "
-            f"is target's address ({target_addr:#x})"
+        from zt.compile.ir import WordLiteral
+        assert WordLiteral("target") in body, (
+            "['] target inside :: should compile a WordLiteral cell carrying "
+            "the target's name so liveness can follow the reference"
         )
 
     def test_bracket_tick_runtime_in_inlined_word(self):

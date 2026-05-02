@@ -13,6 +13,7 @@ from zt.compile.ir import (
     Literal,
     PrimRef,
     StringRef,
+    WordLiteral,
     cell_size,
     resolve,
 )
@@ -64,6 +65,46 @@ class TestBodyCellsPopulation:
         body = c.words["loop-self"].body
         assert ColonRef("loop-self") in body, (
             "RECURSE should emit a ColonRef pointing to the word being defined"
+        )
+
+
+class TestBracketTickEmitsWordLiteral:
+
+    def test_bracket_tick_to_colon_emits_word_literal(self):
+        c = _compile(": helper 1 + ; : caller ['] helper drop ; : main halt ;")
+        body = c.words["caller"].body
+        assert WordLiteral("helper") in body, (
+            "['] helper should compile to a WordLiteral cell carrying the target name"
+        )
+
+    def test_bracket_tick_does_not_emit_bare_literal_with_address(self):
+        c = _compile(": helper 1 + ; : caller ['] helper drop ; : main halt ;")
+        body = c.words["caller"].body
+        helper_addr = c.words["helper"].address
+        bare_literals = [cell for cell in body if isinstance(cell, Literal)]
+        assert all(lit.value != helper_addr for lit in bare_literals), (
+            "['] helper should not produce a raw Literal(addr); the address is "
+            "carried by WordLiteral instead so liveness can follow it"
+        )
+
+    def test_bracket_tick_to_primitive_emits_word_literal(self):
+        c = _compile(": pusher ['] dup drop ; : main halt ;")
+        body = c.words["pusher"].body
+        assert WordLiteral("dup") in body, (
+            "['] dup should compile to a WordLiteral, even for primitive targets"
+        )
+
+    def test_bracket_tick_resolved_bytes_match_eager_address(self):
+        c = _compile_built(": helper 1 + ; : caller ['] helper drop ; : main caller halt ;")
+        compiler, image = c
+        body = compiler.words["caller"].body
+        word_addrs = _build_word_addr_table(compiler)
+        body_start = compiler.words["caller"].address + 3
+        expected = resolve(body, word_addrs, base_address=body_start)
+        offset = body_start - compiler.origin
+        actual = bytes(image[offset:offset + len(expected)])
+        assert expected == actual, (
+            "WordLiteral should lower to bytes identical to a bare lit+addr pair"
         )
 
 

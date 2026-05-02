@@ -1,5 +1,5 @@
 """
-Liveness-driven image rebuilding. `build_tree_shaken_image` takes a finished `Compiler` and produces a fresh image containing only the words and strings reachable from `_start`. Supports colons, primitives, strings, constants, variables, and `create` definitions; `'`/`[']` (word-address-as-data/literal) and native control flow are not yet supported.
+Liveness-driven image rebuilding. `build_tree_shaken_image` takes a finished `Compiler` and produces a fresh image containing only the words and strings reachable from `_start`. Supports colons, primitives, strings, constants, variables, `create` definitions, and `[']` (word-address-as-literal via the `WordLiteral` IR cell); `'` (word-address-as-data) and native control flow are not yet supported.
 """
 from __future__ import annotations
 
@@ -55,11 +55,6 @@ def _word_with_address(word: "Word", new_address: int) -> "Word":
 
 
 def _reject_unsupported_features(compiler: Compiler) -> None:
-    if getattr(compiler, "_uses_word_address_literal", False):
-        raise NotImplementedError(
-            "bracket-tick `[']` (word-address-as-literal) is not yet supported "
-            "by tree-shaking"
-        )
     if getattr(compiler, "_uses_word_address_data", False):
         raise NotImplementedError(
             "tick `'` (word-address-as-data) is not yet supported by tree-shaking"

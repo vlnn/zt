@@ -1,5 +1,5 @@
 """
-Intermediate-representation cell types (`PrimRef`, `ColonRef`, `Literal`, `Label`, `Branch`, `StringRef`) plus `resolve()` which lowers a cell list to Z80 bytes and JSON round-trip helpers.
+Intermediate-representation cell types (`PrimRef`, `ColonRef`, `Literal`, `WordLiteral`, `Label`, `Branch`, `StringRef`) plus `resolve()` which lowers a cell list to Z80 bytes and JSON round-trip helpers.
 """
 from __future__ import annotations
 
@@ -48,7 +48,12 @@ class StringRef:
     label: str
 
 
-Cell = Union[PrimRef, ColonRef, Literal, Label, Branch, StringRef]
+@dataclass(frozen=True)
+class WordLiteral:
+    name: str
+
+
+Cell = Union[PrimRef, ColonRef, Literal, Label, Branch, StringRef, WordLiteral]
 
 
 def resolve(
@@ -66,7 +71,7 @@ def cell_size(cell: Cell) -> int:
             return 0
         case PrimRef() | ColonRef() | StringRef():
             return 2
-        case Literal() | Branch():
+        case Literal() | Branch() | WordLiteral():
             return 4
     raise TypeError(f"unknown cell type: {type(cell).__name__}")
 
@@ -98,6 +103,8 @@ def _emit(
             return _word16(_lookup_word(word_addrs, label))
         case Literal(value):
             return _word16(_lookup_word(word_addrs, "lit")) + _word16(value)
+        case WordLiteral(name):
+            return _word16(_lookup_word(word_addrs, "lit")) + _word16(_lookup_word(word_addrs, name))
         case Branch(kind, target):
             target_addr = _lookup_label(target, label_addrs)
             return _word16(_lookup_word(word_addrs, kind)) + _word16(target_addr)
@@ -139,6 +146,8 @@ def _cell_to_json(cell: Cell) -> list:
             return ["colon", name]
         case Literal(value):
             return ["lit", value]
+        case WordLiteral(name):
+            return ["wordlit", name]
         case Label(id=label_id):
             return ["label", label_id]
         case Branch(kind, target):
@@ -156,6 +165,8 @@ def _cell_from_json(item: list) -> Cell:
         return ColonRef(name=item[1])
     if tag == "lit":
         return Literal(value=item[1])
+    if tag == "wordlit":
+        return WordLiteral(name=item[1])
     if tag == "label":
         return Label(id=item[1])
     if tag == "branch":

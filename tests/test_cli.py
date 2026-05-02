@@ -420,12 +420,13 @@ class TestCliTreeShake:
         assert out.exists()
 
     def test_default_falls_back_silently_for_unsupported(self, tmp_path):
-        """For programs using `[']`/`'`/banking, default should silently
+        """For programs using `'`/banking, default should silently
         fall back to the eager build with a single-line warning."""
-        unsupported_src = tmp_path / "bracket_tick.fs"
+        unsupported_src = tmp_path / "tick.fs"
         unsupported_src.write_text(
             ": helper 1 ;\n"
-            ": main ['] helper drop ;\n"
+            "' helper constant helper-addr\n"
+            ": main helper-addr drop ;\n"
         )
         out = tmp_path / "out.bin"
         result = _run_cli(
@@ -443,10 +444,11 @@ class TestCliTreeShake:
     def test_explicit_tree_shake_strict_on_unsupported(self, tmp_path):
         """`--tree-shake` (explicit opt-in) should still fail loudly on
         unsupported programs — users who ask for tree-shake want exactly tree-shake."""
-        unsupported_src = tmp_path / "bracket_tick.fs"
+        unsupported_src = tmp_path / "tick.fs"
         unsupported_src.write_text(
             ": helper 1 ;\n"
-            ": main ['] helper drop ;\n"
+            "' helper constant helper-addr\n"
+            ": main helper-addr drop ;\n"
         )
         out = tmp_path / "out.bin"
         result = _run_cli(
@@ -454,9 +456,9 @@ class TestCliTreeShake:
             "--tree-shake", "--no-stdlib",
         )
         assert result.returncode != 0, (
-            "--tree-shake on a program using ['] should fail strictly, not fall back"
+            "--tree-shake on a program using ' should fail strictly, not fall back"
         )
-        assert "bracket-tick" in result.stderr or "[']" in result.stderr, (
+        assert "tick" in result.stderr or "address-as-data" in result.stderr, (
             f"error should mention the unsupported feature; got: {result.stderr!r}"
         )
 

@@ -8,6 +8,7 @@ from zt.compile.ir import (
     Literal,
     PrimRef,
     StringRef,
+    WordLiteral,
     cells_from_json,
     cells_to_json,
 )
@@ -19,6 +20,7 @@ class TestCellsToJson:
         (PrimRef("dup"), ["prim", "dup"]),
         (ColonRef("my-word"), ["colon", "my-word"]),
         (Literal(42), ["lit", 42]),
+        (WordLiteral("my-isr"), ["wordlit", "my-isr"]),
         (Label(3), ["label", 3]),
         (Branch("0branch", Label(7)), ["branch", "0branch", 7]),
         (StringRef("_str_0"), ["str", "_str_0"]),
@@ -46,6 +48,7 @@ class TestCellsFromJson:
         (["prim", "dup"], PrimRef("dup")),
         (["colon", "my-word"], ColonRef("my-word")),
         (["lit", 42], Literal(42)),
+        (["wordlit", "my-isr"], WordLiteral("my-isr")),
         (["label", 3], Label(3)),
         (["branch", "0branch", 7], Branch("0branch", Label(7))),
         (["str", "_str_0"], StringRef("_str_0")),
@@ -69,6 +72,7 @@ class TestRoundtrip:
         [Branch("0branch", Label(0)), PrimRef("dup"), Label(0)],
         [PrimRef("lit"), StringRef("_str_0"), Literal(5)],
         [Branch("branch", Label(1)), Branch("(loop)", Label(1)), Label(1)],
+        [WordLiteral("rainbow-isr"), PrimRef("im2-handler!")],
     ])
     def test_roundtrip_preserves_cells(self, cells):
         assert cells_from_json(cells_to_json(cells)) == cells, (

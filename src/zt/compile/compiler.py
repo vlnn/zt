@@ -28,6 +28,7 @@ from zt.compile.ir import (
     Literal,
     PrimRef,
     StringRef,
+    WordLiteral,
     cell_size,
     resolve,
 )
@@ -113,7 +114,6 @@ class Compiler:
         self.current_word: str | None = None
         self._tokens: TokenStream = TokenStream([])
         self._host_stack: list[int] = []
-        self._uses_word_address_literal: bool = False
         self._uses_word_address_data: bool = False
         self._asm_word_blobs: list = []
         self.string_pool: StringPool = StringPool()
@@ -381,6 +381,8 @@ class Compiler:
         for cell in body:
             if isinstance(cell, Literal):
                 self._emit_force_inline_literal(cell, tok)
+            elif isinstance(cell, WordLiteral):
+                self._emit_force_inline_word_literal(cell, tok)
             elif isinstance(cell, PrimRef):
                 self._emit_force_inline_primitive(cell, tok)
             elif isinstance(cell, Label):
@@ -412,6 +414,14 @@ class Compiler:
         )
         self.asm.push_hl()
         self.asm.ld_hl_nn(cell.value & 0xFFFF)
+
+    def _emit_force_inline_word_literal(self, cell: WordLiteral, tok: Token) -> None:
+        target = self.words[cell.name]
+        self.emitter.source_map.append(
+            SourceEntry(self.asm.here, tok.source, tok.line, tok.col)
+        )
+        self.asm.push_hl()
+        self.asm.ld_hl_nn(target.address & 0xFFFF)
 
     def _emit_force_inline_primitive(self, cell: PrimRef, tok: Token) -> None:
         self.emitter.source_map.append(
@@ -467,7 +477,7 @@ class Compiler:
         if not (isinstance(body[-1], PrimRef) and body[-1].name == "exit"):
             return "missing EXIT terminator"
         for i, cell in enumerate(body[:-1]):
-            if isinstance(cell, (Literal, Label)):
+            if isinstance(cell, (Literal, WordLiteral, Label)):
                 continue
             if isinstance(cell, PrimRef):
                 name = cell.name.lower()
@@ -1066,8 +1076,7 @@ class Compiler:
         word = self.words.get(name_tok.value)
         if word is None:
             raise CompileError(f"unknown word '{name_tok.value}'", name_tok)
-        self._compile_literal(word.address, tok)
-        self._uses_word_address_literal = True
+        self.emitter.compile_word_literal(word, tok)
 
     @immediate("recurse")
     def _immediate_recurse(self, _compiler: Compiler, tok: Token) -> None:
