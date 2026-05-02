@@ -98,7 +98,7 @@ class TestForthVisibleCreators:
         from zt.assemble.primitives import PRIMITIVES
         compiler = Compiler(
             origin=0x8000, optimize=False,
-            inline_next=True, inline_primitives=True, include_sprites=True,
+            inline_next=True, inline_primitives=True,
         )
         registry = BlobRegistry.from_creators(PRIMITIVES, inline_next=True)
         new_keys = set(registry.forth_visible_creators())

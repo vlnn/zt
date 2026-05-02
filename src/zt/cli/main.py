@@ -94,13 +94,6 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
     build.add_argument("--no-inline-primitives", dest="inline_primitives",
                        action="store_false",
                        help="do not inline pure-primitive colons")
-    build.add_argument("--no-sprites", dest="include_sprites",
-                       action="store_false", default=True,
-                       help="exclude the SP-stream sprite primitives "
-                            "(BLIT8/BLIT8C/BLIT8X/BLIT8XC/MULTI-BLIT and "
-                            "LOCK-SPRITES/UNLOCK-SPRITES) to reclaim ~800 "
-                            "bytes of image space; useful for memory-tight "
-                            "48K builds")
     tree_shake_group = build.add_mutually_exclusive_group()
     tree_shake_group.add_argument("--tree-shake", dest="tree_shake_explicit",
                                   action="store_true", default=False,
@@ -321,7 +314,6 @@ def _build_compiler(args: argparse.Namespace) -> Compiler:
         optimize=args.optimize,
         inline_next=args.inline_next,
         inline_primitives=args.inline_primitives,
-        include_sprites=getattr(args, "include_sprites", True),
     )
     if args.stdlib:
         c.include_stdlib()

@@ -52,7 +52,6 @@ def compiled(example_dir):
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
-        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()
@@ -142,7 +141,6 @@ def screen_text(example_dir):
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
-        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()
@@ -177,7 +175,6 @@ def test_rstack_peak_within_budget() -> None:
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
-        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()
@@ -246,7 +243,6 @@ def tree_shaken_compiler(example_dir):
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
-        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()
@@ -308,7 +304,6 @@ def test_survives_simulated_im1_corruption() -> None:
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
-        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()
@@ -355,7 +350,6 @@ def tree_shaken_screen_text(example_dir):
         data_stack_top=DSTACK_TOP,
         return_stack_top=RSTACK_TOP,
         inline_next=False,
-        include_sprites=False,
     )
     c.compile_source(src, "main.fs")
     c.compile_main_call()

@@ -118,9 +118,8 @@ Seven SP-stream sprite primitives in
 source data — the densest copy idiom on a Z80 — so callers must
 `lock-sprites` (DI) around a batch.
 
-CLI flag `--no-sprites` excludes them from the image to reclaim
-~800 bytes for memory-tight 48K builds. Working example:
-`examples/sprite-demo/`. Tests:
+Unused sprite primitives are dropped automatically by the default
+tree-shaken build. Working example: `examples/sprite-demo/`. Tests:
 `test_sprites.py`, `test_sprite_opcodes.py`,
 `test_examples_sprite_demo.py`, `test_examples_sprite_dynamic.py`.
 

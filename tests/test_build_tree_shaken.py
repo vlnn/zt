@@ -9,7 +9,6 @@ def _make_compiler():
     return Compiler(
         origin=0x8000, optimize=False,
         inline_next=True, inline_primitives=True,
-        include_sprites=True,
     )
 
 
@@ -410,7 +409,7 @@ create scratch 32 allot
     def _compile(self, source: str) -> "Compiler":
         c = Compiler(
             origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=True,
+            inline_primitives=True,
         )
         c.include_stdlib()
         c.compile_source(source, source="<test>")
@@ -615,7 +614,7 @@ class TestTickCommaSupport:
 
         c = Compiler(
             origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=False,
+            inline_primitives=True,
         )
         c.compile_source(
             "0 in-bank : banked-helper 1 ; end-bank\n"
@@ -631,7 +630,7 @@ class TestTickCommaSupport:
 
         c = Compiler(
             origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=False,
+            inline_primitives=True,
         )
         c.compile_source(
             "create target 1 ,\n"
@@ -650,7 +649,7 @@ class TestBankedDataSurvivesTreeShake:
         from zt.compile.compiler import Compiler
         return Compiler(
             origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=False,
+            inline_primitives=True,
         )
 
     def test_banked_data_word_address_unchanged(self):
@@ -729,7 +728,7 @@ class TestAsmBodyTickSupport:
         from zt.compile.compiler import Compiler
         return Compiler(
             origin=0x8000, optimize=False, inline_next=True,
-            inline_primitives=True, include_sprites=False,
+            inline_primitives=True,
         )
 
     def test_asm_body_tick_does_not_set_tick_unsafe(self):

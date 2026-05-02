@@ -1767,7 +1767,7 @@ def create_im2_off(a: Asm) -> None:
 
 
 
-CORE_PRIMITIVES = [
+PRIMITIVES = [
     create_next, create_docol, create_exit,
     create_dup, create_drop, create_swap, create_over,
     create_rot, create_nip, create_tuck,
@@ -1814,9 +1814,5 @@ CORE_PRIMITIVES = [
     create_ei, create_di,
     create_im2_shim, create_im2_exit, create_im2_thread,
     create_im2_handler_store, create_im2_handler_fetch, create_im2_off,
-]
-
-PRIMITIVES = [
-    *CORE_PRIMITIVES,
     *SPRITE_PRIMITIVES,
 ]

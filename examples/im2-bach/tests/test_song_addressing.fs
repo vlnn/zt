@@ -1,13 +1,6 @@
 include test-lib.fs
 require ../app/music.fs
 
-\ low-byte / high-byte split a 12-bit AY tone period correctly
-: test-low-byte-of-377    377 low-byte    121 assert-eq ;
-: test-high-byte-of-377   377 high-byte     1 assert-eq ;
-: test-low-byte-of-1510   1510 low-byte   230 assert-eq ;
-: test-high-byte-of-1510  1510 high-byte    5 assert-eq ;
-: test-low-byte-of-zero   0 low-byte        0 assert-eq ;
-
 \ step-addr for index 0 is the song base, then advances by 4 bytes per step
 : test-step-addr-zero       0 step-addr  song assert-eq ;
 : test-step-addr-one        1 step-addr  song 4 + assert-eq ;

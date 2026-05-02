@@ -12,7 +12,7 @@ from zt.compile.compiler import Compiler
 def _compile(source, **kw):
     c = Compiler(
         origin=0x8000, optimize=False, inline_next=True,
-        inline_primitives=True, include_sprites=False, **kw,
+        inline_primitives=True, **kw,
     )
     c.compile_source(source, source='<test>')
     c.compile_main_call()

@@ -1,49 +1,27 @@
 require rand.fs
+require ay.fs
 require song-data.fs
 
 variable border-tick
 variable music-frame
 variable song-step
 
-$38 constant ay-mixer-tones-only
-$0F constant ay-volume-max
-0   constant ay-volume-mute
 4   constant /step
 8   constant frames-per-step
 
-::: ay-set  ( val reg -- )
-    pop_de
-    $FFFD ld_bc_nn  ld_a_l  out_c_a
-    $BFFD ld_bc_nn  ld_a_e  out_c_a
-    pop_hl ;
-
-: enable-tones    ( -- )    ay-mixer-tones-only 7 ay-set ;
-: silence-c       ( -- )    ay-volume-mute 10 ay-set ;
-: music-init      ( -- )    enable-tones silence-c ;
-
-: low-byte        ( n -- lo )  255 and ;
-: high-byte       ( n -- hi )  8 rshift ;
-
-: tone-a!         ( period -- )
-    dup low-byte  0 ay-set
-        high-byte 1 ay-set ;
-
-: tone-b!         ( period -- )
-    dup low-byte  2 ay-set
-        high-byte 3 ay-set ;
-
-: vol-a!          ( vol -- )  8 ay-set ;
-: vol-b!          ( vol -- )  9 ay-set ;
+: music-init      ( -- )
+    ay-mixer-tones-only ay-mixer!
+    ay-volume-mute      ay-vol-c! ;
 
 : ?dup            ( x -- 0 | x x )  dup if dup then ;
 
 : play-or-mute-a  ( period -- )
-    ?dup if  tone-a!  ay-volume-max vol-a!
-    else            ay-volume-mute vol-a!  then ;
+    ?dup if  ay-tone-a!  ay-volume-max  ay-vol-a!
+    else                 ay-volume-mute ay-vol-a!  then ;
 
 : play-or-mute-b  ( period -- )
-    ?dup if  tone-b!  ay-volume-max vol-b!
-    else            ay-volume-mute vol-b!  then ;
+    ?dup if  ay-tone-b!  ay-volume-max  ay-vol-b!
+    else                 ay-volume-mute ay-vol-b!  then ;
 
 : step-addr       ( step -- addr )  2* 2* song + ;
 : step-period-a   ( step -- p )     step-addr     @ ;

@@ -583,8 +583,8 @@ run unchanged on real hardware.
   cover char-aligned and pixel-aligned 8×8 blits. There is no
   built-in pre-shift table generator yet — the caller prepares the
   eight shifted copies — no XOR / transparency-mask variant, and no
-  scroll primitive. Sprites can be excluded entirely with
-  `--no-sprites` to reclaim ~800 bytes on tight 48K builds.
+  scroll primitive. Unused sprite primitives are dropped automatically
+  by the default tree-shaken build.
 - **Signed multiply lives in code, signed divide in `src/zt/stdlib/core.fs`**.
   `*` is a primitive but `/`, `/MOD`, `MOD` are defined on top of a single
   unsigned `U/MOD` primitive. Fine for slow code, too slow for inner loops.

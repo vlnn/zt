@@ -270,9 +270,6 @@ This means **interrupts must be disabled for the duration of a blit**;
 otherwise an ISR push would corrupt the source stream. Wrap a batch of
 blits between `lock-sprites` and `unlock-sprites`.
 
-These primitives can be excluded from the image with `--no-sprites` to
-reclaim ~800 bytes for memory-tight 48K builds.
-
 ### `lock-sprites` `( -- )` and `unlock-sprites` `( -- )`
 `DI` / `EI` wrappers. Always pair them around a batch of blits.
 

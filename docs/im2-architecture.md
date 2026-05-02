@@ -253,7 +253,7 @@ sources without IM 2 leave the table page zero.
 ### M4 — control primitives — done, 25 tests
 
 Three primitives in `src/zt/assemble/primitives.py`, registered in
-`CORE_PRIMITIVES`:
+`PRIMITIVES`:
 
 **`IM2-HANDLER! ( addr -- )`** — 14 bytes. DI; LD ($B9BA),HL; LD A,$B8;
 LD I,A; IM 2; POP HL; dispatch. Does NOT EI — caller controls when

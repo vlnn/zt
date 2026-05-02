@@ -8,7 +8,7 @@ from zt.compile.compiler import Compiler
 def _fresh_compiler():
     return Compiler(
         origin=0x8000, optimize=False,
-        inline_next=True, inline_primitives=True, include_sprites=True,
+        inline_next=True, inline_primitives=True,
     )
 
 

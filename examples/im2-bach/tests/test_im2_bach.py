@@ -135,7 +135,7 @@ class TestCompiles:
 
     @pytest.mark.parametrize("word", [
         "song", "song-length",
-        "ay-set", "tone-a!", "tone-b!", "vol-a!", "vol-b!",
+        "ay-set", "ay-tone-a!", "ay-tone-b!", "ay-vol-a!", "ay-vol-b!",
         "step-addr", "step-period-a", "step-period-b",
         "music-init", "music-isr", "music",
     ])
