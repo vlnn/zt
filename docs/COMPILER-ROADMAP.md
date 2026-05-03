@@ -151,7 +151,7 @@ Constant folding is the biggest leverage: an expression like `screen-start 32 * 
 
 ### 1.5 Native signed `/`, `MOD`, `/MOD`
 
-**Impact:** medium (stdlib implementations in `stdlib/core.fs` are slow due
+**Impact:** medium (stdlib implementations in `src/zt/stdlib/core.fs` are slow due
 to double `U/MOD` + conditional negations).
 **Difficulty:** low-medium. ~50 lines of Z80.
 
@@ -175,30 +175,21 @@ direct jump rather than a call + exit. This is a pure compiler transform in
 
 ## Tier 2 — Core quality
 
-### 2.1 Frame-sync primitive and interrupt infrastructure
+### 2.1 Frame-sync primitive and interrupt infrastructure  *(largely shipped)*
 
-**Impact:** high. Enables consistent animation speed, audio timing, and
-frame-based game logic — all four genres want this.
-**Difficulty:** medium. Requires installing an IM 2 vector table and a
-50 Hz tick counter.
+`WAIT-FRAME ( -- )` shipped (see PLAN.md M5 / FORTH-ROADMAP §1) plus
+the full IM 2 surface (`IM2-HANDLER!`, `IM2-HANDLER@`, `IM2-OFF`,
+`EI`, `DI`, the 257-byte vector table at `$B800–$B900`, and the JP
+slot at `$B9B9` auto-emitted under liveness). Working examples:
+`examples/im2-rainbow/` (border cycler), `examples/im2-music/` and
+`examples/im2-bach/` (AY music driver from the ISR).
+[`docs/im2-architecture.md`](im2-architecture.md) is the full
+hand-off note.
 
-Proposed primitives:
-
-| Word | Effect | Notes |
-|------|--------|-------|
-| `WAIT-FRAME ( -- )` | Block until next frame interrupt | Needs IM hook |
-| `TICKS ( -- n )` | Frames since boot | 16-bit counter |
-| `TICKS! ( n -- )` | Reset counter | For benchmarks |
-| `INT-ON ( -- )` / `INT-OFF ( -- )` | Gate interrupts |
-
-The runtime must reserve a 257-byte aligned IM 2 vector table, install a
-handler at a known address, and call `IM 2; EI` at program start. The
-dispatch path currently uses `PUSH DE; RET` which briefly puts user data
-where interrupts would push return addresses — the handler needs to be
-tolerant of that, or dispatch must briefly `DI` on critical edges.
-
-The existing `_outputs` capture in `sim.py` extends naturally to
-instruction-count-based simulated interrupts.
+Still open from the original wishlist: `TICKS ( -- n )` /
+`TICKS! ( n -- )` (frame counter exposed to Forth — useful for
+benchmarks and game-frame logic without writing a custom counter
+inside an ISR).
 
 ### 2.2 Expand the inlining whitelist
 
@@ -228,16 +219,17 @@ using `'`/`[']` for word-address-as-data, or `in-bank` compile-time
 banking). Pass `--tree-shake` for strict mode, `--no-tree-shake` to
 opt out.
 
-Survey across the 24 examples in this repo: total image size drops
-from 158 KB to 101 KB (36% reduction). Per-example shrinkage ranges
-from 18% on already-library-light programs (`mined-out`) up to 95%
-on programs that pull in stdlib but use little of it (`counter`).
+Survey across the bundled 16-example suite (today): total image size
+drops from 137 KB to 82 KB (40% reduction). Per-example shrinkage
+ranges from very modest on already-library-light programs
+(`mined-out`) up to ~50% on small library-heavy programs.
 
-Remaining lifts: `'`/`[']` (word-address-as-data and
-word-address-as-literal — both embed a word's address as an immediate
-indistinguishable from any other integer); banking (separate `Asm`
-per bank); native control flow (bypasses the IR pipeline). See
-[`PLAN.md`](PLAN.md) M13 for the full breakdown and the test list.
+Originally three classes of program fell back to the eager build:
+`'`/`[']` (word-address-as-data and word-address-as-literal), banking
+(separate `Asm` per bank), and native control flow. All three got
+tree-shake-aware support during stabilization; the bundled suite now
+auto-tree-shakes 16 of 16 examples. See [`PLAN.md`](PLAN.md) M13 for
+the full breakdown and the test list.
 
 ### 2.4 Control-stack tagging for better errors
 
@@ -308,7 +300,8 @@ the compiler's existing origin tracking.
 ### 3.5 `SEE` word — source-level decompiler in-image
 
 **Impact:** low. Only useful when someone ports a REPL later.
-**Difficulty:** low-medium. Most of the logic is in `inspect.py` already.
+**Difficulty:** low-medium. Most of the logic is in
+`zt/inspect/decompile.py` already.
 
 Exposes the decompiler as a word that's callable from within a REPL, so
 users can inspect their own definitions at "runtime" (in the simulator).
@@ -319,39 +312,40 @@ users can inspect their own definitions at "runtime" (in the simulator).
 
 ### 4.1 M9 — 128K banking  *(shipped)*
 
-Shipped. `--target 128k` builds a 128K image, four working examples
-(`examples/{plasma-128k,bank-rotator,bank-table,shadow-flip}`),
-runtime detection via `128k?`, banked memory primitives `bank@`,
-`bank!`, `raw-bank!`, plus `in-bank`/`end-bank` declarations for
-compile-time bank routing. `.z80` v3 output added because the `.sna`
-128K format is ambiguous to some emulators.
+Shipped. `--target 128k` builds a 128K image (working example:
+`examples/plasma-128k/`; the original suite also included
+`bank-rotator`, `bank-table`, and `shadow-flip` companion demos,
+since retired), runtime detection via `128k?`, banked memory
+primitives `bank@`, `bank!`, `raw-bank!`, plus `in-bank`/`end-bank`
+declarations for compile-time bank routing. `.z80` v3 output added
+because the `.sna` 128K format is ambiguous to some emulators.
 
 Cross-bank *code* calls (originally a non-goal, only same-bank colon
 words can call each other across `in-bank` boundaries today) remain a
 follow-up. See [`128k-architecture.md`](128k-architecture.md) for the
 full architecture and milestone breakdown.
 
-### 4.2 AY-3-8912 sound driver
+### 4.2 AY-3-8912 sound driver  *(partially shipped)*
 
-**Impact:** high for games. The beeper (4.3 below, shipped) covers
-crude effects, but music wants AY.
-**Difficulty:** high.
+The low-level register-poking layer landed: `src/zt/stdlib/ay.fs`
+provides an `ay-set ( val reg -- )` primitive (a `:::` macro that
+emits `OUT ($FFFD), reg / OUT ($BFFD), val`) plus the conventional
+wrappers `ay-mixer!`, `ay-tone-{a,b,c}!`, `ay-vol-{a,b,c}!`,
+`ay-noise!`, and `ay-mixer-tones-only`/`ay-volume-max`/`ay-volume-mute`
+constants. Working music examples: `examples/im2-music/` (8-note
+C-major arpeggio frame-locked via IM 2) and `examples/im2-bach/`
+(Bach Invention 4 transcribed from LilyPond).
 
-Three components:
-- Low-level primitives: `AY! ( val reg -- )`, `AY@ ( reg -- val )`
-- A driver that runs from the interrupt handler — reads a compact tune
-  format, updates AY registers each frame
-- Compile-time tune data format (could be imported from `.vtx`, `.psg`, or
-  a custom Forth-friendly pattern format)
-
-Graceful-degradation plan: ship a `SOUND` primitive that dispatches to
-either beeper or AY at runtime based on detected hardware.
+Still open: a tracker-style driver that reads a compact tune format
+each frame (the architectural piece), graceful-degradation `SOUND`
+that dispatches to beeper or AY at runtime, and any built-in tune
+import path (`.vtx`, `.psg`, custom Forth-friendly format).
 
 ### 4.3 Beeper primitive  *(shipped)*
 
 Shipped. `BEEP ( cycles period -- )` is a primitive in
 `assemble/primitives.py:create_beep`; toggles bit 4 of port `$FE` at a
-cycle-counted interval. `stdlib/sound.fs` provides `click`, `chirp`,
+cycle-counted interval. `src/zt/stdlib/sound.fs` provides `click`, `chirp`,
 `low-beep`, `high-beep`, `tone` on top of it.
 
 Not polyphonic, can't play while running game logic — but sufficient

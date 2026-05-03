@@ -135,10 +135,14 @@ convention `:::` enforces.
 
 ## Testing
 
-Forth-side tests live in `tests/*.fs`, run by the Python harness in
-`tests/forth_runner.py`. The library at `stdlib/test-lib.fs` provides
-`assert-eq`, `assert-true`, `assert-false`. Each test is a word starting
-with `test-` that the harness calls and checks `_result`.
+Forth-side tests live in any `test_*.fs` file (typically alongside the
+code they cover). The pytest collector in the project's root
+`conftest.py` picks each `: test-<name>` word out, compiles it with
+`zt.test_runner.compile_and_run_word`, and surfaces failures as pytest
+items. The same discovery powers `zt test`. The library at
+`src/zt/stdlib/test-lib.fs` provides `assert-eq`, `assert-true`,
+`assert-false`. Each test is a word starting with `test-` that the
+runner calls and checks `_result`.
 
 ```forth
 include test-lib.fs
@@ -303,8 +307,8 @@ when measurement isn't enough.**
 
 ## Reading list inside this codebase
 
-- `stdlib/core.fs` — short, idiomatic Forth; read this first.
-- `stdlib/test-lib.fs` — assertion vocabulary.
+- `src/zt/stdlib/core.fs` — short, idiomatic Forth; read this first.
+- `src/zt/stdlib/test-lib.fs` — assertion vocabulary.
 - `examples/mined-out/app/board.fs` — well-factored small words with
   stack effects throughout.
 - `docs/asm-words.md` — the `:::` reference and macro layer.

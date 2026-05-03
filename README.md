@@ -521,12 +521,11 @@ colon, string, constant, variable, and `create` definition. The
 emitter then builds a fresh image containing only the live set. This
 is on by default — `zt build` automatically tree-shakes any program
 that uses supported features and falls back to the eager build with a
-warning when it can't (programs using `'`/`[']` for word-address-as-data
-or `in-bank` compile-time banking). Pass `--tree-shake` for strict
-mode (fail rather than fall back) or `--no-tree-shake` to opt out
-entirely. Typical savings: 4–77% of image size on stdlib-using
-programs; the bundled suite of 9 examples shrinks from ~93 KB to
-~74 KB combined.
+warning when it can't. Pass `--tree-shake` for strict mode (fail
+rather than fall back) or `--no-tree-shake` to opt out entirely.
+Typical savings: 4–77% of image size on stdlib-using programs; the
+bundled suite of 16 examples shrinks from ~134 KB to ~82 KB combined
+(40% reduction).
 
 ### Debug surface
 

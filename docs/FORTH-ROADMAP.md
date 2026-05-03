@@ -482,28 +482,20 @@ pressed," "key accepted," "score tick."
 
 *Genres:* all.
 
-### 6.3 `AY!`, `AY@` — deep (128K only)
+### 6.3 `AY!`, `AY@` — deep (128K only)  *(equivalent shipped)*
 
-Write / read AY registers. Trivial wrappers over ports `$FFFD` (register
-select) and `$BFFD` (data write). Meaningless on 48K.
+Equivalent shipped. Rather than the originally proposed `AY!` /
+`AY@` primitives, the same surface lives at the stdlib layer in
+`src/zt/stdlib/ay.fs`: an `ay-set ( val reg -- )` `:::` macro emits
+the canonical `OUT ($FFFD), reg / OUT ($BFFD), val` write pair, and
+named wrappers (`ay-mixer!`, `ay-tone-a!`, `ay-vol-a!`, …) cover the
+common register groups. 48K graceful-degradation: writes to ports
+`$FFFD`/`$BFFD` are floating-bus on 48K — silent but harmless, no
+detection ceremony required.
 
-```
-AY!:    ; ( value register -- )
-        pop  de                 ; DE = value
-        ld   bc, $FFFD
-        out  (c), l             ; select reg
-        ld   bc, $BFFD
-        out  (c), e             ; write value
-        pop  hl
-        jp   NEXT
-```
-
-48K graceful degradation: at compile time, detect a `--48k` target and
-compile these to no-ops plus a warning at build time. Or ship them as
-conditionals that silently do nothing — preferable so adventure games can
-attempt sound without branching logic everywhere.
-
-*Genres:* arcade, demo, puzzle.
+Working music examples: `examples/im2-music/` (frame-locked C-major
+arpeggio) and `examples/im2-bach/` (Bach Invention 4 transcribed
+from LilyPond).
 
 ### 6.4 Tracker-style driver — architectural, not primitive
 
@@ -550,15 +542,27 @@ the user to note down (low-tech save system!).
 
 ## 8. Demo / effects
 
-### 8.1 `IM2-HANDLER! ( addr -- )` — deep
+### 8.1 `IM2-HANDLER! ( xt -- )` — deep  *(shipped)*
 
-Install `addr` as the IM 2 interrupt handler. Enables raster-synced effects,
-per-line palette changes, music playback.
+Shipped. `IM2-HANDLER! ( xt -- )` installs a colon word as the IM 2
+frame-interrupt handler; companions are `IM2-HANDLER@ ( -- xt )` and
+`IM2-OFF ( -- )`. The runtime shim auto-saves AF/HL/BC/DE/IX/IY on
+entry and finishes with `EI; RETI`, so the handler body is plain
+Forth (must be stack-neutral on both stacks). The 257-byte vector
+table at `$B800–$B900` and the 3-byte JP slot at `$B9B9` are
+auto-emitted under liveness — programs that don't use IM 2 stay
+byte-for-byte identical to before.
 
-Requires a 257-byte aligned vector table; handler runs every 50th of a
-second (or more frequently with careful port `$FE` timing).
+Working examples: `examples/im2-rainbow/` (border cycler), and the
+AY music drivers `examples/im2-music/` and `examples/im2-bach/` —
+all three run a foreground thread and an ISR concurrently.
 
-*Genres:* demo.
+See [`docs/im2-architecture.md`](im2-architecture.md) for the full
+design, including simulator-side mechanics (frame-rate auto-fire,
+EI-pending one-instruction delay, the 257-byte floating-bus trick)
+and the milestone-by-milestone test counts.
+
+*Genres:* demo, arcade (audio), puzzle.
 
 ### 8.2 `BORDER-RACE ( -- )` — spec
 

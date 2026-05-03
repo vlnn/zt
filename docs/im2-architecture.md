@@ -284,13 +284,13 @@ caller.
 
 ### M5 — example + acceptance — done, 3 tests
 
-`examples/im2-rainbow.fs`. Eighteen lines of Forth including
-white-space, comments, and the inline-Z80 ISR. Uses `:::` to define a
-border-cycling handler, `[']` to take its address, `IM2-HANDLER!` to
-install, and `WAIT-FRAME` (which already implements `EI; HALT; DI`) as
-the main loop body.
+`examples/im2-rainbow/`. Eighteen lines of Forth across `main.fs` and
+`app/rainbow.fs` including white-space, comments, and the inline-Z80
+ISR. Uses `:::` to define a border-cycling handler, `[']` to take its
+address, `IM2-HANDLER!` to install, and `WAIT-FRAME` (which already
+implements `EI; HALT; DI`) as the main loop body.
 
-Tests in `tests/test_example_im2_rainbow.py` build the example to .sna,
+Tests in `examples/im2-rainbow/tests/test_im2_rainbow.py` build the example to .sna,
 load it through the simulator, and assert: 3 frames yield 3 ULA
 interrupts; 8 consecutive frames produce border writes
 `[1,2,3,4,5,6,7,0]` (one per frame, advancing); the JP slot at `$B9BA`
@@ -406,8 +406,8 @@ New:
 - `tests/test_forth_result_interrupts.py`
 - `tests/test_im2_table.py`
 - `tests/test_primitives_im2.py`
-- `tests/test_example_im2_rainbow.py`
-- `examples/im2-rainbow.fs`
+- `examples/im2-rainbow/tests/test_im2_rainbow.py`
+- `examples/im2-rainbow/` (replaces the original single-file `examples/im2-rainbow.fs`, which is still present as a smaller standalone variant)
 - `docs/im2-architecture.md` (this file)
 
 Modified:

@@ -72,7 +72,7 @@ emission path that landed alongside M4 is documented in
 
 `emit`, `key`, `key?`, `key-state`, `type`, `at-xy`, `reset-cursor`,
 `scroll-attr`. Compile-time string literals: `."` and `s"`. The
-`stdlib/screen.fs` and `stdlib/input.fs` modules sit on top of these.
+`src/zt/stdlib/screen.fs` and `src/zt/stdlib/input.fs` modules sit on top of these.
 
 **Tests:** `test_m5_cls.py`, `test_m5_hello.py`, `test_m5_key_integration.py`,
 `test_m5_stdlib.py`, `test_m5_step2.py`, `test_m5_strings.py`,
@@ -102,9 +102,10 @@ architecture doc.
 **Shipped:** `--target 128k`, `--paged-bank`, `bank@`, `bank!`,
 `raw-bank!`, `128k?`, `in-bank`/`end-bank` declarations,
 `build_sna_128`, `load_sna_128`, simulator banking, `.z80` v3 writer
-(added after the original M5 of the 128K series). Working examples:
-`examples/plasma-128k`, `examples/bank-rotator`, `examples/bank-table`,
-`examples/shadow-flip`.
+(added after the original M5 of the 128K series). Working example:
+`examples/plasma-128k`. Originally also `examples/bank-rotator`,
+`examples/bank-table`, and `examples/shadow-flip`, all retired as
+the suite consolidated.
 
 **See:** [`128k-architecture.md`](128k-architecture.md) for the full
 hand-off note.
@@ -120,8 +121,9 @@ source data — the densest copy idiom on a Z80 — so callers must
 
 Unused sprite primitives are dropped automatically by the default
 tree-shaken build. Working example: `examples/sprite-demo/`. Tests:
-`test_sprites.py`, `test_sprite_opcodes.py`,
-`test_examples_sprite_demo.py`, `test_examples_sprite_dynamic.py`.
+`tests/test_sprites.py`, `tests/test_sprite_opcodes.py`,
+`examples/sprite-demo/tests/test_sprite_demo.py`,
+`examples/sprite-demo/tests/test_dynamic.py`.
 
 ## M11 — Force-inline `::` defining word and native control flow ✅
 
@@ -155,10 +157,10 @@ but registered in `PRIMITIVES` because the gain over a Forth-level
 implementation is large — `2bit-dot+!` runs ~250 T-states/MAC vs.
 ~4000 for a threaded equivalent.
 
-Working examples: `examples/zlm-smoke/` (profiling harness),
-`examples/zlm-layer/` (32×4 linear layer demo),
-`examples/zlm-multilayer/`, `examples/zlm-tinychat/` (128K),
-`examples/zlm-tinychat-48k/` (the showcase).
+Working examples: `examples/zlm-tinychat/` (128K) and
+`examples/zlm-tinychat-48k/` (the 48K showcase). Earlier scaffolding
+demos (`zlm-smoke`, `zlm-layer`, `zlm-multilayer`) were consolidated
+into the tinychat ports during stabilization.
 
 **Tests:** `test_unpack_primitives.py`, `test_2bit_muladd.py`,
 `test_2bit_dot_plus_store.py`. See also
@@ -182,16 +184,18 @@ CLI flags: default is auto-tree-shake-when-possible (falls back to
 eager with a stderr warning when a program uses unsupported features).
 `--tree-shake` is strict mode (fail on unsupported features);
 `--no-tree-shake` forces the legacy eager build for layout-sensitive
-downstream tooling. Auto-tree-shake covers 19 of 24 examples; the
-five fallbacks are programs using `'`/`[']` (word-address-as-data)
-or `in-bank` compile-time banking, both tracked as remaining lifts.
+downstream tooling. Auto-tree-shake currently covers every bundled
+example in the suite (16 of 16); the historical fallbacks (programs
+using `'`/`[']` or `in-bank` compile-time banking) were resolved as
+those features got tree-shake-aware support.
 
-Survey across all examples: 158 KB → 101 KB combined image size
-(36% reduction). Per-program reductions range from 18% (`mined-out`,
-already library-light) to 95% (`counter`, almost entirely library).
-The 48K tinychat port (`zlm-tinychat-48k`) needs tree-shake to fit
-the recommended `--origin 0x5CB6` layout that sidesteps an
-IM 1 corruption bug — see CHANGES.md for the full archaeology.
+Survey across the bundled 16-example suite (today): 137 KB → 82 KB
+combined image size (40% reduction). Per-program reductions range
+from very small on already-library-light programs (`mined-out`)
+through ~50% on small library-heavy programs. The 48K tinychat port
+(`zlm-tinychat-48k`) needs tree-shake to fit the recommended
+`--origin 0x5CB6` layout that sidesteps an IM 1 corruption bug —
+see CHANGES.md for the full archaeology.
 
 **Tests:** `test_liveness.py`, `test_primitive_blob.py`,
 `test_emit_blob.py`, `test_blob_registry.py`,

@@ -488,7 +488,7 @@ trap. Three ways around it:
   scratch word at the start.
 - Drop `128K?` and build 128K-only — the `.sna` is already 131 KB;
   loading it on a 48K emulator fails at the file level, not at
-  runtime. Documented in the bank-table demo's header comment.
+  runtime.
 
 ---
 
@@ -575,21 +575,16 @@ impossible on a 48K Spectrum. 19 tests in
 simulator through enough plasma frames (~25 s wall clock) to verify
 both screens receive data and bit 3 toggles between draws.
 
-**`examples/bank-rotator/main.fs`** — runtime bank seeding via
-`BANK!`+`C!`. Demonstrates `128k?` detection at startup (halts with a
-red border on a 48K machine as a visible failure signal), `BANK!` to
-seed six banks with distinctive attribute bytes, then a `cycle` loop
-that pages each bank in and paints its byte to the corresponding
-column of the screen attribute row. 14 tests in
-`tests/test_examples_bank_rotator.py`.
-
-**`examples/bank-table/main.fs`** — compile-time bank population via
-M4b's `in-bank` CREATE. Same visible effect as bank-rotator, but the
-colour bytes live in banks 0/1/3/4 at compile time instead of being
-seeded at runtime. 7 tests in `tests/test_examples_bank_table.py`.
-Demonstrates why the two workflows aren't interchangeable: this demo
-can't use `ensure-128k` because the `128K?` probe would overwrite the
-compile-time data in banks 0 and 1 before `main` reads it.
+**`examples/bank-rotator/main.fs`** *(retired)* and
+**`examples/bank-table/main.fs`** *(retired)* — companion demos to
+plasma-128k that originally exercised the bank-seeding workflows on
+their own. Both were dropped as the project grew (`make examples`
+today builds 16 SNAs, none of them bank-rotator or bank-table). The
+patterns they demonstrated — runtime `BANK!`+`C!` seeding and
+compile-time `in-bank create` data placement — are still supported
+and now exercised by `examples/plasma-128k/` end-to-end. Tests
+`tests/test_compiler_banking.py`, `tests/test_primitives_128k.py`,
+and `tests/test_cli_128k.py` cover the underlying mechanism.
 
 #### Shadow-screen support in the simulator
 
@@ -614,9 +609,9 @@ which always writes to the normal screen, so adapting them wasn't
 needed. If shadow-screen text introspection becomes useful later,
 that's a ~10-line diff to parameterise them by base address.
 
-End-to-end CLI verification: all three demos build cleanly via
-`zt build <demo>/main.fs -o out.sna --target 128k`, producing
-131,103-byte snapshots that load in Fuse/ZEsarUX set to 128K mode.
+End-to-end CLI verification: `examples/plasma-128k/` builds cleanly via
+`zt build examples/plasma-128k/main.fs -o out.sna --target 128k`, producing
+a 131,103-byte snapshot that loads in Fuse/ZEsarUX set to 128K mode.
 
 ---
 
@@ -852,7 +847,7 @@ Modified:
 - `src/zt/assemble/primitives.py` — added `BANKM_ADDR`, `PORT_7FFD`, `PAGE_MASK`, `UPPER_MASK` constants; four `create_*` functions (`create_bank_store`, `create_bank_fetch`, `create_raw_bank_store`, `create_128k_query`); all four registered in `PRIMITIVES`
 - `src/zt/cli/main.py` — `--target {48k,128k}` and `--paged-bank` flags; `--format z80` alongside `sna`/`bin`; `_resolve_stack_defaults`, `_validate_128k_config`, `_validate_48k_config` helpers; `_image_to_banks` for 128k origin → bank routing; `_write_output` routes to `build_sna_128` or `build_z80_v3` under `--target 128k` and merges `compiler.banks()` into the banks dict
 - `src/zt/compile/compiler.py` — `_main_asm`, `_bank_asms`, `_active_bank` state; `_activate_bank`/`_deactivate_bank` routing helpers; `bank_image(n)`/`banks()` public accessors; `in-bank` and `end-bank` directives; `_emit_variable_shim` split into main-bank code and active-bank data
-- `Makefile` — per-target `BUILD_FLAGS_<name>` plumbing for the 128K examples (`bank-rotator`, `bank-table`, `shadow-flip`, `plasma-128k`, `zlm-tinychat`, `zlm-emit-test`). `make examples` produces `.sna` for every example today; emitting `.z80` alongside is a one-line `BUILD_FLAGS` extension when the need arises.
+- `Makefile` — per-target `BUILD_FLAGS_<name>` plumbing for the 128K examples (`plasma-128k`, `im2-music`, `im2-bach`, `zlm-tinychat`). `make examples` produces `.sna` for every example today; emitting `.z80` alongside is a one-line `BUILD_FLAGS` extension when the need arises.
 
 New test files:
 - `tests/test_sna_128.py` (71 tests)
@@ -862,17 +857,21 @@ New test files:
 - `tests/test_primitives_128k.py` (47 tests)
 - `tests/test_cli_128k.py` (28 tests)
 - `tests/test_compiler_banking.py` (14 tests)
-- `tests/test_examples_bank_rotator.py` (14 tests)
-- `tests/test_examples_bank_table.py` (7 tests)
 - `examples/plasma-128k/tests/test_plasma_128k.py` (18 tests)
-- `tests/test_examples_shadow_flip.py` (19 tests)
 - `tests/test_z80_format.py` (39 tests)
+
+(Originally also `tests/test_examples_bank_rotator.py`,
+`tests/test_examples_bank_table.py`, `tests/test_examples_shadow_flip.py`
+— retired together with their example programs; the underlying
+mechanism is still covered by the seven files above.)
 
 New examples:
 - `examples/plasma-128k/main.fs` — double-buffered plasma via shadow screen
-- `examples/bank-rotator/main.fs` — runtime bank seeding via `BANK!`+`C!`
-- `examples/bank-table/main.fs` — compile-time bank population via `in-bank` CREATE
-- `examples/shadow-flip/main.fs` — minimal shadow-screen flip test with pre-seeded bank 5
+
+(Originally also `examples/bank-rotator/`, `examples/bank-table/`, and
+`examples/shadow-flip/` — retired as the suite consolidated; the
+runtime-seeding, compile-time placement, and shadow-flip patterns they
+demonstrated are now exercised inside `examples/plasma-128k/`.)
 
 Simulator addition for M5 — in `src/zt/sim.py`:
 - `PORT_7FFD_SCREEN_BIT`, `NORMAL_SCREEN_BANK`, `SHADOW_SCREEN_BANK`,

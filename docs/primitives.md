@@ -34,7 +34,9 @@ For milestone history of how these landed, see [`PLAN.md`](PLAN.md).
 | Sprites     | `lock-sprites` `unlock-sprites` `blit8` `blit8c` `blit8x` `blit8xc` `multi-blit` |
 | Quantized ML| `unpack-nibbles` `unpack-2bits` `2bitmuladd` `2bit-dot+!`            |
 | 128K banks  | `bank@` `bank!` `raw-bank!` `128k?`                                  |
-| Internal    | `lit` `branch` `0branch` `(do)` `(loop)` `(+loop)` `i` `j` `unloop` `next` `docol` `exit` |
+| Interrupts  | `ei` `di` `im2-handler!` `im2-handler@` `im2-off`                    |
+| Reflection  | `execute`                                                            |
+| Internal    | `lit` `branch` `0branch` `(do)` `(loop)` `(+loop)` `i` `j` `unloop` `next` `docol` `exit` `(@abs)` `(!abs)` `(c@abs)` `(c!abs)` `(@off)` `(!off)` `(c@off)` `(c!off)` |
 
 Signed `/`, `/mod`, `mod` are not primitives; they live in
 [`stdlib/core.fs`](../src/zt/stdlib/core.fs) on top of `u/mod`.
@@ -111,7 +113,7 @@ Signed 16-bit multiplication. Result wraps modulo 2¹⁶.
 
 ### `u/mod` `( u_dividend u_divisor -- u_remainder u_quotient )`
 Unsigned 16-bit division. Signed `/`, `/mod`, `mod` are defined in
-`stdlib/core.fs` on top of this.
+`src/zt/stdlib/core.fs` on top of this.
 
 ### `negate` `( n -- -n )`
 Two's-complement negation.
@@ -213,9 +215,11 @@ Block until a key is pressed; return its ASCII code.
 Non-blocking poll; return `-1` if any key is currently down, `0`
 otherwise.
 
-### `key-state` `( -- bitmap )`
-Snapshot of the keyboard matrix as a 16-bit bitmap. See
-`stdlib/input.fs` for higher-level helpers.
+### `key-state` `( c -- flag )`
+True (`-1`) when the key with ASCII code `c` is currently held, `0`
+otherwise. Looks `c` up in the keyboard matrix table and tests the
+relevant half-row bit on port `$FE`. See `src/zt/stdlib/input.fs` for
+higher-level wrappers like `up?`, `down?`, `left?`, `right?`.
 
 ### `type` `( addr count -- )`
 Print `count` bytes starting at `addr`. Pairs with `s"`-produced
@@ -248,7 +252,7 @@ Set the border colour (0–7); writes to port `$FE`.
 ### `beep` `( cycles period -- )`
 Square-wave tone on port `$FE` bit 4 (the ROM beeper line). `cycles`
 is the number of half-period iterations; `period` is the half-period
-in T-states. See `stdlib/sound.fs` for `click`, `chirp`, `low-beep`,
+in T-states. See `src/zt/stdlib/sound.fs` for `click`, `chirp`, `low-beep`,
 `high-beep`, `tone`.
 
 ### `wait-frame` `( -- )`
@@ -332,6 +336,60 @@ path on a tinychat-style 48K language model — ~250 T-states/MAC.
 
 ---
 
+## Reflection
+
+### `execute` `( xt -- )`
+Invoke the word at `xt` and return when it finishes. Works for
+primitives, colon words, constants, and variables — anything with a
+threaded entry point. `xt` typically comes from `[']` or `'`.
+
+```forth
+: dispatch  ( verb-id -- )
+    cells verb-table + @ execute ;
+```
+
+`execute` is not inlinable inside `::` definitions because its
+indirect-call tail isn't the dispatch sequence the splicer expects.
+Using `execute` in a `::` body raises a `CompileError`.
+
+---
+
+## Interrupts
+
+### `ei` `( -- )` and `di` `( -- )`
+Enable / disable Z80 maskable interrupts. Data stack untouched. The
+post-`ei` one-instruction delay is honoured (interrupts only re-enable
+*after* the next instruction completes).
+
+### `im2-handler!` `( xt -- )`
+Install the colon word at `xt` as the IM 2 frame-interrupt handler.
+The runtime shim auto-saves AF/HL/BC/DE/IX/IY on entry and finishes
+with `EI; RETI`, so the handler body is plain Forth and must be
+stack-neutral on both the data and return stacks. Caller is
+responsible for the final `EI` once installation is complete.
+
+```forth
+variable border-tick
+
+: rainbow-isr  ( -- )
+    border-tick @ 1+ 7 and  dup border-tick !  border ;
+
+: main  ['] rainbow-isr im2-handler!  ei  begin again ;
+```
+
+### `im2-handler@` `( -- xt )`
+Read back the xt of the currently installed IM 2 handler. Returns 0
+if none has been installed.
+
+### `im2-off` `( -- )`
+Disable interrupts, revert to IM 1, and clear the installed handler.
+Pairs with `im2-handler!` for clean teardown. See
+[`im2-architecture.md`](im2-architecture.md) for the full design and
+the `examples/im2-rainbow/`, `examples/im2-music/`, `examples/im2-bach/`
+worked examples.
+
+---
+
 ## 128K banking
 
 These primitives only behave as documented on a 128K target; on a 48K
@@ -403,3 +461,14 @@ Colon-word entry trampoline: pushes the caller's IP, walks the body.
 ### `exit` `R:( addr -- )`
 Return from the current colon definition. Compiled automatically by
 `;`.
+
+### Native fetch/store family `(@abs)` `(!abs)` `(c@abs)` `(c!abs)` `(@off)` `(!off)` `(c@off)` `(c!off)`
+Emitted by the Phase-5 fusion recognizer when it spots a canonical
+struct-access pattern (e.g. `record .field >@`, `actor .x >!`). The
+`...abs` variants bake an absolute address as the next two bytes of
+the threaded body; the `...off` variants bake an offset and add it to
+TOS. `(@abs) ( -- value )`, `(!abs) ( value -- )`, `(@off) ( addr -- value )`,
+`(!off) ( value addr -- )`, and analogous byte-sized `(c…)` forms.
+Never written by hand in source — see `examples/structs/README.md`
+for the surface forms (`>@`, `>!`, `>c@`, `>c!`) and how the fusion
+collapses them.
