@@ -131,6 +131,7 @@ class Compiler:
         self._pending_tick: tuple[str, int] | None = None
         self._tick_unsafe: bool = False
         self._word_address_refs: list[WordAddressRef] = []
+        self._open_array_lit: tuple[int, int, int] | None = None
         self._inside_asm_body: bool = False
         self._asm_word_blobs: list = []
         self.string_pool: StringPool = StringPool()
@@ -238,6 +239,9 @@ class Compiler:
             return
         if tok.kind == "word" and tok.value == "::":
             self._start_colon(tok, force_inline=True)
+            return
+        if tok.kind == "word" and tok.value == ";" and self._open_array_lit is not None:
+            self._close_array_literal(tok)
             return
         if tok.kind == "word":
             word = self.words.get(tok.value)
@@ -1222,6 +1226,53 @@ class Compiler:
         count = self._host_pop(tok)
         for _ in range(count):
             self.asm.byte(0)
+
+    @directive("w:")
+    def _directive_warr(self, _compiler: Compiler, tok: Token) -> None:
+        self._open_array_literal(tok, elem_size=2)
+
+    @directive("c:")
+    def _directive_carr(self, _compiler: Compiler, tok: Token) -> None:
+        self._open_array_literal(tok, elem_size=1)
+
+    @directive("b:")
+    def _directive_barr(self, _compiler: Compiler, tok: Token) -> None:
+        self._open_array_literal(tok, elem_size=0)
+
+    def _open_array_literal(self, tok: Token, elem_size: int) -> None:
+        if self.state != "interpret":
+            raise CompileError("array literal must be at top level", tok)
+        if self._open_array_lit is not None:
+            raise CompileError("nested array literal not supported", tok)
+        name_tok = self._next_token(tok)
+        code_addr, data_addr = self._emit_variable_shim()
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=code_addr, kind="variable",
+            data_address=data_addr,
+            source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
+        )
+        count_slot = self.asm.here
+        self._emit_cell(0, tok)
+        self._open_array_lit = (count_slot, self.asm.here, elem_size)
+
+    def _close_array_literal(self, tok: Token) -> None:
+        slot, data_start, elem_size = self._open_array_lit
+        bytes_written = self.asm.here - data_start
+        if elem_size == 0:
+            count = bytes_written * 8
+        elif bytes_written % elem_size != 0:
+            raise CompileError(
+                f"array data ({bytes_written} bytes) not a multiple "
+                f"of element size ({elem_size})",
+                tok,
+            )
+        else:
+            count = bytes_written // elem_size
+        offset = slot - self.asm.origin
+        self.asm.code[offset] = count & 0xFF
+        self.asm.code[offset + 1] = (count >> 8) & 0xFF
+        self._open_array_lit = None
 
     @directive("in-bank")
     def _directive_in_bank(self, _compiler: Compiler, tok: Token) -> None:
