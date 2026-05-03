@@ -6,7 +6,11 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
-from zt.compile.ir import Branch, Cell, ColonRef, Label, Literal, PrimRef, StringRef, WordLiteral
+from zt.compile.ir import (
+    Branch, Cell, ColonRef, Label, Literal, NativeFetch, NativeStore,
+    NativeOffsetFetch, NativeOffsetStore,
+    PrimRef, StringRef, WordLiteral,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,5 +79,15 @@ def _collect_cell_dependency(
             deps.append(kind)
         case StringRef(label):
             strings.add(label)
+        case NativeFetch(width=width, target=target):
+            deps.append("(@abs)" if width == "cell" else "(c@abs)")
+            deps.append(target)
+        case NativeStore(width=width, target=target):
+            deps.append("(!abs)" if width == "cell" else "(c!abs)")
+            deps.append(target)
+        case NativeOffsetFetch(width=width):
+            deps.append("(@off)" if width == "cell" else "(c@off)")
+        case NativeOffsetStore(width=width):
+            deps.append("(!off)" if width == "cell" else "(c!off)")
         case Label():
             pass

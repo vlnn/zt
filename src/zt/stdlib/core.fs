@@ -48,3 +48,26 @@
     22528 768 rot fill     \ fill attr area
     16384 6144 0 fill      \ blank pixels
     reset-cursor ;
+
+\ ── Canonical struct field-access patterns ────────────────────────────────
+\
+\ Force-inline (`::`) so the unfused fallback emits native `+ @` body bytes
+\ at the call site instead of incurring a colon-call. With fusion on (the
+\ default), the recognizer detects the 3-token form
+\
+\   record .field >@      kitchen .north >@
+\   actor  .x     >@      \\ inside an accessor colon, dynamic instance
+\
+\ and replaces it with one Z80 absolute-load (static instance) or
+\ offset-add+deref (dynamic instance). The colon definitions below are
+\ never actually called when fusion is on.
+\
+\ Prefix shape was chosen because the conventional `+!` is taken by Forth's
+\ increment-store ( x addr -- mem[addr]+=x ); `>@` and `>!` read naturally
+\ as 'with-offset, fetch / store' and don't collide with `>` (comparison),
+\ since `>@` is a single token.
+
+:: >@   ( addr offset -- value )    + @  ;
+:: >!   ( value addr offset -- )    + !  ;
+:: >c@  ( addr offset -- byte )     + c@ ;
+:: >c!  ( byte addr offset -- )     + c! ;

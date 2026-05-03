@@ -25,7 +25,7 @@ def build_tree_shaken_image(compiler: Compiler) -> tuple[bytes, int]:
     _emit_live_strings(new_asm, compiler, liveness, word_addrs)
     new_data_addrs = _emit_live_data_words(new_asm, compiler, liveness, word_addrs)
     _patch_data_word_refs(new_asm, compiler, liveness, word_addrs, new_data_addrs)
-    _patch_colon_bodies(new_asm, compiler, liveness, word_addrs)
+    _patch_colon_bodies(new_asm, compiler, liveness, word_addrs, new_data_addrs)
     _bind_synthetic_word_labels(new_asm, word_addrs, new_data_addrs)
     start_addr = _emit_start(new_asm, compiler, word_addrs)
     image = new_asm.resolve()
@@ -91,7 +91,7 @@ def _reject_unsupported_features(compiler: Compiler) -> None:
     _reject_banked_colons(compiler)
     _reject_banked_tick_owners(compiler)
     for word in compiler.words.values():
-        if word.kind not in {"prim", "colon", "constant", "variable"}:
+        if word.kind not in {"prim", "colon", "constant", "variable", "struct"}:
             raise NotImplementedError(
                 f"word kind {word.kind!r} is not yet supported by tree-shaking"
             )
@@ -278,13 +278,30 @@ def _data_boundaries(compiler: Compiler) -> list[int]:
 
 def _patch_colon_bodies(
     new_asm: Asm, compiler: Compiler, liveness: Liveness,
-    word_addrs: dict[str, int],
+    word_addrs: dict[str, int], new_data_addrs: dict[str, int],
 ) -> None:
     for word in _live_colons(compiler, liveness):
         body_start = word_addrs[word.name] + 3
-        body_bytes = ir_resolve(word.body, word_addrs, base_address=body_start)
+        relocated = _relocate_native_addresses(word.body, new_data_addrs)
+        body_bytes = ir_resolve(relocated, word_addrs, base_address=body_start)
         offset = body_start - new_asm.origin
         new_asm.code[offset:offset + len(body_bytes)] = body_bytes
+        word.body[:] = relocated
+
+
+def _relocate_native_addresses(
+    cells: list, new_data_addrs: dict[str, int],
+) -> list:
+    from dataclasses import replace
+    from zt.compile.ir import NativeFetch, NativeStore
+    relocated: list = []
+    for cell in cells:
+        if isinstance(cell, (NativeFetch, NativeStore)):
+            new_base = new_data_addrs.get(cell.target)
+            if new_base is not None:
+                cell = replace(cell, address=(new_base + cell.offset) & 0xFFFF)
+        relocated.append(cell)
+    return relocated
 
 
 def _emit_start(new_asm: Asm, compiler: Compiler, word_addrs: dict[str, int]) -> int:

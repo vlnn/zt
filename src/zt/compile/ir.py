@@ -53,7 +53,78 @@ class WordLiteral:
     name: str
 
 
-Cell = Union[PrimRef, ColonRef, Literal, Label, Branch, StringRef, WordLiteral]
+@dataclass(frozen=True)
+class NativeFetch:
+    address: int
+    width: str
+    target: str
+    offset: int = 0
+
+    def __post_init__(self) -> None:
+        if self.width not in ("cell", "byte"):
+            raise ValueError(
+                f"NativeFetch.width must be 'cell' or 'byte', got {self.width!r}"
+            )
+        if not 0 <= self.address <= 0xFFFF:
+            raise ValueError(
+                f"NativeFetch.address {self.address} out of 16-bit range"
+            )
+
+
+@dataclass(frozen=True)
+class NativeStore:
+    address: int
+    width: str
+    target: str
+    offset: int = 0
+
+    def __post_init__(self) -> None:
+        if self.width not in ("cell", "byte"):
+            raise ValueError(
+                f"NativeStore.width must be 'cell' or 'byte', got {self.width!r}"
+            )
+        if not 0 <= self.address <= 0xFFFF:
+            raise ValueError(
+                f"NativeStore.address {self.address} out of 16-bit range"
+            )
+
+
+@dataclass(frozen=True)
+class NativeOffsetFetch:
+    offset: int
+    width: str
+
+    def __post_init__(self) -> None:
+        if self.width not in ("cell", "byte"):
+            raise ValueError(
+                f"NativeOffsetFetch.width must be 'cell' or 'byte', got {self.width!r}"
+            )
+        if not 0 <= self.offset <= 0xFFFF:
+            raise ValueError(
+                f"NativeOffsetFetch.offset {self.offset} out of 16-bit range"
+            )
+
+
+@dataclass(frozen=True)
+class NativeOffsetStore:
+    offset: int
+    width: str
+
+    def __post_init__(self) -> None:
+        if self.width not in ("cell", "byte"):
+            raise ValueError(
+                f"NativeOffsetStore.width must be 'cell' or 'byte', got {self.width!r}"
+            )
+        if not 0 <= self.offset <= 0xFFFF:
+            raise ValueError(
+                f"NativeOffsetStore.offset {self.offset} out of 16-bit range"
+            )
+
+
+Cell = Union[
+    PrimRef, ColonRef, Literal, Label, Branch, StringRef, WordLiteral,
+    NativeFetch, NativeStore, NativeOffsetFetch, NativeOffsetStore,
+]
 
 
 def resolve(
@@ -71,7 +142,9 @@ def cell_size(cell: Cell) -> int:
             return 0
         case PrimRef() | ColonRef() | StringRef():
             return 2
-        case Literal() | Branch() | WordLiteral():
+        case (Literal() | Branch() | WordLiteral()
+              | NativeFetch() | NativeStore()
+              | NativeOffsetFetch() | NativeOffsetStore()):
             return 4
     raise TypeError(f"unknown cell type: {type(cell).__name__}")
 
@@ -108,6 +181,18 @@ def _emit(
         case Branch(kind, target):
             target_addr = _lookup_label(target, label_addrs)
             return _word16(_lookup_word(word_addrs, kind)) + _word16(target_addr)
+        case NativeFetch(address=addr, width=width):
+            primname = "(@abs)" if width == "cell" else "(c@abs)"
+            return _word16(_lookup_word(word_addrs, primname)) + _word16(addr)
+        case NativeStore(address=addr, width=width):
+            primname = "(!abs)" if width == "cell" else "(c!abs)"
+            return _word16(_lookup_word(word_addrs, primname)) + _word16(addr)
+        case NativeOffsetFetch(offset=offset, width=width):
+            primname = "(@off)" if width == "cell" else "(c@off)"
+            return _word16(_lookup_word(word_addrs, primname)) + _word16(offset)
+        case NativeOffsetStore(offset=offset, width=width):
+            primname = "(!off)" if width == "cell" else "(c!off)"
+            return _word16(_lookup_word(word_addrs, primname)) + _word16(offset)
     raise TypeError(f"unknown cell type: {type(cell).__name__}")
 
 
@@ -154,6 +239,14 @@ def _cell_to_json(cell: Cell) -> list:
             return ["branch", kind, target.id]
         case StringRef(label):
             return ["str", label]
+        case NativeFetch(address=addr, width=width, target=target, offset=offset):
+            return ["native_fetch", addr, width, target, offset]
+        case NativeStore(address=addr, width=width, target=target, offset=offset):
+            return ["native_store", addr, width, target, offset]
+        case NativeOffsetFetch(offset=offset, width=width):
+            return ["native_offset_fetch", offset, width]
+        case NativeOffsetStore(offset=offset, width=width):
+            return ["native_offset_store", offset, width]
     raise TypeError(f"unknown cell type: {type(cell).__name__}")
 
 
@@ -173,4 +266,14 @@ def _cell_from_json(item: list) -> Cell:
         return Branch(kind=item[1], target=Label(id=item[2]))
     if tag == "str":
         return StringRef(label=item[1])
+    if tag == "native_fetch":
+        offset = item[4] if len(item) > 4 else 0
+        return NativeFetch(address=item[1], width=item[2], target=item[3], offset=offset)
+    if tag == "native_store":
+        offset = item[4] if len(item) > 4 else 0
+        return NativeStore(address=item[1], width=item[2], target=item[3], offset=offset)
+    if tag == "native_offset_fetch":
+        return NativeOffsetFetch(offset=item[1], width=item[2])
+    if tag == "native_offset_store":
+        return NativeOffsetStore(offset=item[1], width=item[2])
     raise ValueError(f"unknown cell tag: {tag!r}")

@@ -26,6 +26,10 @@ from zt.compile.ir import (
     ColonRef,
     Label,
     Literal,
+    NativeFetch,
+    NativeStore,
+    NativeOffsetFetch,
+    NativeOffsetStore,
     PrimRef,
     StringRef,
     WordLiteral,
@@ -67,6 +71,7 @@ class Word:
     data_address: int | None = None
     force_inline: bool = False
     bank: int | None = None
+    value: int | None = None
 
 
 @dataclass(frozen=True)
@@ -107,6 +112,7 @@ class Compiler:
         inline_next: bool = True,
         inline_primitives: bool = True,
         native_control_flow: bool = False,
+        fuse: bool = True,
     ):
         self.origin = origin
         self.data_stack_top = data_stack_top
@@ -136,6 +142,7 @@ class Compiler:
         self.inline_next: bool = inline_next
         self.inline_primitives: bool = inline_primitives
         self.native_control_flow: bool = native_control_flow
+        self.fuse: bool = fuse
         self._primitives: list = list(PRIMITIVES)
         self._inline_context: InlineContext | None = None
         self._peephole_rules: tuple[PeepholeRule, ...] = DEFAULT_RULES
@@ -237,6 +244,9 @@ class Compiler:
             if word and word.immediate and word.compile_action:
                 word.compile_action(self, tok)
                 return
+            if word and word.kind == "constant" and word.value is not None:
+                self._host_stack.append(word.value)
+                return
             raise CompileError(
                 f"unexpected word '{tok.value}' in interpret state", tok
             )
@@ -253,6 +263,8 @@ class Compiler:
             raise CompileError("nested colon definition", tok)
         if tok.kind == "word" and tok.value == "::":
             raise CompileError("nested colon definition", tok)
+        if self.fuse and self._try_struct_fusion(tok):
+            return
         if self.optimize and self._try_peephole(tok):
             return
         if tok.kind == "word":
@@ -281,6 +293,205 @@ class Compiler:
         self._tokens.advance_by(len(rule.pattern) - 1)
         self._emit_word_ref(replacement, tok)
         return True
+
+    def _try_struct_fusion(self, tok: Token) -> bool:
+        if tok.kind != "word" and tok.kind != "number":
+            return False
+        if tok.kind == "word":
+            instance = self._fusion_instance_word(tok.value)
+            if instance is not None:
+                lookahead = self._tokens.lookahead(3)
+                if self._try_static_canonical_fusion(tok, instance, lookahead):
+                    return True
+                if self._try_static_sugar_fusion(tok, instance, lookahead):
+                    return True
+        offset = self._fusion_compile_time_value(tok)
+        if offset is not None:
+            lookahead = self._tokens.lookahead(2)
+            if self._try_dynamic_canonical_fusion(tok, offset, lookahead):
+                return True
+            if self._try_dynamic_sugar_fusion(tok, offset, lookahead):
+                return True
+        return False
+
+    def _try_static_canonical_fusion(
+        self, tok: Token, instance: Word, lookahead: list[Token],
+    ) -> bool:
+        if len(lookahead) < 3:
+            return False
+        offset_tok, plus_tok, op_tok = lookahead
+        offset = self._fusion_compile_time_value(offset_tok)
+        if offset is None:
+            return False
+        if not self._fusion_is_plus(plus_tok):
+            return False
+        cell = self._fusion_cell_for_op(op_tok, instance, offset)
+        if cell is None:
+            return False
+        self._emit_fused_native_cell(cell, tok)
+        self._tokens.advance_by(3)
+        return True
+
+    def _try_static_sugar_fusion(
+        self, tok: Token, instance: Word, lookahead: list[Token],
+    ) -> bool:
+        if len(lookahead) < 2:
+            return False
+        offset_tok, sugar_tok = lookahead[0], lookahead[1]
+        offset = self._fusion_compile_time_value(offset_tok)
+        if offset is None:
+            return False
+        cell = self._fusion_cell_for_sugar(sugar_tok, instance, offset)
+        if cell is None:
+            return False
+        self._emit_fused_native_cell(cell, tok)
+        self._tokens.advance_by(2)
+        return True
+
+    def _try_dynamic_canonical_fusion(
+        self, tok: Token, offset: int, lookahead: list[Token],
+    ) -> bool:
+        if len(lookahead) < 2:
+            return False
+        plus_tok, op_tok = lookahead[0], lookahead[1]
+        if not self._fusion_is_plus(plus_tok):
+            return False
+        cell = self._fusion_offset_cell_for_op(op_tok, offset)
+        if cell is None:
+            return False
+        self._emit_fused_native_cell(cell, tok)
+        self._tokens.advance_by(2)
+        return True
+
+    def _try_dynamic_sugar_fusion(
+        self, tok: Token, offset: int, lookahead: list[Token],
+    ) -> bool:
+        if len(lookahead) < 1:
+            return False
+        sugar_tok = lookahead[0]
+        cell = self._fusion_offset_cell_for_sugar(sugar_tok, offset)
+        if cell is None:
+            return False
+        self._emit_fused_native_cell(cell, tok)
+        self._tokens.advance_by(1)
+        return True
+
+    def _fusion_instance_word(self, name: str) -> Word | None:
+        word = self.words.get(name)
+        if word is None:
+            return None
+        if word.kind != "variable" or word.data_address is None:
+            return None
+        if word.bank is not None:
+            return None
+        return word
+
+    def _fusion_compile_time_value(self, tok: Token) -> int | None:
+        if tok.kind == "number":
+            return parse_number(tok.value)
+        if tok.kind != "word":
+            return None
+        word = self.words.get(tok.value)
+        if word is None:
+            return None
+        if word.kind in ("constant", "struct") and word.value is not None:
+            return word.value
+        return None
+
+    def _fusion_is_plus(self, tok: Token) -> bool:
+        return tok.kind == "word" and tok.value == "+"
+
+    _FUSION_SUGAR_TO_OP = {">@": "@", ">!": "!", ">c@": "c@", ">c!": "c!"}
+
+    def _fusion_cell_for_op(
+        self, op_tok: Token, instance: Word, offset: int,
+    ) -> NativeFetch | NativeStore | None:
+        if op_tok.kind != "word":
+            return None
+        op = op_tok.value
+        if op not in ("@", "!", "c@", "c!"):
+            return None
+        return self._build_static_native_cell(op, instance, offset)
+
+    def _fusion_cell_for_sugar(
+        self, sugar_tok: Token, instance: Word, offset: int,
+    ) -> NativeFetch | NativeStore | None:
+        if sugar_tok.kind != "word":
+            return None
+        op = self._FUSION_SUGAR_TO_OP.get(sugar_tok.value)
+        if op is None:
+            return None
+        return self._build_static_native_cell(op, instance, offset)
+
+    def _build_static_native_cell(
+        self, op: str, instance: Word, offset: int,
+    ) -> NativeFetch | NativeStore:
+        address = (instance.data_address + offset) & 0xFFFF
+        width = "byte" if op.startswith("c") else "cell"
+        if op.endswith("@"):
+            return NativeFetch(
+                address=address, width=width, target=instance.name, offset=offset,
+            )
+        return NativeStore(
+            address=address, width=width, target=instance.name, offset=offset,
+        )
+
+    def _fusion_offset_cell_for_op(
+        self, op_tok: Token, offset: int,
+    ) -> NativeOffsetFetch | NativeOffsetStore | None:
+        if op_tok.kind != "word":
+            return None
+        op = op_tok.value
+        if op not in ("@", "!", "c@", "c!"):
+            return None
+        return self._build_offset_native_cell(op, offset)
+
+    def _fusion_offset_cell_for_sugar(
+        self, sugar_tok: Token, offset: int,
+    ) -> NativeOffsetFetch | NativeOffsetStore | None:
+        if sugar_tok.kind != "word":
+            return None
+        op = self._FUSION_SUGAR_TO_OP.get(sugar_tok.value)
+        if op is None:
+            return None
+        return self._build_offset_native_cell(op, offset)
+
+    def _build_offset_native_cell(
+        self, op: str, offset: int,
+    ) -> NativeOffsetFetch | NativeOffsetStore:
+        width = "byte" if op.startswith("c") else "cell"
+        offset_value = offset & 0xFFFF
+        if op.endswith("@"):
+            return NativeOffsetFetch(offset=offset_value, width=width)
+        return NativeOffsetStore(offset=offset_value, width=width)
+
+    def _emit_fused_native_cell(
+        self,
+        cell: NativeFetch | NativeStore | NativeOffsetFetch | NativeOffsetStore,
+        tok: Token,
+    ) -> None:
+        primname = self._fusion_primitive_name(cell)
+        prim = self.words[primname]
+        self._emit_cell(prim.address, tok)
+        operand = (
+            cell.address if isinstance(cell, (NativeFetch, NativeStore))
+            else cell.offset
+        )
+        self._emit_cell(operand, tok)
+        self._append_ir(cell)
+
+    def _fusion_primitive_name(
+        self,
+        cell: NativeFetch | NativeStore | NativeOffsetFetch | NativeOffsetStore,
+    ) -> str:
+        if isinstance(cell, NativeFetch):
+            return "(@abs)" if cell.width == "cell" else "(c@abs)"
+        if isinstance(cell, NativeStore):
+            return "(!abs)" if cell.width == "cell" else "(c!abs)"
+        if isinstance(cell, NativeOffsetFetch):
+            return "(@off)" if cell.width == "cell" else "(c@off)"
+        return "(!off)" if cell.width == "cell" else "(c!off)"
+
 
     def _peephole_window(self, first_tok: Token) -> list[PatternElement | None]:
         span = max_pattern_length(self._peephole_rules)
@@ -651,6 +862,7 @@ class Compiler:
         code_addr = self._emit_pusher(value)
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="constant",
+            value=value,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
         )
@@ -662,6 +874,50 @@ class Compiler:
         self.words[name_tok.value] = Word(
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
+            source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
+        )
+
+    @directive("--")
+    def _directive_field(self, _compiler: Compiler, tok: Token) -> None:
+        size = self._host_pop(tok)
+        offset = self._host_pop(tok)
+        name_tok = self._next_token(tok)
+        self._define_literal_word(name_tok, offset, kind="constant")
+        self._host_stack.append(offset + size)
+
+    @directive("struct")
+    def _directive_struct(self, _compiler: Compiler, tok: Token) -> None:
+        size = self._host_pop(tok)
+        name_tok = self._next_token(tok)
+        self._define_literal_word(name_tok, size, kind="struct")
+
+    @directive("record")
+    def _directive_record(self, _compiler: Compiler, tok: Token) -> None:
+        size = self._host_pop(tok)
+        name_tok = self._next_token(tok)
+        code_addr, data_addr = self._emit_variable_shim()
+        self.asm.code.extend(b"\x00" * size)
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=code_addr, kind="variable",
+            data_address=data_addr,
+            source_file=name_tok.source, source_line=name_tok.line,
+            bank=self._active_bank,
+        )
+
+    def _define_literal_word(
+        self, name_tok: Token, value: int, *, kind: str,
+    ) -> None:
+        def action(_compiler: Compiler, action_tok: Token) -> None:
+            if self.state == "interpret":
+                self._host_stack.append(value)
+            else:
+                self._compile_literal(value, action_tok)
+
+        self.words[name_tok.value] = Word(
+            name=name_tok.value, address=0, kind=kind,
+            value=value,
+            immediate=True, compile_action=action,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
         )

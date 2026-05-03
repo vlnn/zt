@@ -805,6 +805,137 @@ def create_c_store(a: Asm) -> None:
     a.dispatch()
 
 
+def create_fetch_abs(a: Asm) -> None:
+    """`(@abs) ( -- value )` — fetch a cell from an absolute address baked
+    into the next two bytes of the threaded body. Internal helper used by
+    Phase 5 fusion; not normally written in source."""
+    a.label("FETCH_ABS")
+    a.alias("(@abs)", "FETCH_ABS")
+    a.push_hl()
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.ex_de_hl()
+    a.ld_e_ind_hl()
+    a.inc_hl()
+    a.ld_d_ind_hl()
+    a.ex_de_hl()
+    a.dispatch()
+
+
+def create_store_abs(a: Asm) -> None:
+    """`(!abs) ( value -- )` — store value to absolute address baked inline."""
+    a.label("STORE_ABS")
+    a.alias("(!abs)", "STORE_ABS")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.ex_de_hl()
+    a.ld_ind_hl_e()
+    a.inc_hl()
+    a.ld_ind_hl_d()
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_c_fetch_abs(a: Asm) -> None:
+    """`(c@abs) ( -- byte )` — fetch a byte from absolute address inline,
+    zero-extended to a cell."""
+    a.label("C_FETCH_ABS")
+    a.alias("(c@abs)", "C_FETCH_ABS")
+    a.push_hl()
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.ex_de_hl()
+    a.ld_l_ind_hl()
+    a.ld_h_n(0)
+    a.dispatch()
+
+
+def create_c_store_abs(a: Asm) -> None:
+    """`(c!abs) ( value -- )` — store low byte of value to absolute address."""
+    a.label("C_STORE_ABS")
+    a.alias("(c!abs)", "C_STORE_ABS")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.ld_a_l()
+    a.ld_ind_de_a()
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_fetch_off(a: Asm) -> None:
+    """`(@off) ( addr -- value )` — fetch a cell from `addr + offset` where
+    offset is baked into the next two bytes of the threaded body. Used by
+    Phase 5c dynamic-instance fusion (e.g. inside accessor colons)."""
+    a.label("FETCH_OFF")
+    a.alias("(@off)", "FETCH_OFF")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.add_hl_de()
+    a.ld_e_ind_hl()
+    a.inc_hl()
+    a.ld_d_ind_hl()
+    a.ex_de_hl()
+    a.dispatch()
+
+
+def create_store_off(a: Asm) -> None:
+    """`(!off) ( value addr -- )` — store value to `addr + offset` where
+    offset is baked inline."""
+    a.label("STORE_OFF")
+    a.alias("(!off)", "STORE_OFF")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.add_hl_de()
+    a.pop_de()
+    a.ld_ind_hl_e()
+    a.inc_hl()
+    a.ld_ind_hl_d()
+    a.pop_hl()
+    a.dispatch()
+
+
+def create_c_fetch_off(a: Asm) -> None:
+    """`(c@off) ( addr -- byte )` — fetch a byte from `addr + offset`,
+    zero-extended to a cell."""
+    a.label("C_FETCH_OFF")
+    a.alias("(c@off)", "C_FETCH_OFF")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.add_hl_de()
+    a.ld_l_ind_hl()
+    a.ld_h_n(0)
+    a.dispatch()
+
+
+def create_c_store_off(a: Asm) -> None:
+    """`(c!off) ( value addr -- )` — store low byte of value to `addr + offset`."""
+    a.label("C_STORE_OFF")
+    a.alias("(c!off)", "C_STORE_OFF")
+    a.ld_e_ix(0)
+    a.ld_d_ix(1)
+    a.inc_ix()
+    a.inc_ix()
+    a.add_hl_de()
+    a.pop_de()
+    a.ld_ind_hl_e()
+    a.pop_hl()
+    a.dispatch()
+
+
 def create_plus_store(a: Asm) -> None:
     """`+! ( x addr -- )` — add x to the cell at addr."""
     a.label("PLUS_STORE")
@@ -1815,6 +1946,10 @@ PRIMITIVES = [
     create_fetch, create_store,
     create_dup_fetch,
     create_c_fetch, create_c_store,
+    create_fetch_abs, create_store_abs,
+    create_c_fetch_abs, create_c_store_abs,
+    create_fetch_off, create_store_off,
+    create_c_fetch_off, create_c_store_off,
     create_plus_store,
     create_cmove, create_fill,
     create_lit, create_branch, create_zbranch,
