@@ -65,15 +65,21 @@ STRUCT /boss
 \ no DOCOL, no per-cell NEXT dispatch, no offset arithmetic at runtime.
 
 : setup-actors
-    100 hero   .x  >!     50 hero   .y  >!
-    100 hero   .hp >c!    20 hero   .mp >c!
+  100 hero  .x  >!
+  50 hero   .y  >!
+  250 hero  .hp >c!
+  120 hero  .mp >c!
 
-     50 goblin .x  >!     60 goblin .y  >!
-     30 goblin .hp >c!     0 goblin .mp >c!
+  50 goblin .x  >!
+  60 goblin .y  >!
+  30 goblin .hp >c!
+  0 goblin .mp >c!
 
-    200 troll  .x  >!    150 troll  .y  >!
-     80 troll  .hp >c!     0 troll  .mp >c!
-      5 troll  .rage >!  ;
+  200 troll  .x  >!
+  150 troll  .y  >!
+  80 troll  .hp >c!
+  0 troll  .mp >c!
+  5 troll  .rage >!  ;
 
 
 \ ── Combat round mixes static and dynamic fusion ─────────────────────────

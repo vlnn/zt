@@ -15,13 +15,20 @@
 \                                          --map build/structs.map
 
 require app/menagerie.fs
+require ../stdlib/input.fs
 
-: main
-    setup-actors
+: tick
     fight-one-round
     print-results
-    \ Leave [troll-hp, goblin-hp, hero-hp] on the data stack for the test.
-    troll  actor-hp
-    goblin actor-hp
-    hero   actor-hp
-    halt ;
+;
+
+: main
+  setup-actors
+  [TIMES] 5 tick
+   \ Leave [troll-hp, goblin-hp, hero-hp] on the data stack for the test.
+   ." GAME OVER"
+   troll  actor-hp
+   goblin actor-hp
+   hero   actor-hp
+   halt
+;

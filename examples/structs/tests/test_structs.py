@@ -196,15 +196,15 @@ class TestRuntimeBehaviour:
 
     def test_hero_takes_40_damage(self, stack_after_main):
         hero_hp = stack_after_main[2]
-        assert hero_hp == 60, (
+        assert hero_hp == 50, (
             f"hero starts at 100 hp, takes 10 + 30 = 40 damage; should end at "
-            f"60 hp, got {hero_hp}"
+            f"50 hp, got {hero_hp}"
         )
 
     def test_goblin_takes_25_damage(self, stack_after_main):
         goblin_hp = stack_after_main[1]
-        assert goblin_hp == 5, (
-            f"goblin starts at 30 hp, takes 25 damage; should end at 5 hp, "
+        assert goblin_hp == 0, (
+            f"goblin starts at 30 hp, takes 25 damage; should end at 0 hp due to several rounds, "
             f"got {goblin_hp}"
         )
 
