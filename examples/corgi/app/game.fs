@@ -3,39 +3,7 @@ require world.fs
 
 variable game-over
 
-: kitchen-desc
-    ." You are in your warm kitchen." cr
-    ." Your bowl smells faintly of dinner." cr
-    ." A bright hallway lies to the NORTH." cr ;
-
-: hallway-desc
-    ." A sunny hallway." cr
-    ." The kitchen is to the SOUTH." cr
-    ." The front door stands open NORTH to the garden." cr ;
-
-: garden-desc
-    ." Wonderful, wonderful grass!" cr
-    ." The hallway is back SOUTH." cr
-    ." A gap in the fence leads NORTH to the road." cr ;
-
-: road-desc
-    ." A quiet country road." cr
-    ." The garden is back SOUTH." cr
-    ." An old WELL stands EAST in a misty field." cr ;
-
-: well-desc
-    ." A deep, dark, scary well." cr
-    ." You can hear faint whimpering far below." cr
-    ." The road is back to the WEST." cr ;
-
-: describe-room
-    here-room @ {
-        kitchen kitchen-desc
-        hallway hallway-desc
-        garden  garden-desc
-        road    road-desc
-        well-desc
-    } ;
+: describe-room  here-room @ .description >@ execute ;
 
 : bone-name    ." bone" ;
 : stick-name   ." stick" ;
@@ -49,21 +17,21 @@ create item-printers
 : announce-here  ( id -- )
     ." There is a " print-item-name ." here." cr ;
 
+: print-with-space  ( id -- )  print-item-name space ;
+
+' announce-here    constant xt-announce-here
+' print-with-space constant xt-print-with-space
+
 : list-items-here
-    n-items 0 do
-        i here? if i announce-here then
-    loop ;
+    here-room @ room-items@  xt-announce-here each-bit ;
 
 : list-inventory
     ." You are carrying: "
-    0
-    n-items 0 do
-        i carrying? if
-            i print-item-name space
-            1+
-        then
-    loop
-    0= if ." nothing." cr else cr then ;
+    carried-mask c@ dup 0= if
+        drop ." nothing."
+    else
+        xt-print-with-space each-bit
+    then cr ;
 
 : look-here
     describe-room
@@ -209,15 +177,9 @@ variable show-inv?
 : do-south      dir-s try-go ;
 : do-west       dir-w try-go ;
 
-: pick-here     ( -- id|-1 )
-    n-items 0 do
-        i here? if i unloop exit then
-    loop -1 ;
+: pick-here     ( -- id|-1 )  here-room @ room-items@ first-bit ;
 
-: pick-carried  ( -- id|-1 )
-    n-items 0 do
-        i carrying? if i unloop exit then
-    loop -1 ;
+: pick-carried  ( -- id|-1 )  carried-mask c@ first-bit ;
 
 : do-take
     pick-here

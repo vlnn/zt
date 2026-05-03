@@ -46,9 +46,13 @@ class TestCompiles:
     @pytest.mark.parametrize("word", [
         "kitchen", "hallway", "garden", "road", "well",
         "bone", "stick", "ball", "carried",
-        "exits-table", "item-room", "here-room",
+        "here-room", "carried-mask",
+        "/room", ".exits", ".items", ".description",
+        "rooms-list", "each-room",
         "exit-of", "blocked?", "carrying?", "here?", "have-stick?",
+        "room-has?",
         "place-items", "init-exits", "connect",
+        "item-room@", "item-room!",
     ])
     def test_world_words_defined(self, built_compiler, word):
         assert word in built_compiler.words, (
@@ -77,13 +81,31 @@ class TestCompiles:
         )
 
     @pytest.mark.parametrize("name", [
-        "kitchen", "hallway", "garden", "road", "well",
         "bone", "stick", "ball", "carried",
+        "dir-n", "dir-s", "dir-e", "dir-w",
+        ".exits", ".items", ".description",
         "msg-welcome", "msg-no-exit", "msg-took",
     ])
     def test_named_constants_have_constant_kind(self, built_compiler, name):
         assert built_compiler.words[name].kind == "constant", (
             f"{name} should be a constant"
+        )
+
+    @pytest.mark.parametrize("name", [
+        "kitchen", "hallway", "garden", "road", "well",
+        "rooms-list",
+    ])
+    def test_rooms_are_variables(self, built_compiler, name):
+        assert built_compiler.words[name].kind == "variable", (
+            f"{name} should be a record (variable kind) holding a /room"
+        )
+
+    def test_room_struct_size_is_eleven_bytes(self, built_compiler):
+        assert built_compiler.words["/room"].kind == "struct", (
+            "/room should be defined by STRUCT"
+        )
+        assert built_compiler.words["/room"].value == 11, (
+            "/room should occupy 11 bytes: 8 for .exits + 1 for .items + 2 for .description"
         )
 
 
