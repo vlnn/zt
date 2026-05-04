@@ -14,8 +14,10 @@ defined for fixup resolution.
 from __future__ import annotations
 
 from zt.assemble.asm import Asm
+from zt.assemble.primitive_registry import primitive
 
 
+@primitive
 def create_lock_sprites(a: Asm) -> None:
     """`LOCK-SPRITES ( -- )` — disable interrupts before a batch of sprite blits."""
     a.label("LOCK_SPRITES")
@@ -24,6 +26,7 @@ def create_lock_sprites(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_unlock_sprites(a: Asm) -> None:
     """`UNLOCK-SPRITES ( -- )` — re-enable interrupts after sprite blits."""
     a.label("UNLOCK_SPRITES")
@@ -75,6 +78,7 @@ def _emit_screen_addr_from_y_x(a: Asm) -> None:
     a.ld_l_a()
 
 
+@primitive
 def create_blit8(a: Asm) -> None:
     """`BLIT8 ( src col row -- )` — char-aligned BW 8x8 blit via SP-stream.
 
@@ -114,6 +118,7 @@ def create_blit8(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_blit8c(a: Asm) -> None:
     """`BLIT8C ( src attr col row -- )` — char-aligned colored 8x8 blit.
 
@@ -178,6 +183,7 @@ def _emit_blit8x_body(a: Asm, label_prefix: str) -> None:
     a.ld_ind_hl_b()
 
 
+@primitive
 def create_blit8x(a: Asm) -> None:
     """`BLIT8X ( shifted x y -- )` — pixel-aligned BW 8x8 blit, pre-shifted source.
 
@@ -232,6 +238,7 @@ def _emit_attr_addr_for_xc(a: Asm, dst_label: str) -> None:
     a.ld_l_a()
 
 
+@primitive
 def create_blit8xc(a: Asm) -> None:
     """`BLIT8XC ( shifted attr x y -- )` — pixel-aligned colored 8x8 blit.
 
@@ -295,6 +302,7 @@ def create_blit8xc(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_multi_blit(a: Asm) -> None:
     """`MULTI-BLIT ( table x y -- )` — composite sprite from a table of triples.
 
@@ -361,6 +369,7 @@ def create_multi_blit(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_sprite_scratch(a: Asm) -> None:
     """Reserve 1- and 2-byte scratch slots used by sprite primitives."""
     a.label("_spr_sp")
@@ -379,12 +388,3 @@ def create_sprite_scratch(a: Asm) -> None:
     a.label("_spr_table_ptr")
     a.byte(0)
     a.byte(0)
-
-
-SPRITE_PRIMITIVES = [
-    create_lock_sprites, create_unlock_sprites,
-    create_blit8, create_blit8c,
-    create_blit8x, create_blit8xc,
-    create_multi_blit,
-    create_sprite_scratch,
-]

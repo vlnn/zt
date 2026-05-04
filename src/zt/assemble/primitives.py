@@ -4,7 +4,7 @@ Hand-written Z80 bodies for all Forth primitives (`DUP`, `DROP`, `+`, `@`, `BRAN
 from __future__ import annotations
 
 from zt.assemble.asm import Asm
-from zt.assemble.sprite_primitives import SPRITE_PRIMITIVES
+from zt.assemble.primitive_registry import PRIMITIVES, primitive
 
 SPECTRUM_BORDER_PORT = 0xFE
 SPECTRUM_KEYBOARD_PORT_LOW = 0xFE
@@ -16,12 +16,14 @@ PAGE_MASK = 0x07
 UPPER_MASK = 0xF8
 
 
+@primitive
 def create_next(a: Asm) -> None:
     """Emit `NEXT` — the threaded-interpreter dispatcher targeted by every primitive tail."""
     a.label("NEXT")
     a.emit_next_body()
 
 
+@primitive
 def create_docol(a: Asm) -> None:
     """Emit `DOCOL` — the runtime entry prologue for every colon definition."""
     a.label("DOCOL")
@@ -34,6 +36,7 @@ def create_docol(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_exit(a: Asm) -> None:
     """`EXIT ( -- )` — pop the return stack into IX and return to the caller's threaded context."""
     a.label("EXIT")
@@ -47,6 +50,32 @@ def create_exit(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
+def create_execute(a: Asm) -> None:
+    """`EXECUTE ( xt -- )` — invoke the word at xt; consumes xt and runs the
+    target's body, then returns to the caller's threaded context.
+
+    Reuses the engine's `PUSH; RET` dispatch idiom: place xt on the Z80 stack
+    and `RET` to it. Works for primitives (jumps to their entry), colon words
+    (jumps to their `CALL DOCOL` prologue), and constants (jumps to the small
+    pusher). `IX` is left untouched so the threaded interpreter resumes at the
+    cell after EXECUTE in the caller.
+
+    Bytes: EB E1 D5 C9 (four total).
+
+    Note: not inlinable inside `::` definitions — its `RET` is an indirect call
+    rather than the dispatch tail the splicer strips. The compiler raises a
+    CompileError if EXECUTE appears in a `::` body (see `_first_non_inlinable_cell`).
+    """
+    a.label("EXECUTE")
+    a.alias("execute", "EXECUTE")
+    a.ex_de_hl()
+    a.pop_hl()
+    a.push_de()
+    a.ret()
+
+
+@primitive
 def create_dup(a: Asm) -> None:
     """`DUP ( x -- x x )`"""
     a.label("DUP")
@@ -55,6 +84,7 @@ def create_dup(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_drop(a: Asm) -> None:
     """`DROP ( x -- )`"""
     a.label("DROP")
@@ -63,6 +93,7 @@ def create_drop(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_swap(a: Asm) -> None:
     """`SWAP ( x1 x2 -- x2 x1 )`"""
     a.label("SWAP")
@@ -71,6 +102,7 @@ def create_swap(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_over(a: Asm) -> None:
     """`OVER ( x1 x2 -- x1 x2 x1 )`"""
     a.label("OVER")
@@ -82,6 +114,7 @@ def create_over(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_rot(a: Asm) -> None:
     """`ROT ( x1 x2 x3 -- x2 x3 x1 )`"""
     a.label("ROT")
@@ -95,6 +128,7 @@ def create_rot(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_nip(a: Asm) -> None:
     """`NIP ( x1 x2 -- x2 )`"""
     a.label("NIP")
@@ -103,6 +137,7 @@ def create_nip(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_tuck(a: Asm) -> None:
     """`TUCK ( x1 x2 -- x2 x1 x2 )`"""
     a.label("TUCK")
@@ -113,6 +148,7 @@ def create_tuck(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_2dup(a: Asm) -> None:
     """`2DUP ( x1 x2 -- x1 x2 x1 x2 )`"""
     a.label("2DUP")
@@ -124,6 +160,7 @@ def create_2dup(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_2drop(a: Asm) -> None:
     """`2DROP ( x1 x2 -- )`"""
     a.label("2DROP")
@@ -133,6 +170,7 @@ def create_2drop(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_2swap(a: Asm) -> None:
     """`2SWAP ( x1 x2 x3 x4 -- x3 x4 x1 x2 )`"""
     a.label("2SWAP")
@@ -148,6 +186,7 @@ def create_2swap(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_to_r(a: Asm) -> None:
     """`>R ( x -- ) ( R: -- x )` — move TOS to the return stack."""
     a.label(">R")
@@ -160,6 +199,7 @@ def create_to_r(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_r_from(a: Asm) -> None:
     """`R> ( -- x ) ( R: x -- )` — pull TOS from the return stack."""
     a.label("R>")
@@ -172,6 +212,7 @@ def create_r_from(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_r_fetch(a: Asm) -> None:
     """`R@ ( -- x ) ( R: x -- x )` — copy the top of the return stack."""
     a.label("R@")
@@ -182,6 +223,7 @@ def create_r_fetch(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_plus(a: Asm) -> None:
     """`+ ( x1 x2 -- x1+x2 )`"""
     a.label("PLUS")
@@ -191,6 +233,7 @@ def create_plus(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_minus(a: Asm) -> None:
     """`- ( x1 x2 -- x1-x2 )`"""
     a.label("MINUS")
@@ -202,6 +245,7 @@ def create_minus(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_one_plus(a: Asm) -> None:
     """`1+ ( x -- x+1 )`"""
     a.label("1+")
@@ -209,6 +253,7 @@ def create_one_plus(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_one_minus(a: Asm) -> None:
     """`1- ( x -- x-1 )`"""
     a.label("1-")
@@ -216,6 +261,7 @@ def create_one_minus(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_two_star(a: Asm) -> None:
     """`2* ( x -- x*2 )`"""
     a.label("2*")
@@ -223,6 +269,7 @@ def create_two_star(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_two_slash(a: Asm) -> None:
     """`2/ ( x -- x/2 )` — arithmetic shift right by one."""
     a.label("2/")
@@ -231,6 +278,9 @@ def create_two_slash(a: Asm) -> None:
     a.dispatch()
 
 
+
+
+@primitive
 def create_zero(a: Asm) -> None:
     """`ZERO ( -- 0 )`"""
     a.label("ZERO")
@@ -240,6 +290,7 @@ def create_zero(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_one(a: Asm) -> None:
     """`ONE ( -- 1 )`"""
     a.label("ONE")
@@ -249,6 +300,7 @@ def create_one(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_negate(a: Asm) -> None:
     """`NEGATE ( x -- -x )` — two's-complement negation."""
     a.label("NEGATE")
@@ -262,6 +314,7 @@ def create_negate(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_abs(a: Asm) -> None:
     """`ABS ( x -- |x| )`"""
     a.label("ABS")
@@ -278,6 +331,7 @@ def create_abs(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_min(a: Asm) -> None:
     """`MIN ( x1 x2 -- min )` — signed minimum.
 
@@ -298,6 +352,7 @@ def create_min(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_max(a: Asm) -> None:
     """`MAX ( x1 x2 -- max )` — signed maximum."""
     a.label("MAX")
@@ -312,6 +367,7 @@ def create_max(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_and(a: Asm) -> None:
     """`AND ( x1 x2 -- x1&x2 )` — bitwise AND."""
     a.label("AND")
@@ -326,6 +382,7 @@ def create_and(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_or(a: Asm) -> None:
     """`OR ( x1 x2 -- x1|x2 )` — bitwise OR."""
     a.label("OR")
@@ -340,6 +397,7 @@ def create_or(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_xor(a: Asm) -> None:
     """`XOR ( x1 x2 -- x1^x2 )` — bitwise exclusive-OR."""
     a.label("XOR")
@@ -354,6 +412,7 @@ def create_xor(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_invert(a: Asm) -> None:
     """`INVERT ( x -- ~x )` — bitwise one's complement."""
     a.label("INVERT")
@@ -367,6 +426,7 @@ def create_invert(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_lshift(a: Asm) -> None:
     """`LSHIFT ( x u -- x<<u )` — logical shift left by u bits."""
     a.label("LSHIFT")
@@ -384,6 +444,7 @@ def create_lshift(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_rshift(a: Asm) -> None:
     """`RSHIFT ( x u -- x>>u )` — logical shift right by u bits."""
     a.label("RSHIFT")
@@ -402,6 +463,7 @@ def create_rshift(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_unpack_nibbles(a: Asm) -> None:
     """`UNPACK-NIBBLES ( byte -- hi lo )` — split low byte of TOS into two
     unsigned nibbles 0..15; lo nibble (bits 0-3) ends on top."""
@@ -423,6 +485,7 @@ def create_unpack_nibbles(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_unpack_2bits(a: Asm) -> None:
     """`UNPACK-2BITS ( byte -- u3 u2 u1 u0 )` — split low byte of TOS into
     four unsigned 2-bit fields 0..3; u0 (bits 0-1) ends on top, u3 (bits 6-7)
@@ -458,6 +521,7 @@ def create_unpack_2bits(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_2bit_muladd(a: Asm) -> None:
     """`2BITMULADD ( raw act addr -- )` — z80ai signed 2-bit multiply-and-add.
     Maps `raw` 0..3 to weight {-2,-1,0,+1} (via `SUB 2`) and applies
@@ -507,6 +571,7 @@ def create_2bit_muladd(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_2bit_dot_plus_store(a: Asm) -> None:
     """`2BIT-DOT+! ( wptr aptr count addr -- )` — accumulating dot product
     where weights are 2-bit signed values mapped {0,1,2,3} → {-2,-1,0,+1}
@@ -654,6 +719,7 @@ def _emit_inlined_muladd(a: Asm, sfx: str) -> None:
     a.label(f"{sfx}_done")
 
 
+@primitive
 def create_equals(a: Asm) -> None:
     """`= ( x1 x2 -- flag )` — true (-1) if equal, false (0) otherwise."""
     a.label("EQUALS")
@@ -668,6 +734,7 @@ def create_equals(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_not_equals(a: Asm) -> None:
     """`<> ( x1 x2 -- flag )` — true if the two values differ."""
     a.label("NOT_EQUALS")
@@ -682,6 +749,7 @@ def create_not_equals(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_less_than(a: Asm) -> None:
     """`< ( x1 x2 -- flag )` — signed less-than."""
     a.label("LESS_THAN")
@@ -697,6 +765,7 @@ def create_less_than(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_greater_than(a: Asm) -> None:
     """`> ( x1 x2 -- flag )` — signed greater-than."""
     a.label("GREATER_THAN")
@@ -711,6 +780,7 @@ def create_greater_than(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_zero_equals(a: Asm) -> None:
     """`0= ( x -- flag )` — true if x is zero."""
     a.label("ZERO_EQUALS")
@@ -724,6 +794,7 @@ def create_zero_equals(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_zero_less(a: Asm) -> None:
     """`0< ( x -- flag )` — true if x is negative."""
     a.label("ZERO_LESS")
@@ -736,6 +807,7 @@ def create_zero_less(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_u_less(a: Asm) -> None:
     """`U< ( u1 u2 -- flag )` — unsigned less-than."""
     a.label("U_LESS")
@@ -751,6 +823,7 @@ def create_u_less(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_fetch(a: Asm) -> None:
     """`@ ( addr -- x )` — read a 16-bit cell from memory."""
     a.label("FETCH")
@@ -762,18 +835,9 @@ def create_fetch(a: Asm) -> None:
     a.dispatch()
 
 
-def create_dup_fetch(a: Asm) -> None:
-    """`DUP@ ( addr -- addr x )` — fused `dup` and `@`, a common idiom."""
-    a.label("DUP_FETCH")
-    a.alias("dup@", "DUP_FETCH")
-    a.push_hl()
-    a.ld_e_ind_hl()
-    a.inc_hl()
-    a.ld_d_ind_hl()
-    a.ex_de_hl()
-    a.dispatch()
 
 
+@primitive
 def create_store(a: Asm) -> None:
     """`! ( x addr -- )` — write a 16-bit cell to memory."""
     a.label("STORE")
@@ -786,6 +850,20 @@ def create_store(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
+def create_dup_fetch(a: Asm) -> None:
+    """`DUP@ ( addr -- addr x )` — fused `dup` and `@`, a common idiom."""
+    a.label("DUP_FETCH")
+    a.alias("dup@", "DUP_FETCH")
+    a.push_hl()
+    a.ld_e_ind_hl()
+    a.inc_hl()
+    a.ld_d_ind_hl()
+    a.ex_de_hl()
+    a.dispatch()
+
+
+@primitive
 def create_c_fetch(a: Asm) -> None:
     """`C@ ( addr -- c )` — read a byte from memory, zero-extended to a cell."""
     a.label("C_FETCH")
@@ -795,6 +873,7 @@ def create_c_fetch(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_c_store(a: Asm) -> None:
     """`C! ( c addr -- )` — write the low byte of c to memory."""
     a.label("C_STORE")
@@ -805,6 +884,7 @@ def create_c_store(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_fetch_abs(a: Asm) -> None:
     """`(@abs) ( -- value )` — fetch a cell from an absolute address baked
     into the next two bytes of the threaded body. Internal helper used by
@@ -824,6 +904,7 @@ def create_fetch_abs(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_store_abs(a: Asm) -> None:
     """`(!abs) ( value -- )` — store value to absolute address baked inline."""
     a.label("STORE_ABS")
@@ -840,6 +921,7 @@ def create_store_abs(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_c_fetch_abs(a: Asm) -> None:
     """`(c@abs) ( -- byte )` — fetch a byte from absolute address inline,
     zero-extended to a cell."""
@@ -856,6 +938,7 @@ def create_c_fetch_abs(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_c_store_abs(a: Asm) -> None:
     """`(c!abs) ( value -- )` — store low byte of value to absolute address."""
     a.label("C_STORE_ABS")
@@ -870,6 +953,7 @@ def create_c_store_abs(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_fetch_off(a: Asm) -> None:
     """`(@off) ( addr -- value )` — fetch a cell from `addr + offset` where
     offset is baked into the next two bytes of the threaded body. Used by
@@ -888,6 +972,7 @@ def create_fetch_off(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_store_off(a: Asm) -> None:
     """`(!off) ( value addr -- )` — store value to `addr + offset` where
     offset is baked inline."""
@@ -906,6 +991,7 @@ def create_store_off(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_c_fetch_off(a: Asm) -> None:
     """`(c@off) ( addr -- byte )` — fetch a byte from `addr + offset`,
     zero-extended to a cell."""
@@ -921,6 +1007,7 @@ def create_c_fetch_off(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_c_store_off(a: Asm) -> None:
     """`(c!off) ( value addr -- )` — store low byte of value to `addr + offset`."""
     a.label("C_STORE_OFF")
@@ -936,6 +1023,7 @@ def create_c_store_off(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_plus_store(a: Asm) -> None:
     """`+! ( x addr -- )` — add x to the cell at addr."""
     a.label("PLUS_STORE")
@@ -952,6 +1040,7 @@ def create_plus_store(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_cmove(a: Asm) -> None:
     """`CMOVE ( src dst n -- )` — copy n bytes from src to dst (low-to-high)."""
     a.label("CMOVE")
@@ -969,6 +1058,7 @@ def create_cmove(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_fill(a: Asm) -> None:
     """`FILL ( addr n c -- )` — write byte c to n consecutive addresses starting at addr."""
     a.label("FILL")
@@ -990,6 +1080,7 @@ def create_fill(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_lit(a: Asm) -> None:
     """`LIT` — push the 16-bit cell following the threaded IP and skip past it."""
     a.label("LIT")
@@ -1001,6 +1092,7 @@ def create_lit(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_branch(a: Asm) -> None:
     """`BRANCH` — unconditional threaded jump, using the next inline cell as the target IP."""
     a.label("BRANCH")
@@ -1011,6 +1103,7 @@ def create_branch(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_zbranch(a: Asm) -> None:
     """`0BRANCH` — threaded jump taken when TOS is zero; falls through otherwise."""
     a.label("ZBRANCH")
@@ -1030,6 +1123,7 @@ def create_zbranch(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_do_rt(a: Asm) -> None:
     """Runtime for `DO` — move limit and index from the data stack onto the return stack."""
     a.label("DO_RT")
@@ -1047,6 +1141,7 @@ def create_do_rt(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_loop_rt(a: Asm) -> None:
     """Runtime for `LOOP` — increment the index; branch back unless it has reached the limit."""
     a.label("LOOP_RT")
@@ -1078,6 +1173,7 @@ def create_loop_rt(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_ploop_rt(a: Asm) -> None:
     """Runtime for `+LOOP` — add TOS to the index; branch back unless the limit has been crossed."""
     a.label("PLOOP_RT")
@@ -1116,6 +1212,7 @@ def create_ploop_rt(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_i_index(a: Asm) -> None:
     """`I ( -- n )` — push the innermost loop's current index."""
     a.label("I_INDEX")
@@ -1126,6 +1223,7 @@ def create_i_index(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_j_index(a: Asm) -> None:
     """`J ( -- n )` — push the next-outer loop's current index."""
     a.label("J_INDEX")
@@ -1136,6 +1234,7 @@ def create_j_index(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_unloop(a: Asm) -> None:
     """`UNLOOP ( R: limit idx -- )` — discard the innermost loop frame from the return stack."""
     a.label("UNLOOP")
@@ -1147,12 +1246,14 @@ def create_unloop(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_halt(a: Asm) -> None:
     """`HALT` — emit a Z80 `halt` and fall through (no dispatch, execution stops)."""
     a.label("HALT")
     a.halt()
 
 
+@primitive
 def create_border(a: Asm) -> None:
     """`BORDER ( n -- )` — set the Spectrum border colour via port 0xFE."""
     a.label("BORDER")
@@ -1172,6 +1273,7 @@ def _mul_step(a: Asm, skip_label: str) -> None:
     a.label(skip_label)
 
 
+@primitive
 def create_multiply(a: Asm) -> None:
     """`* ( x1 x2 -- x1*x2 )` — 16-bit by 16-bit multiply (full 16 shift-and-add rounds)."""
     a.label("MULTIPLY")
@@ -1182,6 +1284,52 @@ def create_multiply(a: Asm) -> None:
     a.ld_hl_nn(0)
     for i in range(16):
         _mul_step(a, f"_mul_s{i}")
+    a.dispatch()
+
+
+@primitive
+def create_u_mod_div(a: Asm) -> None:
+    """`U/MOD ( u1 u2 -- rem quot )` — unsigned 16-bit restoring shift-subtract.
+
+    Register allocation during the loop:
+        HL = running remainder (starts at 0)
+        BC = dividend, shifted left every iteration; bits set on successful
+             subtractions form the quotient
+        DE = divisor (constant)
+        A  = loop counter
+
+    Each iteration shifts the BC:HL pair left by one (`sla c; rl b; rl l;
+    rl h`), then trial-subtracts DE from HL.  On success, `inc bc` sets
+    bit 0 of BC — safe because `sla c` left it 0.  On failure, restore HL
+    with `add hl,de`.  This avoids the per-iteration `push hl / pop hl` of
+    the obvious dividend-in-HL formulation.
+    """
+    a.label("U_MOD_DIV")
+    a.alias("u/mod", "U_MOD_DIV")
+    a.pop_de()
+    a.ex_de_hl()
+    a.ld_b_h()
+    a.ld_c_l()
+    a.ld_hl_nn(0)
+    a.ld_a_n(16)
+    a.label("_umod_loop")
+    a.sla_c()
+    a.rl_b()
+    a.rl_l()
+    a.rl_h()
+    a.or_a()
+    a.sbc_hl_de()
+    a.jr_c_to("_umod_failed")
+    a.inc_bc()
+    a.jr_to("_umod_next")
+    a.label("_umod_failed")
+    a.add_hl_de()
+    a.label("_umod_next")
+    a.dec_a()
+    a.jr_nz_to("_umod_loop")
+    a.push_hl()
+    a.ld_h_b()
+    a.ld_l_c()
     a.dispatch()
 
 
@@ -1260,6 +1408,7 @@ def _emit_cr_core_path(a: Asm) -> None:
     a.ret()
 
 
+@primitive
 def create_emit(a: Asm) -> None:
     """`EMIT ( c -- )` — draw character c at the current cursor and advance; CR on c==13."""
     a.label("EMIT")
@@ -1285,6 +1434,7 @@ def create_emit(a: Asm) -> None:
     a.byte(0)
 
 
+@primitive
 def create_type(a: Asm) -> None:
     """`TYPE ( addr n -- )` — emit n characters from the byte string at addr."""
     a.label("TYPE")
@@ -1308,6 +1458,7 @@ def create_type(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_key(a: Asm) -> None:
     """`KEY ( -- c )` — poll the Spectrum keyboard matrix and return one ASCII code (0 if no key)."""
     a.label("KEY")
@@ -1358,6 +1509,7 @@ def create_key(a: Asm) -> None:
         a.byte(byte)
 
 
+@primitive
 def create_key_query(a: Asm) -> None:
     """`KEY? ( -- flag )` — true if any key on the full keyboard is currently pressed."""
     a.label("KEY_QUERY")
@@ -1374,6 +1526,7 @@ def create_key_query(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_key_state(a: Asm) -> None:
     """`KEY-STATE ( c -- flag )` — true if the key with ASCII code c is currently held down."""
     a.label("KEY_STATE")
@@ -1437,51 +1590,9 @@ _SPECTRUM_KEY_TABLE: tuple[int, ...] = (
 )
 
 
-def create_u_mod_div(a: Asm) -> None:
-    """`U/MOD ( u1 u2 -- rem quot )` — unsigned 16-bit restoring shift-subtract.
-
-    Register allocation during the loop:
-        HL = running remainder (starts at 0)
-        BC = dividend, shifted left every iteration; bits set on successful
-             subtractions form the quotient
-        DE = divisor (constant)
-        A  = loop counter
-
-    Each iteration shifts the BC:HL pair left by one (`sla c; rl b; rl l;
-    rl h`), then trial-subtracts DE from HL.  On success, `inc bc` sets
-    bit 0 of BC — safe because `sla c` left it 0.  On failure, restore HL
-    with `add hl,de`.  This avoids the per-iteration `push hl / pop hl` of
-    the obvious dividend-in-HL formulation.
-    """
-    a.label("U_MOD_DIV")
-    a.alias("u/mod", "U_MOD_DIV")
-    a.pop_de()
-    a.ex_de_hl()
-    a.ld_b_h()
-    a.ld_c_l()
-    a.ld_hl_nn(0)
-    a.ld_a_n(16)
-    a.label("_umod_loop")
-    a.sla_c()
-    a.rl_b()
-    a.rl_l()
-    a.rl_h()
-    a.or_a()
-    a.sbc_hl_de()
-    a.jr_c_to("_umod_failed")
-    a.inc_bc()
-    a.jr_to("_umod_next")
-    a.label("_umod_failed")
-    a.add_hl_de()
-    a.label("_umod_next")
-    a.dec_a()
-    a.jr_nz_to("_umod_loop")
-    a.push_hl()
-    a.ld_h_b()
-    a.ld_l_c()
-    a.dispatch()
 
 
+@primitive
 def create_reset_cursor(a: Asm) -> None:
     """`RESET-CURSOR` — zero the EMIT cursor row and column."""
     a.label("RESET_CURSOR")
@@ -1491,6 +1602,7 @@ def create_reset_cursor(a: Asm) -> None:
     a.ld_ind_nn_a("_emit_cursor_col")
     a.dispatch()
 
+@primitive
 def create_scroll_attr(a: Asm) -> None:
     """`SCROLL-ATTR ( dx dy -- )` — shift the Spectrum attribute page by (dx, dy) with row/column wrap."""
     a.label("SCROLL_ATTR")
@@ -1652,6 +1764,7 @@ def create_scroll_attr(a: Asm) -> None:
     for _ in range(32):
         a.byte(0)
 
+@primitive
 def create_at_xy(a: Asm) -> None:
     """`AT-XY ( col row -- )` — move the EMIT cursor to (col, row)."""
     a.label("AT_XY")
@@ -1665,6 +1778,7 @@ def create_at_xy(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_beep(a: Asm) -> None:
     """`BEEP ( cycles period -- )` — square-wave tone on port $FE bit 4.
 
@@ -1706,6 +1820,7 @@ def create_beep(a: Asm) -> None:
     a.byte(0)
 
 
+@primitive
 def create_wait_frame(a: Asm) -> None:
     """`WAIT-FRAME` — block until the Spectrum frame interrupt fires (one-frame vsync)."""
     a.label("WAIT_FRAME")
@@ -1718,6 +1833,7 @@ def create_wait_frame(a: Asm) -> None:
     a.pop_iy()
     a.dispatch()
 
+@primitive
 def create_bank_store(a: Asm) -> None:
     """`BANK! ( n -- )` — page RAM bank (n & 7) into slot 3, preserving upper shadow bits."""
     a.label("BANK!")
@@ -1735,6 +1851,7 @@ def create_bank_store(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_bank_fetch(a: Asm) -> None:
     """`BANK@ ( -- n )` — return the currently paged bank (low 3 bits of the shadow)."""
     a.label("BANK@")
@@ -1747,6 +1864,7 @@ def create_bank_fetch(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_raw_bank_store(a: Asm) -> None:
     """`RAW-BANK! ( n -- )` — write the full byte n to port $7FFD without masking."""
     a.label("RAW-BANK!")
@@ -1759,6 +1877,7 @@ def create_raw_bank_store(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_128k_query(a: Asm) -> None:
     """`128K? ( -- flag )` — detect banking via write-then-observe; destructive to $C000 in banks 0 and 1."""
     a.label("128K?")
@@ -1800,6 +1919,7 @@ def create_128k_query(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_ei(a: Asm) -> None:
     """`EI ( -- )` — enable interrupts; data stack untouched."""
     a.label("EI")
@@ -1808,6 +1928,7 @@ def create_ei(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_di(a: Asm) -> None:
     """`DI ( -- )` — disable interrupts; data stack untouched."""
     a.label("DI")
@@ -1816,6 +1937,7 @@ def create_di(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_im2_shim(a: Asm) -> None:
     """`__im2_shim__` — Z80-level prologue/epilogue around a Forth-level IM 2 handler.
 
@@ -1840,6 +1962,7 @@ def create_im2_shim(a: Asm) -> None:
     a.ret()
 
 
+@primitive
 def create_im2_exit(a: Asm) -> None:
     """`__im2_exit__` — primitive closing the IM 2 shim with EI; RETI.
 
@@ -1858,6 +1981,7 @@ def create_im2_exit(a: Asm) -> None:
     a.reti()
 
 
+@primitive
 def create_im2_thread(a: Asm) -> None:
     """`__im2_thread__` — 4-byte mutable thread driving the IM 2 shim.
 
@@ -1869,6 +1993,7 @@ def create_im2_thread(a: Asm) -> None:
     a.word("__im2_exit__")
 
 
+@primitive
 def create_im2_handler_store(a: Asm) -> None:
     """`IM2-HANDLER! ( xt -- )` — install xt as the colon-level IM 2 handler.
 
@@ -1890,6 +2015,7 @@ def create_im2_handler_store(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_im2_handler_fetch(a: Asm) -> None:
     """`IM2-HANDLER@ ( -- xt )` — return the xt last installed by IM2-HANDLER!."""
     a.label("IM2-HANDLER@")
@@ -1899,6 +2025,7 @@ def create_im2_handler_fetch(a: Asm) -> None:
     a.dispatch()
 
 
+@primitive
 def create_im2_off(a: Asm) -> None:
     """`IM2-OFF ( -- )` — disable interrupts and revert to IM 1; data stack untouched."""
     a.label("IM2-OFF")
@@ -1908,81 +2035,4 @@ def create_im2_off(a: Asm) -> None:
     a.dispatch()
 
 
-def create_execute(a: Asm) -> None:
-    """`EXECUTE ( xt -- )` — invoke the word at xt; consumes xt and runs the
-    target's body, then returns to the caller's threaded context.
-
-    Reuses the engine's `PUSH; RET` dispatch idiom: place xt on the Z80 stack
-    and `RET` to it. Works for primitives (jumps to their entry), colon words
-    (jumps to their `CALL DOCOL` prologue), and constants (jumps to the small
-    pusher). `IX` is left untouched so the threaded interpreter resumes at the
-    cell after EXECUTE in the caller.
-
-    Bytes: EB E1 D5 C9 (four total).
-
-    Note: not inlinable inside `::` definitions — its `RET` is an indirect call
-    rather than the dispatch tail the splicer strips. The compiler raises a
-    CompileError if EXECUTE appears in a `::` body (see `_first_non_inlinable_cell`).
-    """
-    a.label("EXECUTE")
-    a.alias("execute", "EXECUTE")
-    a.ex_de_hl()
-    a.pop_hl()
-    a.push_de()
-    a.ret()
-
-
-
-PRIMITIVES = [
-    create_next, create_docol, create_exit, create_execute,
-    create_dup, create_drop, create_swap, create_over,
-    create_rot, create_nip, create_tuck,
-    create_2dup, create_2drop, create_2swap,
-    create_to_r, create_r_from, create_r_fetch,
-    create_plus, create_minus,
-    create_one_plus, create_one_minus,
-    create_two_star, create_two_slash,
-    create_zero, create_one,
-    create_negate, create_abs,
-    create_min, create_max,
-    create_and, create_or, create_xor, create_invert,
-    create_lshift, create_rshift,
-    create_unpack_nibbles, create_unpack_2bits,
-    create_2bit_muladd,
-    create_2bit_dot_plus_store,
-    create_equals, create_not_equals,
-    create_less_than, create_greater_than,
-    create_zero_equals, create_zero_less,
-    create_u_less,
-    create_fetch, create_store,
-    create_dup_fetch,
-    create_c_fetch, create_c_store,
-    create_fetch_abs, create_store_abs,
-    create_c_fetch_abs, create_c_store_abs,
-    create_fetch_off, create_store_off,
-    create_c_fetch_off, create_c_store_off,
-    create_plus_store,
-    create_cmove, create_fill,
-    create_lit, create_branch, create_zbranch,
-    create_do_rt, create_loop_rt, create_ploop_rt,
-    create_i_index, create_j_index, create_unloop,
-    create_halt, create_border,
-    create_multiply,
-    create_u_mod_div,
-    create_emit,
-    create_type,
-    create_key,
-    create_key_query,
-    create_key_state,
-    create_reset_cursor,
-    create_scroll_attr,
-    create_at_xy,
-    create_beep,
-    create_wait_frame,
-    create_bank_store, create_bank_fetch,
-    create_raw_bank_store, create_128k_query,
-    create_ei, create_di,
-    create_im2_shim, create_im2_exit, create_im2_thread,
-    create_im2_handler_store, create_im2_handler_fetch, create_im2_off,
-    *SPRITE_PRIMITIVES,
-]
+from zt.assemble import sprite_primitives as _sprite_primitives  # noqa: F401, E402
