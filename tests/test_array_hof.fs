@@ -3,10 +3,10 @@ include array-hof.fs
 
 \ -- shared fixtures --
 
-w: ws       10 , 20 , 30 , 40 , ;
+w: ws       10  20  30  40 ;
 w: ws-empty ;
-c: cs       1 c, 2 c, 3 c, 4 c, 5 c, ;
-b: bs       $05 c, ;                      \ 8 bits: 10100000 LSB-first
+c: cs       1  2  3  4  5 ;
+b: bs       1 0 1 0 0 0 0 0 ;             \ 8 bits, LSB-first = $05
 
 variable sink
 
@@ -44,7 +44,7 @@ variable sink
 
 \ -- map: in-place mutation --
 
-w: ws-for-map  1 , 2 , 3 , ;
+w: ws-for-map  1  2  3 ;
 
 : test-map-word-doubles
     ws-for-map ['] dbl map-word
@@ -55,13 +55,13 @@ w: ws-for-map  1 , 2 , 3 , ;
     ws-for-map ['] dbl map-word
     ws-for-map 2 a-word@                           12 assert-eq ;
 
-c: cs-for-map  10 c, 20 c, 30 c, ;
+c: cs-for-map  10  20  30 ;
 
 : test-map-byte-increments
     cs-for-map ['] inc map-byte
     cs-for-map 1 a-byte@                           21 assert-eq ;
 
-b: bs-for-map  $00 c, ;
+b: bs-for-map  0 0 0 0 0 0 0 0 ;
 
 : test-map-bit-inverts-all
     bs-for-map ['] invert-bit map-bit

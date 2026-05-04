@@ -24,7 +24,7 @@ variable game-over
 : stick-name   ." stick" ;
 : ball-name    ." red ball" ;
 
-w: item-printers   ' bone-name , ' stick-name , ' ball-name , ;
+w: item-printers   ' bone-name  ' stick-name  ' ball-name ;
 
 : print-item-name   ( id -- )   item-printers swap a-word@ execute ;
 
@@ -188,19 +188,19 @@ variable show-inv?
     ."   QUIT      stop the game" cr ;
 
 w: msg-printers
-    ' print-welcome     ,
-    ' print-no-exit     ,
-    ' print-too-scary   ,
-    ' print-brave       ,
-    ' print-took        ,
-    ' print-dropped     ,
-    ' print-nothing     ,
-    ' print-empty       ,
-    ' print-bark        ,
-    ' print-help        ,
-    ' print-unknown     ,
-    ' print-quiet       ,
-    ' print-celebrate   ,
+    ' print-welcome
+    ' print-no-exit
+    ' print-too-scary
+    ' print-brave
+    ' print-took
+    ' print-dropped
+    ' print-nothing
+    ' print-empty
+    ' print-bark
+    ' print-help
+    ' print-unknown
+    ' print-quiet
+    ' print-celebrate
 ;
 
 : show-msg   last-msg @  msg-printers swap  a-word@ execute ;
@@ -295,25 +295,25 @@ w: msg-printers
 \ the array value.
 
 c: cmd-keys
-    0      c,
-    key-n  c, key-s c, key-e c, key-w c,
-    key-l  c, key-t c, key-g c,
-    key-d  c,
-    key-i  c,
-    key-b  c,
-    key-h  c, key-?  c,
-    key-q  c,
+    0
+    key-n  key-s  key-e  key-w
+    key-l  key-t  key-g
+    key-d
+    key-i
+    key-b
+    key-h  key-?
+    key-q
 ;
 
 w: cmd-actions
-    ' do-empty       ,
-    ' do-north , ' do-south , ' do-east , ' do-west ,
-    ' do-look  , ' do-take  , ' do-take  ,
-    ' do-drop  ,
-    ' do-inventory   ,
-    ' do-bark        ,
-    ' do-help  , ' do-help  ,
-    ' do-quit        ,
+    ' do-empty
+    ' do-north  ' do-south  ' do-east  ' do-west
+    ' do-look   ' do-take   ' do-take
+    ' do-drop
+    ' do-inventory
+    ' do-bark
+    ' do-help   ' do-help
+    ' do-quit
 ;
 
 variable __cmd-key

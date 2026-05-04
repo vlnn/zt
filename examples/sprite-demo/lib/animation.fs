@@ -81,10 +81,10 @@ require array.fs
 \ trajectories can add it directly to a y coordinate.
 
 c: sine-table
-    $00 c, $04 c, $08 c, $0B c, $0E c, $11 c, $12 c, $14 c,
-    $14 c, $14 c, $12 c, $11 c, $0E c, $0B c, $08 c, $04 c,
-    $00 c, $FC c, $F8 c, $F5 c, $F2 c, $EF c, $EE c, $EC c,
-    $EC c, $EC c, $EE c, $EF c, $F2 c, $F5 c, $F8 c, $FC c,
+    $00 $04 $08 $0B $0E $11 $12 $14
+    $14 $14 $12 $11 $0E $0B $08 $04
+    $00 $FC $F8 $F5 $F2 $EF $EE $EC
+    $EC $EC $EE $EF $F2 $F5 $F8 $FC
 ;
 
 : sine@  ( i -- s16 )

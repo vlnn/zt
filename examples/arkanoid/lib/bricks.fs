@@ -25,7 +25,7 @@ require array.fs
 $07 constant background-attr
 
 create brick-grid 120 allot
-c: row-attrs   $42 c, $46 c, $44 c, $45 c, ;
+c: row-attrs   $42 $46 $44 $45 ;
 
 variable brick-count
 

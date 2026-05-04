@@ -1,9 +1,12 @@
 include test-lib.fs
 include array.fs
 
-w: ws  100 , 200 , 300 , 400 , ;
-c: cs  $A0 c, $B1 c, $C2 c, $D3 c, $E4 c, ;
-b: bs  $55 c, $AA c, $0F c, ;       \ 24 bits: 01010101 10101010 00001111
+w: ws  100  200  300  400 ;
+c: cs  $A0  $B1  $C2  $D3  $E4 ;
+b: bs
+    1 0 1 0 1 0 1 0     \ first byte: $55
+    0 1 0 1 0 1 0 1     \ second byte: $AA
+    1 1 1 1 0 0 0 0 ;   \ third byte: $0F
 
 : test-warray-count       ws a-count                 4 assert-eq ;
 : test-warray-read-0      ws 0 a-word@             100 assert-eq ;

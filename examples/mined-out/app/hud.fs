@@ -100,9 +100,9 @@ create trail-buf  2048 allot
 : intro-level-8  ( -- )   at-banner  ." gap is closed - hug three mines" ;
 : intro-level-9  ( -- )   at-banner  ." rescue bill from the chamber" ;
 
-c: intro-levels    2 c, 3 c, 4 c, 5 c, 8 c, 9 c, ;
-w: intro-actions   ' intro-level-2 , ' intro-level-3 , ' intro-level-4 ,
-                   ' intro-level-5 , ' intro-level-8 , ' intro-level-9 , ;
+c: intro-levels    2 3 4 5 8 9 ;
+w: intro-actions   ' intro-level-2  ' intro-level-3  ' intro-level-4
+                   ' intro-level-5  ' intro-level-8  ' intro-level-9 ;
 
 variable __intro-target
 : __intro-match?   ( v -- flag )   __intro-target @ = ;

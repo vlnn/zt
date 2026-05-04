@@ -18,7 +18,7 @@ require array.fs
 \ rather than any of the for-each / map words from array-hof.fs — those
 \ stash their xt in a shared variable and aren't reentrant.
 
-w: tone-table   424 , 377 , 336 , 317 , 283 , 252 , 224 , 212 , ;
+w: tone-table   424 377 336 317 283 252 224 212 ;
 
 : tone-period   ( index -- period )
     7 and  tone-table swap  a-word@ ;

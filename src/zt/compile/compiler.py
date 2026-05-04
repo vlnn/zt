@@ -234,14 +234,14 @@ class Compiler:
         self._pending_tick = None
 
     def _interpret_token(self, tok: Token) -> None:
+        if self._open_array_lit is not None:
+            self._dispatch_array_token(tok)
+            return
         if tok.kind == "word" and tok.value == ":":
             self._start_colon(tok, force_inline=False)
             return
         if tok.kind == "word" and tok.value == "::":
             self._start_colon(tok, force_inline=True)
-            return
-        if tok.kind == "word" and tok.value == ";" and self._open_array_lit is not None:
-            self._close_array_literal(tok)
             return
         if tok.kind == "word":
             word = self.words.get(tok.value)
@@ -1254,22 +1254,110 @@ class Compiler:
         )
         count_slot = self.asm.here
         self._emit_cell(0, tok)
-        self._open_array_lit = (count_slot, self.asm.here, elem_size)
+        self._open_array_lit = {
+            "count_slot": count_slot,
+            "elem_size": elem_size,
+            "items": 0,
+            "bit_buffer": 0,
+            "bit_count": 0,
+        }
+
+    def _array_emit_value(self, value: int, tok: Token) -> int:
+        """Emit one value into the open array at its natural granularity.
+        Returns the address where the value landed (used by tick capture)."""
+        ctx = self._open_array_lit
+        elem_size = ctx["elem_size"]
+        if elem_size == 0:
+            if value not in (0, 1):
+                raise CompileError(
+                    f"b: array accepts only 0 or 1, got {value}", tok,
+                )
+            ctx["bit_buffer"] |= (value & 1) << ctx["bit_count"]
+            ctx["bit_count"] += 1
+            ctx["items"] += 1
+            if ctx["bit_count"] == 8:
+                self.asm.byte(ctx["bit_buffer"])
+                ctx["bit_buffer"] = 0
+                ctx["bit_count"] = 0
+            return self.asm.here
+        if elem_size == 1:
+            if not -128 <= value <= 255:
+                raise CompileError(
+                    f"c: array element must fit in a byte (-128..255), "
+                    f"got {value}", tok,
+                )
+            here = self.asm.here
+            self.asm.byte(value & 0xFF)
+            ctx["items"] += 1
+            return here
+        if elem_size == 2:
+            if not -32768 <= value <= 65535:
+                raise CompileError(
+                    f"w: array element must fit in 16 bits (-32768..65535), "
+                    f"got {value}", tok,
+                )
+            here = self.asm.here
+            self._emit_cell(value & 0xFFFF, tok)
+            ctx["items"] += 1
+            return here
+        raise CompileError(f"unknown array elem_size {elem_size}", tok)
+
+    def _dispatch_array_token(self, tok: Token) -> None:
+        ctx = self._open_array_lit
+        if tok.kind == "word" and tok.value == ";":
+            self._close_array_literal(tok)
+            return
+        if tok.kind == "word" and tok.value in ("c:", "w:", "b:"):
+            raise CompileError("nested array literal not supported", tok)
+        if tok.kind == "number":
+            self._array_emit_value(parse_number(tok.value), tok)
+            return
+        if tok.kind == "word":
+            word = self.words.get(tok.value)
+            if word is not None and word.kind == "constant" and word.value is not None:
+                self._array_emit_value(word.value, tok)
+                return
+            if tok.value == "'":
+                if ctx["elem_size"] != 2:
+                    raise CompileError(
+                        f"' (tick) only allowed inside w: arrays "
+                        f"(elem_size 2), not c:/b:", tok,
+                    )
+                name_tok = self._next_token(tok)
+                target = self.words.get(name_tok.value)
+                if target is None:
+                    raise CompileError(
+                        f"unknown word '{name_tok.value}' after '", name_tok,
+                    )
+                addr = (target.data_address
+                        if target.data_address is not None else target.address)
+                self._uses_word_address_data = True
+                emit_at = self._array_emit_value(addr, tok)
+                owner = self._latest_data_word_at(emit_at)
+                if owner is not None:
+                    self._word_address_refs.append(
+                        WordAddressRef(
+                            asm_addr=emit_at, target=name_tok.value, owner=owner,
+                        )
+                    )
+                else:
+                    self._tick_unsafe = True
+                return
+            raise CompileError(
+                f"unexpected word '{tok.value}' inside array literal — "
+                f"only literal numbers, constants, and ' word references "
+                f"(in w: arrays) are allowed", tok,
+            )
+        raise CompileError(
+            f"unexpected token '{tok.value}' inside array literal", tok,
+        )
 
     def _close_array_literal(self, tok: Token) -> None:
-        slot, data_start, elem_size = self._open_array_lit
-        bytes_written = self.asm.here - data_start
-        if elem_size == 0:
-            count = bytes_written * 8
-        elif bytes_written % elem_size != 0:
-            raise CompileError(
-                f"array data ({bytes_written} bytes) not a multiple "
-                f"of element size ({elem_size})",
-                tok,
-            )
-        else:
-            count = bytes_written // elem_size
-        offset = slot - self.asm.origin
+        ctx = self._open_array_lit
+        if ctx["elem_size"] == 0 and ctx["bit_count"] > 0:
+            self.asm.byte(ctx["bit_buffer"])
+        offset = ctx["count_slot"] - self.asm.origin
+        count = ctx["items"]
         self.asm.code[offset] = count & 0xFF
         self.asm.code[offset + 1] = (count >> 8) & 0xFF
         self._open_array_lit = None

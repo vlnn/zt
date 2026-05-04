@@ -18,10 +18,10 @@ require array.fs
 \ paper colour.  mod32 wraps any column or row offset into range.
 
 c: wave
-  0 c, 1 c, 2 c, 3 c, 4 c, 5 c, 6 c, 7 c,
-  7 c, 6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c,
-  0 c, 1 c, 2 c, 3 c, 4 c, 5 c, 6 c, 7 c,
-  7 c, 6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c,
+  0 1 2 3 4 5 6 7
+  7 6 5 4 3 2 1 0
+  0 1 2 3 4 5 6 7
+  7 6 5 4 3 2 1 0
 ;
 
 variable phase

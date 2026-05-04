@@ -1,7 +1,9 @@
 \ stdlib/array.fs — accessors for arrays defined by w: / c: / b: literals.
-\ Layout: [count: 16-bit][data...]. Granularity is enforced at the access
-\ word: a-word@/! treats data as cells, a-byte@/! as bytes, a-bit@/! as a
-\ packed bit vector (LSB-first inside each byte).
+\ Each opener auto-emits its body at the natural granularity (w: cells,
+\ c: bytes, b: packed bits LSB-first inside each byte) and patches a
+\ count header in front of the data.  Layout: [count: 16-bit][data...].
+\ Granularity is enforced at the access word: a-word@/! treats data as
+\ cells, a-byte@/! as bytes, a-bit@/! as a packed bit vector.
 
 : a-count  ( arr -- n )       @ ;
 : a-data   ( arr -- addr )    2 + ;

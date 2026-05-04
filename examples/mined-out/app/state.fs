@@ -27,10 +27,10 @@ variable initial-bonus-pending
 \ and mine counts are bytes; the bonus is 16-bit because the upper
 \ levels can reach 5000.
 
-c: level-paper    6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c, 6 c, 5 c, ;
-c: level-border   0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 2 c, 2 c, ;
-c: level-mines   50 c, 60 c, 70 c, 80 c, 90 c, 100 c, 20 c, 50 c, 82 c, ;
-w: level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 , 5000 , ;
+c: level-paper    6  5  4  3  2  1  0  6  5 ;
+c: level-border   0  0  0  0  0  0  0  2  2 ;
+c: level-mines   50 60 70 80 90 100 20 50 82 ;
+w: level-bonus    0 250 750 1500 2200 2700 3500 4200 5000 ;
 
 : lx             ( -- i )        level-no @ 1- ;
 

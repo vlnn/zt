@@ -96,7 +96,7 @@ create garden    -1 , -1 , -1 , -1 ,   ' garden-desc ,
 create road      -1 , -1 , -1 , -1 ,   ' road-desc ,
 create well      -1 , -1 , -1 , -1 ,   ' well-desc ,
 
-w: rooms   ' kitchen , ' hallway , ' garden , ' road , ' well , ;
+w: rooms   ' kitchen  ' hallway  ' garden  ' road  ' well ;
 
 
 \ Exits: basics
@@ -140,9 +140,9 @@ w: rooms   ' kitchen , ' hallway , ' garden , ' road , ' well , ;
 \ walks the rows in lockstep and lets connect-pair fill in each pair.
 \ Adding a passage is one entry in each array.
 
-w: edge-from   ' kitchen , ' hallway , ' garden  , ' road    , ;
-w: edge-to     ' hallway , ' garden  , ' road    , ' well    , ;
-c: edge-dir    dir-n c, dir-n c, dir-n c, dir-e c, ;
+w: edge-from   ' kitchen  ' hallway  ' garden   ' road    ;
+w: edge-to     ' hallway  ' garden   ' road     ' well    ;
+c: edge-dir    dir-n     dir-n     dir-n      dir-e     ;
 
 : install-edge   ( i -- )
     dup    edge-from swap a-word@
@@ -176,8 +176,8 @@ c: edge-dir    dir-n c, dir-n c, dir-n c, dir-e c, ;
 
 variable here-room
 
-w: item-loc    nowhere , nowhere , nowhere , ;
-w: item-homes  ' kitchen , ' garden , ' well , ;
+w: item-loc    nowhere   nowhere   nowhere ;
+w: item-homes  ' kitchen  ' garden  ' well ;
 
 : item-room@     ( id -- where )    item-loc swap  a-word@ ;
 : item-room!     ( where id -- )    item-loc swap  a-word! ;

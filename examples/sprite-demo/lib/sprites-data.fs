@@ -186,14 +186,14 @@ create blank-shifted
 
 \ Frame tables: array of 16-bit pre-shifted-sprite addresses, one per frame.
 w: smiley-frames
-    ' smiley-shifted ,
-    ' smiley-closed-shifted ,
+    ' smiley-shifted
+    ' smiley-closed-shifted
 ;
 
 w: flier-frames
-    ' smiley-shifted ,
+    ' smiley-shifted
 ;
 
 w: ball-frames
-    ' ball-shifted ,
+    ' ball-shifted
 ;
