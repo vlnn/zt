@@ -8,6 +8,7 @@
 require ../lib/math.fs
 require ../lib/screen.fs
 require ../lib/timing.fs
+require array.fs
 
 
 \ The wave table
@@ -16,17 +17,18 @@ require ../lib/timing.fs
 \ sine in eighth-of-a-period steps, used to map a phase index to a
 \ paper colour.  mod32 wraps any column or row offset into range.
 
-create wave
+c: wave
   0 c, 1 c, 2 c, 3 c, 4 c, 5 c, 6 c, 7 c,
   7 c, 6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c,
   0 c, 1 c, 2 c, 3 c, 4 c, 5 c, 6 c, 7 c,
   7 c, 6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c,
+;
 
 variable phase
 
 create phased 32 allot
 
-: wave@       ( i -- n )        mod32 wave + c@ ;
+: wave@       ( i -- n )        mod32 wave swap a-byte@ ;
 : phased@     ( i -- n )        phased + c@ ;
 : paper-attr  ( paper -- attr ) 3 lshift 64 or ;
 

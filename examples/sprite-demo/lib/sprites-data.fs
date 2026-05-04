@@ -185,12 +185,15 @@ create blank-shifted
 \ actor-current-frame indexes into it by the actor's frame counter.
 
 \ Frame tables: array of 16-bit pre-shifted-sprite addresses, one per frame.
-create smiley-frames
+w: smiley-frames
     ' smiley-shifted ,
     ' smiley-closed-shifted ,
+;
 
-create flier-frames
+w: flier-frames
     ' smiley-shifted ,
+;
 
-create ball-frames
+w: ball-frames
     ' ball-shifted ,
+;

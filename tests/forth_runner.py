@@ -9,7 +9,7 @@ from pathlib import Path
 from zt.compile.compiler import Compiler
 
 
-STDLIB_DIR = Path(__file__).resolve().parent.parent / "stdlib"
+STDLIB_DIR = Path(__file__).resolve().parent.parent / "src" / "zt" / "stdlib"
 
 
 @dataclass(frozen=True)

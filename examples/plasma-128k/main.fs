@@ -8,6 +8,7 @@
 \ tearing even if drawing took multiple ULA frames.
 
 require ./lib/math.fs
+require array.fs
 
 
 \ Pages and addresses
@@ -34,15 +35,16 @@ $D800 constant shadow-attrs
 \ bright bit so the result is fully saturated.  Ink stays 0 (black),
 \ pixels stay 0 — every cell is solid paper colour.
 
-create wave
+c: wave
   0 c, 1 c, 2 c, 3 c, 4 c, 5 c, 6 c, 7 c,
   7 c, 6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c,
   0 c, 1 c, 2 c, 3 c, 4 c, 5 c, 6 c, 7 c,
   7 c, 6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c,
+;
 
 variable phase
 
-: wave@  ( i -- n )  mod32 wave + c@ ;
+: wave@  ( i -- n )  mod32 wave swap a-byte@ ;
 
 : plasma-attr  ( col row -- attr )
     phase @ + wave@

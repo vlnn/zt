@@ -12,6 +12,16 @@
 \ rotate top three stack items in the opposite direction of rot
 : -rot    ( a b c -- c a b )   rot rot ;
 
+\ Conditional duplicate: leave a copy of TOS only when it is non-zero.
+\ Standard Forth idiom for "consume value or leave for further use" — see
+\ play-or-mute-* in examples/im2-bach.  Single-dispatch primitive: the
+\ `or h` after `ld a, l` sets Z iff both halves of HL are zero.
+::: ?dup  ( n -- 0 | n n )
+    ld_a_l or_h
+    jr_z skip
+    push_hl
+    label skip ;
+
 \ Signed symmetric division built on unsigned u/mod.
 : /mod  ( n1 n2 -- r q )
     2dup xor 0< >r

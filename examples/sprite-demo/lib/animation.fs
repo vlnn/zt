@@ -6,6 +6,7 @@
 \ bytes; the framework handles the rest.
 
 require sprites-data.fs
+require array.fs
 
 
 \ The /actor record
@@ -79,14 +80,15 @@ require sprites-data.fs
 \ unsigned bytes; sine@ sign-extends the result to a 16-bit value so
 \ trajectories can add it directly to a y coordinate.
 
-create sine-table
+c: sine-table
     $00 c, $04 c, $08 c, $0B c, $0E c, $11 c, $12 c, $14 c,
     $14 c, $14 c, $12 c, $11 c, $0E c, $0B c, $08 c, $04 c,
     $00 c, $FC c, $F8 c, $F5 c, $F2 c, $EF c, $EE c, $EC c,
     $EC c, $EC c, $EE c, $EF c, $F2 c, $F5 c, $F8 c, $FC c,
+;
 
 : sine@  ( i -- s16 )
-    sine-table + c@
+    sine-table swap a-byte@
     dup 128 < if exit then
     256 - ;
 
@@ -117,7 +119,7 @@ create sine-table
 : actor-current-frame  ( actor -- shifted-addr )
     dup actor>frame + c@
     swap actor>frames + @
-    swap 2* + @ ;
+    swap a-word@ ;
 
 : actor-draw  ( actor -- )
     dup actor-current-frame

@@ -6,6 +6,7 @@
 require core.fs
 require screen.fs
 require trail.fs
+require array-hof.fs
 
 require state.fs
 require sounds.fs
@@ -99,17 +100,20 @@ create trail-buf  2048 allot
 : intro-level-8  ( -- )   at-banner  ." gap is closed - hug three mines" ;
 : intro-level-9  ( -- )   at-banner  ." rescue bill from the chamber" ;
 
+c: intro-levels    2 c, 3 c, 4 c, 5 c, 8 c, 9 c, ;
+w: intro-actions   ' intro-level-2 , ' intro-level-3 , ' intro-level-4 ,
+                   ' intro-level-5 , ' intro-level-8 , ' intro-level-9 , ;
+
+variable __intro-target
+: __intro-match?   ( v -- flag )   __intro-target @ = ;
+
 : show-level-intro  ( -- )
     initial-bonus-pending @ if exit then
     clear-banner-row
-    level-no @
-    dup 2 = if drop intro-level-2 exit then
-    dup 3 = if drop intro-level-3 exit then
-    dup 4 = if drop intro-level-4 exit then
-    dup 5 = if drop intro-level-5 exit then
-    dup 8 = if drop intro-level-8 exit then
-    dup 9 = if drop intro-level-9 exit then
-    drop ;
+    level-no @  __intro-target !
+    intro-levels ['] __intro-match?  index-of?-byte
+    if    intro-actions swap a-word@ execute
+    else  drop  then ;
 
 : show-initial-bonus  ( -- )
     initial-bonus-pending @ dup 0= if drop exit then

@@ -6,6 +6,7 @@
 
 require rand.fs
 require ay.fs
+require array.fs
 
 
 \ The tune
@@ -13,12 +14,14 @@ require ay.fs
 \ Eight 16-bit periods spelling an octave-long C-major arpeggio.
 \ tone-period masks the index into the [0, 7] range, so the ISR can
 \ feed it a free-running counter and let the arpeggio cycle naturally.
+\ This is read from the IM 2 ISR, so we use the bare a-word@ accessor
+\ rather than any of the for-each / map words from array-hof.fs — those
+\ stash their xt in a shared variable and aren't reentrant.
 
-create tone-table
-    424 ,  377 ,  336 ,  317 ,  283 ,  252 ,  224 ,  212 ,
+w: tone-table   424 , 377 , 336 , 317 , 283 , 252 , 224 , 212 , ;
 
 : tone-period   ( index -- period )
-    7 and  2*  tone-table +  @ ;
+    7 and  tone-table swap  a-word@ ;
 
 
 \ Frame and step counters

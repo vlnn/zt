@@ -4,6 +4,7 @@
 \ channel.  A period of 0 means "rest" — the matching voice mutes.
 \ The foreground (random letter spew) runs uninterrupted alongside.
 
+require core.fs
 require rand.fs
 require ay.fs
 require song-data.fs
@@ -21,15 +22,11 @@ variable song-step
 \ music-init enables tone-only output on the mixer, then mutes channel
 \ C since the song is two-voice.  play-or-mute-* writes a period and
 \ unmutes the channel when the period is non-zero, or just mutes when
-\ it's zero — the ISR doesn't have to branch on rest itself.  ?dup is
-\ defined inline because the stdlib's version isn't yet available in
-\ this configuration.
+\ it's zero — the ISR doesn't have to branch on rest itself.
 
 : music-init      ( -- )
     ay-mixer-tones-only ay-mixer!
     ay-volume-mute      ay-vol-c! ;
-
-: ?dup            ( x -- 0 | x x )  dup if dup then ;
 
 : play-or-mute-a  ( period -- )
     ?dup if  ay-tone-a!  ay-volume-max  ay-vol-a!

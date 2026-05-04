@@ -1438,36 +1438,47 @@ _SPECTRUM_KEY_TABLE: tuple[int, ...] = (
 
 
 def create_u_mod_div(a: Asm) -> None:
-    """`U/MOD ( u1 u2 -- rem quot )` — unsigned 16-bit division by restoring shift-subtract."""
+    """`U/MOD ( u1 u2 -- rem quot )` — unsigned 16-bit restoring shift-subtract.
+
+    Register allocation during the loop:
+        HL = running remainder (starts at 0)
+        BC = dividend, shifted left every iteration; bits set on successful
+             subtractions form the quotient
+        DE = divisor (constant)
+        A  = loop counter
+
+    Each iteration shifts the BC:HL pair left by one (`sla c; rl b; rl l;
+    rl h`), then trial-subtracts DE from HL.  On success, `inc bc` sets
+    bit 0 of BC — safe because `sla c` left it 0.  On failure, restore HL
+    with `add hl,de`.  This avoids the per-iteration `push hl / pop hl` of
+    the obvious dividend-in-HL formulation.
+    """
     a.label("U_MOD_DIV")
     a.alias("u/mod", "U_MOD_DIV")
     a.pop_de()
     a.ex_de_hl()
-    a.ld_bc_nn(0)
-    a.ld_a_n(16)
-    a.label("_umod_loop")
-    a.add_hl_hl()
-    a.rl_c()
-    a.rl_b()
-    a.push_hl()
-    a.ld_h_b()
-    a.ld_l_c()
-    a.or_a()
-    a.sbc_hl_de()
-    a.jr_c_to("_umod_no_sub")
     a.ld_b_h()
     a.ld_c_l()
-    a.pop_hl()
-    a.inc_hl()
+    a.ld_hl_nn(0)
+    a.ld_a_n(16)
+    a.label("_umod_loop")
+    a.sla_c()
+    a.rl_b()
+    a.rl_l()
+    a.rl_h()
+    a.or_a()
+    a.sbc_hl_de()
+    a.jr_c_to("_umod_failed")
+    a.inc_bc()
     a.jr_to("_umod_next")
-    a.label("_umod_no_sub")
-    a.pop_hl()
+    a.label("_umod_failed")
+    a.add_hl_de()
     a.label("_umod_next")
     a.dec_a()
     a.jr_nz_to("_umod_loop")
-    a.ld_e_c()
-    a.ld_d_b()
-    a.push_de()
+    a.push_hl()
+    a.ld_h_b()
+    a.ld_l_c()
     a.dispatch()
 
 

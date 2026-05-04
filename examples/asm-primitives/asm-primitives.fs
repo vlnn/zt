@@ -30,12 +30,20 @@
 \ ?dup pushes a copy of TOS only when it's non-zero.  `or h` after
 \ `ld a, l` sets the zero flag iff both halves of HL are zero, so the
 \ jr_z skips the push for the falsy case and falls through otherwise.
+\
+\ Now that ?dup ships in stdlib/core.fs, this definition is guarded
+\ with [defined] [if] so the file can still be loaded after the
+\ auto-bundled stdlib without colliding.  The body is still here as
+\ the canonical teaching copy referenced from docs/asm-words.md.
 
+[defined] ?dup [if]
+[else]
 ::: ?dup ( n -- 0 | n n )
     ld_a_l or_h
     jr_z skip
     push_hl
     label skip ;
+[then]
 
 
 \ Byte increment in place

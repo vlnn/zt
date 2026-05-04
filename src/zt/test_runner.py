@@ -11,7 +11,7 @@ from pathlib import Path
 from zt.compile.compiler import Compiler
 
 
-STDLIB_DIR = Path(__file__).resolve().parent.parent.parent / "stdlib"
+STDLIB_DIR = Path(__file__).resolve().parent / "stdlib"
 TEST_WORD_RE = re.compile(r"^\s*:\s+(test-\S+)", re.MULTILINE)
 
 

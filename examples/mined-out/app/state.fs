@@ -3,6 +3,7 @@
 \ to which actors appear.
 
 require core.fs
+require array.fs
 
 
 \ Score and level
@@ -26,17 +27,17 @@ variable initial-bonus-pending
 \ and mine counts are bytes; the bonus is 16-bit because the upper
 \ levels can reach 5000.
 
-create level-paper    6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c, 6 c, 5 c,
-create level-border   0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 2 c, 2 c,
-create level-mines   50 c, 60 c, 70 c, 80 c, 90 c, 100 c, 20 c, 50 c, 82 c,
-create level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 , 5000 ,
+c: level-paper    6 c, 5 c, 4 c, 3 c, 2 c, 1 c, 0 c, 6 c, 5 c, ;
+c: level-border   0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 0 c, 2 c, 2 c, ;
+c: level-mines   50 c, 60 c, 70 c, 80 c, 90 c, 100 c, 20 c, 50 c, 82 c, ;
+w: level-bonus    0 , 250 , 750 , 1500 , 2200 , 2700 , 3500 , 4200 , 5000 , ;
 
 : lx             ( -- i )        level-no @ 1- ;
 
-: level-paper@   ( -- p )        level-paper  lx + c@ ;
-: level-border@  ( -- b )        level-border lx + c@ ;
-: level-mines@   ( -- m )        level-mines  lx + c@ ;
-: level-bonus@   ( -- n )        level-bonus  lx 2 * + @ ;
+: level-paper@   ( -- p )        level-paper  lx a-byte@ ;
+: level-border@  ( -- b )        level-border lx a-byte@ ;
+: level-mines@   ( -- m )        level-mines  lx a-byte@ ;
+: level-bonus@   ( -- n )        level-bonus  lx a-word@ ;
 
 
 \ Level features

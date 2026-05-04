@@ -6,6 +6,7 @@ require core.fs
 require grid.fs
 require screen.fs
 require sprites.fs
+require array.fs
 
 
 \ Layout and state
@@ -24,7 +25,7 @@ require sprites.fs
 $07 constant background-attr
 
 create brick-grid 120 allot
-create row-attrs   $42 c, $46 c, $44 c, $45 c,
+c: row-attrs   $42 c, $46 c, $44 c, $45 c, ;
 
 variable brick-count
 
@@ -32,7 +33,7 @@ variable brick-count
 : total-bricks       ( -- n )    bricks-cols bricks-rows * ;
 : bricks-fill-alive  ( -- )    1 grid-clear total-bricks brick-count ! ;
 : bricks-alive       ( -- n )    brick-count @ ;
-: row-attr           ( brow -- attr )   row-attrs + c@ ;
+: row-attr           ( brow -- attr )   row-attrs swap a-byte@ ;
 : bricks-screen-row  ( brow -- row )    bricks-row-base + ;
 : bricks-screen-col  ( bcol -- col )    bricks-col-base + ;
 : brick-alive?       ( bcol brow -- flag )   grid@ 0= 0= ;
