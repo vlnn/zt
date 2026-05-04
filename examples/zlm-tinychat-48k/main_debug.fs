@@ -1,24 +1,28 @@
-\ examples/zlm-tinychat-48k/main_debug.fs
+\ Border-instrumented copy of main.fs, kept around for future
+\ debugging.  Each checkpoint in the program writes a unique
+\ non-black, non-white border colour, so a crash freezes the screen
+\ at the last colour written and tells you which checkpoint was
+\ reached.
 \
-\ Border-instrumented copy of main.fs, kept around for future debugging.
+\ The original reset-on-Enter bug it was used to diagnose has been
+\ fixed in main.fs by moving --origin from $5C00 to $5CB6 (past the
+\ Spectrum 48K system-variable area).  At $5C00, the byte at $5C78
+\ (FRAMES timer, incremented by the ROM IM 1 handler every 1/50s)
+\ landed inside the body of the R> primitive, so any interrupt
+\ corrupted R> and the next call crashed the program.  Moving
+\ origin past $5CB6 puts FRAMES into a region the program never
+\ writes to and never executes, so corruption is harmless.
 \
-\ The original reset-on-Enter bug it was used to diagnose has been fixed
-\ in main.fs by moving --origin from $5C00 to $5CB6 (past the Spectrum
-\ 48K system-variable area). At $5C00, the byte at $5C78 (FRAMES timer,
-\ incremented by the ROM IM 1 handler every 1/50s) lay inside the body
-\ of the R> primitive, so any interrupt corrupted R> and the next call
-\ crashed the program. Moving origin past $5CB6 puts FRAMES into a
-\ region we never write to and never execute — corruption is harmless.
-\
-\ Color map (avoid 0 BLACK and 7 WHITE — the latter is the Spectrum
-\ ROM's reset-border colour, so a white border means "RESET", not
+\ Colour map.  Avoid 0 BLACK (no signal) and 7 WHITE (the ROM's
+\ own reset-border colour, so a white border means "RESET" not
 \ "reached white checkpoint"):
-\   1 BLUE      main: top of outer loop, before "> "
-\   4 GREEN     read-line: typed key, about to dup emit
-\   3 MAGENTA   read-line: emit done, about to input-append; OR
-\               main: cr done, about to test query-len
-\   6 YELLOW    main: read-line returned (after Enter)
-\   5 CYAN      main: query-len > 0, about to call chat
+\
+\     1 BLUE      main: top of outer loop, before "> "
+\     4 GREEN     read-line: typed key, about to dup emit
+\     3 MAGENTA   read-line: emit done, about to input-append; OR
+\                 main: cr done, about to test query-len
+\     6 YELLOW    main: read-line returned (after Enter)
+\     5 CYAN      main: query-len > 0, about to call chat
 \
 \ Build:
 \   zt build examples/zlm-tinychat-48k/main_debug.fs -o tc48d.sna --target 48k \

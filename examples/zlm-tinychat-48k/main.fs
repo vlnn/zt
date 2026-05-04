@@ -1,22 +1,23 @@
-\ examples/zlm-tinychat-48k/main.fs — 48K with no visible side-effect.
+\ z80ai's tinychat squeezed onto a 48K Spectrum.  The trick: pack
+\ everything into the 48K's tight memory map without disturbing the
+\ display.  Code and read-only data sit in the compiled image at
+\ $5C00..$F9E0; the big activation buffers sit above the image, and
+\ acts3 borrows the 48K printer-buffer region (invisible to the
+\ display) for free RAM:
 \
-\ Code + read-only data lives in the compiled image at $5C00..$F9E0.
-\ Big activations are above the image, small buffers are inside it,
-\ and acts3 sits in the 48K printer-buffer area which the display
-\ never reads — so the screen stays clean during a forward pass.
+\     $5B00..$5C00 (256 B)  acts3        printer-buffer area, invisible
+\     $5C00..$F9E0          image (code + W1..W4 + biases + charset
+\                           + small buffers + variables)
+\     $F9E0..$FB60 (384 B)  acts2
+\     $FB60..$FD60 (512 B)  acts0
+\     $FD60..$FF60 (512 B)  acts1
+\     $FF80                 return-stack top (32 B max)
+\     $FFC0                 data-stack top   (32 B max)
 \
-\   $5B00..$5C00 (256 B)  acts3        — printer-buffer area, invisible
-\   $5C00..$F9E0          image (code + W1..W4 + biases + charset
-\                                 + small buffers + variables)
-\   $F9E0..$FB60 (384 B)  acts2
-\   $FB60..$FD60 (512 B)  acts0
-\   $FD60..$FF60 (512 B)  acts1
-\   $FF80          return-stack top  (32 B max, safety gap below)
-\   $FFC0          data-stack   top  (32 B max)
-\
-\ Built with `--no-stdlib`; this file inlines the two stdlib words
-\ (`cr` and `cls`) it actually uses, dropping ~200 B of unused
-\ stdlib (`/`, `/mod`, `mod`, `(u.)`, `u.`, `.`, `space`, `spaces`).
+\ Built with --no-stdlib so the file inlines its own minimal `cr`
+\ and `cls` and skips the rest of the stdlib (`/`, `/mod`, `mod`,
+\ `(u.)`, `u.`, `.`, `space`, `spaces`) — that saves about 200
+\ bytes the model would otherwise waste.
 \
 \ Build:  zt build main.fs --target 48k --origin 0x5C00 \
 \           --rstack 0xFF80 --dstack 0xFFC0 \

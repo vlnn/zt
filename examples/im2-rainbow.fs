@@ -1,24 +1,19 @@
-\ examples/im2-rainbow/main.fs
-\
-\ Border-colour rainbow under IM 2, with the main thread spewing random
-\ letters as fast as the CPU can manage. The border colour advances once
-\ per ULA frame interrupt; the random text streams in between, proving
-\ the ISR runs concurrently with foreground Forth code.
+\ Border-colour rainbow under IM 2, with the foreground thread spewing
+\ random uppercase letters as fast as the CPU can manage.  The border
+\ advances once per ULA frame interrupt; the random text streams in
+\ between, proving the ISR runs concurrently with foreground Forth code.
+\ This standalone version writes the ISR by hand in `:::` to show the
+\ raw EI / RETI ceremony; the directory variant in im2-rainbow/ uses
+\ the higher-level Forth `border` word from the stdlib.
 \
 \ Build:
-\   uv run python -m zt.cli build examples/im2-rainbow/main.fs -o build/im2-rainbow.sna
-\   (or just: make examples)
-\
-\ Run the resulting .sna in any Spectrum emulator. Expected behaviour:
-\ the border cycles black -> blue -> red -> magenta -> green -> cyan -> yellow ->
-\ white -> black at the 50 Hz frame rate, while the screen continuously
-\ fills with random uppercase letters.
+\   uv run python -m zt.cli build examples/im2-rainbow.fs -o build/im2-rainbow.sna
 \
 \ Demonstrates the full IM 2 path: vector table allocation (auto-emitted
-\ because IM2-HANDLER! appears in the live image), `IM2-HANDLER!` setting up
-\ the JP slot + I + IM 2, frame-rate ULA interrupts dispatched through the
-\ table, the canonical `EI ; RETI` ceremony, and the main loop running
-\ uninterrupted between fires.
+\ because IM2-HANDLER! appears in the live image), `IM2-HANDLER!` setting
+\ up the JP slot, I, and IM 2, frame-rate ULA interrupts dispatched
+\ through the table, the canonical `EI ; RETI` exit, and the main loop
+\ running uninterrupted between fires.
 
 require rand.fs
 

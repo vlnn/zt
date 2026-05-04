@@ -1,4 +1,4 @@
-\ Bitwise helpers used by the sierpinski demo.
+\ The sierpinski attribute grid lights a cell exactly when its column
+\ and row share no bits — bit-clear? is the predicate that asks.
 
-\ true if every bit set in mask is clear in n
 : bit-clear?  ( n mask -- flag )  and 0= ;

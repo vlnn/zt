@@ -1,23 +1,55 @@
-require core.fs
+\ The static world: items, directions, rooms, the corridors between them,
+\ and where things start out.  Run-time mutable state — the player's
+\ location and where each item is — lives here too, since every query
+\ touches it.
 
-\ Items live in a bitmap byte per room: bit `id` set iff item `id` is here.
-\ Carried items live in carried-mask, *not* in any room's .items.
+require core.fs
+require array-hof.fs
+
+
+\ Items
+\ ─────
+\ Three items, ids 0..2.  Ids double as indices into every per-item
+\ array (item-loc, item-homes, item-printers).  Adding an item means
+\ defining a new constant and adding one entry to each.
 
 0 constant bone
 1 constant stick
 2 constant ball
 
--2 constant carried           \ sentinel returned by item-room@ for items in jaws
 
-\ Direction = cell index within a room's .exits array.
+\ Item locations
+\ ──────────────
+\ An item lives in exactly one place: a room (its address), the player's
+\ jaws (`carried`), or `nowhere`.  Both sentinels are negative so they
+\ can't collide with a real address.  -1 also serves as the "blocked
+\ exit" marker further down — same byte pattern, same meaning of
+\ "absent", same `blocked?` test if you squint.
+
+-1 constant nowhere
+-2 constant carried
+
+
+\ Directions
+\ ──────────
+\ A direction is a cell index into a room's .exits array, so we get
+\ four slots per room.  The numbering is deliberate: dir-n/dir-s share
+\ the low pair (0/1) and dir-e/dir-w the high pair (2/3).  Flipping
+\ bit 0 walks across each axis without a lookup table.
 
 0 constant dir-n
 1 constant dir-s
 2 constant dir-e
 3 constant dir-w
 
-\ Description words.  Defined before rooms so each room's .description
-\ field can be initialised at compile time with `' word ,`.
+: opposite-dir   ( dir -- dir' )   1 xor ;
+
+
+\ Room descriptions
+\ ─────────────────
+\ One word per room, called from `describe-room` over in game.fs.
+\ Defined here, before the room records, so each record can capture
+\ the description's xt at compile time — there's no late binding.
 
 : kitchen-desc
     ." You are in your warm kitchen." cr
@@ -44,146 +76,158 @@ require core.fs
     ." You can hear faint whimpering far below." cr
     ." The road is back to the WEST." cr ;
 
-\ A room owns its outgoing exits, the items currently in it, and the xt of
-\ its description.  11 bytes per room.
+
+\ Rooms
+\ ─────
+\ Each room is 8 bytes of exits — four cells, one per direction, all
+\ initialised to "blocked" — followed by the xt of its description.
+\ init-exits will rewrite the exit cells at run time; the description
+\ stays put.  Listing every room in the `rooms` array gives a single
+\ handle for code that wants to iterate over all of them.
 
 0
-8 -- .exits                   \ four cells: target room addr per direction (-1 = blocked)
-1 -- .items                   \ presence bitmap, one bit per item id
-2 -- .description             \ xt of the description word
+8 -- .exits
+2 -- .description
 STRUCT /room
 
-\ Each room is laid out by hand so .description can be a compile-time xt.
-\ Exits start blocked (-1); items start empty; runtime init-exits and
-\ place-items wire up the actual world.
+create kitchen   -1 , -1 , -1 , -1 ,   ' kitchen-desc ,
+create hallway   -1 , -1 , -1 , -1 ,   ' hallway-desc ,
+create garden    -1 , -1 , -1 , -1 ,   ' garden-desc ,
+create road      -1 , -1 , -1 , -1 ,   ' road-desc ,
+create well      -1 , -1 , -1 , -1 ,   ' well-desc ,
 
-create kitchen
-    -1 , -1 , -1 , -1 ,   0 c,   ' kitchen-desc ,
-create hallway
-    -1 , -1 , -1 , -1 ,   0 c,   ' hallway-desc ,
-create garden
-    -1 , -1 , -1 , -1 ,   0 c,   ' garden-desc ,
-create road
-    -1 , -1 , -1 , -1 ,   0 c,   ' road-desc ,
-create well
-    -1 , -1 , -1 , -1 ,   0 c,   ' well-desc ,
+w: rooms   ' kitchen , ' hallway , ' garden , ' road , ' well , ;
 
-\ Sentinel-terminated array of all rooms.  The 0 cell ends the list so
-\ each-room can walk it without a count.
 
-create rooms-list
-    ' kitchen , ' hallway , ' garden , ' road , ' well ,  0 ,
+\ Exits: basics
+\ ─────────────
+\ An exit cell holds either a target room's address or -1 ("blocked").
+\ exit-cell does the offset arithmetic; the rest is a thin layer over
+\ @, !, and =.
 
-: each-room      ( xt -- )
-    >r rooms-list
-    begin dup @ dup while
-        r@ execute  2 +
-    repeat 2drop r> drop ;
+: exit-cell      ( room dir -- addr )    2 *  swap .exits +  + ;
+: exit-of        ( room dir -- target )  exit-cell @ ;
+: blocked?       ( target -- flag )      -1 = ;
+: connect        ( target room dir -- )  exit-cell ! ;
 
-\ Exits ─────────────────────────────────────────────────────────────────────
 
-: exit-cell      ( room dir -- addr )  2 * .exits + + ;
-: exit-of        ( room dir -- target ) exit-cell @ ;
-: blocked?       ( target -- flag )    -1 = ;
-: connect        ( target room dir -- ) exit-cell ! ;
+\ Exits: bidirectional connection
+\ ───────────────────────────────
+\ Adventure-game corridors should be walkable both ways: if the
+\ kitchen's north exit goes to the hallway, the hallway's south exit
+\ had better go back.  connect-pair wires both directions in one call,
+\ using opposite-dir for the return trip.
 
-: clear-exits    ( room -- )           .exits + 8 255 fill ;
-' clear-exits    constant xt-clear-exits
+: connect-pair   ( a b dir -- )
+    >r  2dup swap  r@           connect
+    r>           opposite-dir   connect ;
 
-: clear-all-exits   xt-clear-exits each-room ;
+
+\ Exits: clearing a room
+\ ──────────────────────
+\ -1 is the "blocked" sentinel, but `fill` writes one byte at a time
+\ and exits are 16-bit cells.  We want every byte to be 255, which is
+\ (-1 & 0xFF) and sign-extends back to -1 when read as a cell.
+
+: clear-exits    ( room -- )    .exits +  8 255 fill ;
+
+
+\ Exits: the corridor table
+\ ─────────────────────────
+\ One row across these three parallel arrays describes one bidirectional
+\ corridor.  Cell-arrays for "from" and "to" hold room addresses; a
+\ byte-array for "dir" holds the four-valued direction.  install-edges
+\ walks the rows in lockstep and lets connect-pair fill in each pair.
+\ Adding a passage is one entry in each array.
+
+w: edge-from   ' kitchen , ' hallway , ' garden  , ' road    , ;
+w: edge-to     ' hallway , ' garden  , ' road    , ' well    , ;
+c: edge-dir    dir-n c, dir-n c, dir-n c, dir-e c, ;
+
+: install-edge   ( i -- )
+    dup    edge-from swap a-word@
+    over   edge-to   swap a-word@
+    rot    edge-dir  swap a-byte@
+    connect-pair ;
+
+: install-edges
+    edge-from a-count 0 do  i install-edge  loop ;
+
+
+\ Exits: assembly
+\ ───────────────
+\ Reset every room's exits to "blocked", then wire each corridor.  The
+\ clear pass matters because reset-game runs more than once — the
+\ exits compiled into the room records are the initial values, not a
+\ permanent default.
 
 : init-exits
-    clear-all-exits
-    hallway kitchen dir-n connect
-    kitchen hallway dir-s connect
-    garden  hallway dir-n connect
-    hallway garden  dir-s connect
-    road    garden  dir-n connect
-    garden  road    dir-s connect
-    well    road    dir-e connect
-    road    well    dir-w connect ;
+    rooms ['] clear-exits for-each-word
+    install-edges ;
 
-\ Items ─────────────────────────────────────────────────────────────────────
 
-variable here-room            \ holds a room address, not an index
-variable carried-mask         \ byte bitmap of items currently held
+\ Player and item state
+\ ─────────────────────
+\ Two mutable variables hold the entire dynamic game state.  here-room
+\ is a room address.  item-loc is a 3-cell array indexed by item id;
+\ each slot holds a room address, `carried`, or `nowhere`.  Storing the
+\ location *on the item* (rather than items on rooms) makes "where is
+\ X?" O(1) and makes "X exists in two places" structurally impossible.
 
-: item-bit       ( id -- mask )        1 swap lshift ;
+variable here-room
 
-\ Walk the set bits of `bitmap`, calling xt with each bit's position.
-\ Item ids are bit positions, so this is "for each item in the set".
+w: item-loc    nowhere , nowhere , nowhere , ;
+w: item-homes  ' kitchen , ' garden , ' well , ;
 
-: each-bit       ( bitmap xt -- )
-    >r 0
-    begin over while
-        over 1 and if dup r@ execute then
-        swap 1 rshift swap 1+
-    repeat 2drop r> drop ;
+: item-room@     ( id -- where )    item-loc swap  a-word@ ;
+: item-room!     ( where id -- )    item-loc swap  a-word! ;
 
-\ Lowest set bit position, or -1 if none — i.e. "first item in the set".
 
-: first-bit      ( bitmap -- pos|-1 )
-    dup 0= if drop -1 exit then
-    0
-    begin over 1 and 0= while
-        swap 1 rshift swap 1+
-    repeat nip ;
+\ Placing items at the start of a game
+\ ────────────────────────────────────
+\ place-items wants to copy item-homes into item-loc, slot for slot.
+\ The natural fit is `item-loc ['] copy-from-homes map-word`, but
+\ map-word's xt sees ( v -- v' ) — the current value, not the index.
+\ So we thread the index through __place-i ourselves.  As a bonus,
+\ map-word overwrites every slot, so no separate clear pass is needed.
 
-: room-items@    ( room -- bitmap )    .items >c@ ;
-: room-items!    ( bitmap room -- )    .items >c! ;
+variable __place-i
 
-: room-has?      ( id room -- flag )   room-items@ swap item-bit and 0= invert ;
-
-: add-to-room    ( id room -- )
-    dup room-items@ rot item-bit or  swap room-items! ;
-
-: remove-from-room ( id room -- )
-    dup room-items@ rot item-bit invert and  swap room-items! ;
-
-: clear-items    ( room -- )           0 swap room-items! ;
-' clear-items    constant xt-clear-items
-
-: clear-all-items   xt-clear-items each-room  0 carried-mask c! ;
-
-: here?          ( id -- flag )        here-room @ room-has? ;
-: carrying?      ( id -- flag )        carried-mask c@ swap item-bit and 0= invert ;
-: have-stick?    ( -- flag )           stick carrying? ;
-
-\ Public location API.  Items only ever live in exactly one place — a room
-\ or the player's jaws — so item-room@ is a carried? short-circuit followed
-\ by a walk over rooms-list looking for a room whose .items has the bit.
-
-: item-room@     ( id -- where )
-    dup carrying? if drop carried exit then
-    >r rooms-list
-    begin dup @ dup while
-        r@ over room-has? if  nip r> drop exit  then
-        drop 2 +
-    repeat
-    2drop r> drop -1 ;
-
-: pickup-item    ( id -- )
-    dup item-bit  carried-mask c@ or  carried-mask c! ;
-
-: drop-from-jaws ( id -- )
-    item-bit invert  carried-mask c@ and  carried-mask c! ;
-
-: forget-item    ( id -- )
-    dup item-room@                       ( id where )
-    dup carried = if drop drop-from-jaws exit then
-    dup -1      = if 2drop exit then
-    remove-from-room ;
-
-: item-room!     ( where id -- )
-    dup forget-item
-    over carried = if
-        nip pickup-item
-    else
-        swap add-to-room
-    then ;
+: home-of-next   ( v -- v' )
+    drop  item-homes __place-i @ a-word@
+    1 __place-i +! ;
 
 : place-items
-    clear-all-items
-    kitchen bone  item-room!
-    garden  stick item-room!
-    well    ball  item-room! ;
+    0 __place-i !
+    item-loc ['] home-of-next map-word ;
+
+
+\ Item queries
+\ ────────────
+\ Thin wrappers over item-room@.  `here?` and `carrying?` are stated in
+\ terms of `item-room@ <something> =` rather than going through
+\ in-room? so the simpler intent stays readable at the call site.
+
+: in-room?       ( id room -- flag )   swap item-room@ = ;
+: room-has?      ( id room -- flag )   in-room? ;
+: carrying?      ( id -- flag )        item-room@ carried = ;
+: have-stick?    ( -- flag )           stick carrying? ;
+: here?          ( id -- flag )        item-room@ here-room @ = ;
+
+
+\ Item search
+\ ───────────
+\ pick-at finds the first item id whose location matches `where`, or
+\ -1 if none.  Same side-channel pattern as place-items:
+\ index-of?-word's predicate sees only the array value, so the search
+\ target rides in __pick-target.
+
+variable __pick-target
+
+: at-pick-target?   ( where -- flag )   __pick-target @ = ;
+
+: pick-at        ( where -- id|-1 )
+    __pick-target !
+    item-loc ['] at-pick-target?  index-of?-word
+    if exit then
+    drop -1 ;

@@ -99,14 +99,24 @@ corgi/
   (CR = 13) ends the line.
 - **First-letter dispatch** sidesteps the `COMPARE`/`>UPPER` gap that
   `FORTH-ROADMAP.md` calls out. `first-char` lowercases the first
-  non-space byte of the buffer and a chained `if` matches it.
-- **Runtime exits init**: zt's interpret state doesn't evaluate
-  user constants (Tier 3 §3.1 in `COMPILER-ROADMAP.md`), so the
-  exits table is allotted as 40 zeroed bytes and built up in
-  `init-exits` with `connect` calls — also more readable than a
-  wall of integer literals.
+  non-space byte of the buffer; `dispatch` then looks the byte up in
+  the parallel `cmd-keys` / `cmd-actions` arrays via `index-of?-byte`
+  from `array-hof.fs`.
+- **Data-driven world**: `rooms`, `edge-from`/`edge-to`/`edge-dir`,
+  `item-loc`, `item-homes`, `item-printers`, `msg-printers`,
+  `cmd-keys`, and `cmd-actions` are all `w:` / `c:` array literals.
+  Adding a corridor is one row across the three edge arrays; adding
+  a verb is one byte in `cmd-keys` and one xt in `cmd-actions`.
+  `init-exits` clears every room with `for-each-word`, then walks
+  the edges and applies `connect-pair`, which uses `1 xor` to flip
+  to the opposite direction.
+- **Single source of truth for items**: an item lives in exactly one
+  place — a room, the player's jaws (`carried`), or `nowhere` —
+  and `item-loc[id]` *is* that place. No bit-bitmap, no bookkeeping
+  on `take`/`drop`. `pick-at` finds the first item in a given place
+  with `index-of?-word`.
 - **Deferred messages**: each `do-*` command updates state and sets
-  `last-msg` (a small enum) instead of printing. `render` clears the
-  screen, runs `show-msg` for the previous action, then draws the
-  current room. This is what makes the clear-and-redraw cycle show
-  both "what just happened" and "where I am now" together.
+  `last-msg` (a small enum) instead of printing. `show-msg` is just
+  `last-msg @ msg-printers swap a-word@ execute` — the enum doubles
+  as an array index. `render` clears the screen, runs `show-msg`
+  for the previous action, then draws the current room.

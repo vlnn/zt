@@ -1,12 +1,9 @@
-\ examples/im2-rainbow/app/rainbow.fs
-\
-\ The rainbow demo's app layer: the IM 2 handler that cycles the border, a
-\ random-letter helper for the foreground spew, and the entry word `rainbow`
-\ that wires them together. The handler runs once per ULA frame (50 Hz);
-\ `rainbow` runs the main loop forever, emitting a random uppercase letter
-\ between each fire.
-\
-\ Imports stdlib's rand.fs for the LCG-based `between` word.
+\ The rainbow demo's app layer: the IM 2 handler that cycles the border,
+\ a random-letter helper for the foreground spew, and the entry word
+\ `rainbow` that wires them together.  The handler runs once per ULA
+\ frame (50 Hz); the foreground emits a random uppercase letter at a
+\ random screen position between each fire, so the visible rate of
+\ both effects is a function of how fast the CPU can run the loop.
 
 require rand.fs
 

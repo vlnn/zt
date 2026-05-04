@@ -1,6 +1,9 @@
-\ app/cheat.fs — hidden cheat: two alternating horizontal moves (L,R or
-\ R,L) reveal every mine via show-all-mines. Re-armed at each level start
-\ and whenever the map gets blown away.
+\ Hidden cheat: two alternating horizontal moves (L-R or R-L) reveal
+\ every mine via show-all-mines.  Re-armed at each level start and
+\ whenever the map gets blown away — so on a map-blow level you can
+\ recover by performing the same gesture again.  Any vertical move,
+\ or repeating the same horizontal direction twice, locks the cheat
+\ for the rest of the level.
 
 require core.fs
 
@@ -12,30 +15,45 @@ require board.fs
 variable cheat-state
 variable cheat-last-dx
 
-\ clear the cheat progress and last direction
+
+\ State predicates
+\ ────────────────
+\ cheat-state holds progress (0, 1, target = fired, or -1 = locked).
+\ Three predicates check each phase so the observer below can branch
+\ readably without manually decoding the state byte.
+
 : cheat-reset      ( -- )        0 cheat-state !  0 cheat-last-dx ! ;
 
-\ true if the cheat has just fired this level
 : cheat-fired?     ( -- flag )   cheat-state @ cheat-target = ;
-\ true if the cheat is locked out for the rest of the level
 : cheat-locked?    ( -- flag )   cheat-state @ 0 < ;
 
-\ true if the cheat is still accepting input (armed but not yet fired)
 : cheat-watching?  ( -- flag )
     cheat-state @  dup 0 <  0=
                    swap cheat-target <  and ;
 
-\ reveal every mine and mark the cheat as fired
+
+\ Transitions
+\ ───────────
+\ cheat-fire is the success path; cheat-lock disables for the rest of
+\ the level.  cheat-advance-to commits a new progress value, firing
+\ when it reaches the target.
+
 : cheat-fire       ( -- )        show-all-mines  cheat-target cheat-state ! ;
-\ disable the cheat for the rest of the level
 : cheat-lock       ( -- )        -1 cheat-state ! ;
 
-\ store progress, firing the cheat once it reaches the target
 : cheat-advance-to  ( progress -- )
     dup cheat-target = if drop cheat-fire exit then
     cheat-state ! ;
 
-\ feed one horizontal step to the cheat: alternate dx advances, repeats lock
+
+\ Observer
+\ ────────
+\ cheat-observe is fed every player movement.  Vertical moves
+\ immediately lock; a horizontal move advances if it differs from the
+\ previous direction, otherwise it locks.  Once the level's first
+\ horizontal move sets cheat-last-dx, the second has to be opposite
+\ to count.
+
 : cheat-step-horizontal  ( dx -- )
     dup 0= if drop exit then
     dup cheat-last-dx @ = if
@@ -45,7 +63,6 @@ variable cheat-last-dx
         cheat-state @ 1+ cheat-advance-to
     then ;
 
-\ feed a player movement (dx, dy) to the cheat detector
 : cheat-observe    ( dx dy -- )
     cheat-watching? 0= if 2drop exit then
     dup if 2drop cheat-lock exit then

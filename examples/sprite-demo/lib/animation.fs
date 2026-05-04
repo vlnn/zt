@@ -1,36 +1,32 @@
-\ Animation library for SP-stream sprites.
-\
-\ An "actor" is a 24-byte record:
-\
-\    +0   x        16-bit pixel x (signed for off-screen briefly)
-\    +2   y        16-bit pixel y
-\    +4   ox       previous x (used by actor-erase)
-\    +6   oy       previous y
-\    +8   frames   pointer to a table of pre-shifted sprite addresses
-\   +10   count    number of frames in that table (1..255)
-\   +11   frame    index of currently-displayed frame (0..count-1)
-\   +12   tick     ticks remaining until next frame switch
-\   +13   rate     ticks-per-frame (frame advances when tick reaches 0)
-\   +14   state    8 bytes of trajectory-private scratch
-\   +22   spare    2 bytes
-\
-\ The frame loop for one actor is:
-\   actor-erase        \ blits BLANK at (ox, oy)
-\   <trajectory>       \ updates (x, y) and any state
-\   actor-tick         \ advances frame counter when its rate elapses
-\   actor-draw         \ blits current frame at (x, y)
-\   actor-save-pos     \ ox = x, oy = y (so next erase wipes the new spot)
-\
-\ Three trajectories are provided, each consuming an actor address:
-\   linear-bounce      ( actor -- )  \ rectangular bounce off screen edges
-\   sine-flier         ( actor -- )  \ horizontal scroll + vertical sine
-\   gravity-bounce     ( actor -- )  \ gravity-driven parabola, bounce on floor
-\
-\ Each trajectory interprets `state` differently — see notes above each one.
+\ Sprite animation framework: the /actor record, accessors, a 32-entry
+\ sine table, the erase/draw/tick lifecycle, three pluggable
+\ trajectories (linear bounce, sine flier, gravity bounce), and a
+\ keyboard player-control trajectory.  Callers compose actors by
+\ choosing a trajectory and filling in trajectory-private `state`
+\ bytes; the framework handles the rest.
 
 require sprites-data.fs
 
-\ -- Actor record layout -----------------------------------------------------
+
+\ The /actor record
+\ ─────────────────
+\ 24 bytes per actor:
+\
+\   +0   x        16-bit pixel x (signed for off-screen briefly)
+\   +2   y        16-bit pixel y
+\   +4   ox       previous x (used by actor-erase)
+\   +6   oy       previous y
+\   +8   frames   pointer to a table of pre-shifted sprite addresses
+\  +10   count    number of frames in the table
+\  +11   frame    index of the currently-displayed frame
+\  +12   tick     ticks remaining until the next frame switch
+\  +13   rate     ticks-per-frame
+\  +14   state    8 bytes of trajectory-private scratch
+\  +22   spare    2 unused bytes
+\
+\ Per-frame lifecycle for one actor: erase at (ox, oy), call its
+\ trajectory to update (x, y), advance the frame counter when its
+\ rate elapses, draw the new frame, save (x, y) into (ox, oy).
 
 24 constant /actor
 
@@ -45,7 +41,12 @@ require sprites-data.fs
 13 constant actor>rate
 14 constant actor>state
 
-\ -- Field accessors ---------------------------------------------------------
+
+\ Field accessors
+\ ───────────────
+\ Position fields get full @/! pairs.  The state slots are addressed
+\ by their byte offset within state; trajectories pick whichever slot
+\ width they need (cell or byte) without any pre-declared layout.
 
 : actor-x@   ( actor -- x )      actor>x +  @ ;
 : actor-x!   ( x actor -- )      actor>x +  ! ;
@@ -56,7 +57,6 @@ require sprites-data.fs
 : actor-oy@  ( actor -- oy )     actor>oy + @ ;
 : actor-oy!  ( oy actor -- )     actor>oy + ! ;
 
-\ State accessors. Each trajectory reads/writes its own slots.
 : actor-s0@  ( actor -- w )      actor>state 0 + + @ ;
 : actor-s0!  ( w actor -- )      actor>state 0 + + ! ;
 : actor-s2@  ( actor -- w )      actor>state 2 + + @ ;
@@ -72,7 +72,12 @@ require sprites-data.fs
 : actor-s6c@ ( actor -- u8 )     actor>state 6 + + c@ ;
 : actor-s6c! ( u8 actor -- )     actor>state 6 + + c! ;
 
-\ -- Sine table (32 entries, signed bytes, range -20..+20) -------------------
+
+\ The sine table
+\ ──────────────
+\ 32 signed bytes covering one full period, range -20..+20.  Stored as
+\ unsigned bytes; sine@ sign-extends the result to a 16-bit value so
+\ trajectories can add it directly to a y coordinate.
 
 create sine-table
     $00 c, $04 c, $08 c, $0B c, $0E c, $11 c, $12 c, $14 c,
@@ -80,16 +85,23 @@ create sine-table
     $00 c, $FC c, $F8 c, $F5 c, $F2 c, $EF c, $EE c, $EC c,
     $EC c, $EC c, $EE c, $EF c, $F2 c, $F5 c, $F8 c, $FC c,
 
-\ Read sine-table[i] sign-extended to 16-bit.
 : sine@  ( i -- s16 )
     sine-table + c@
     dup 128 < if exit then
     256 - ;
 
-\ -- Erase / save-pos / draw / tick ------------------------------------------
+
+\ The erase/draw lifecycle
+\ ────────────────────────
+\ actor-erase blits the all-zero blank-shifted sprite at (ox, oy),
+\ wiping wherever the actor was last frame.  actor-draw looks up the
+\ current frame in the actor's frames table and blits it at (x, y).
+\ actor-save-pos copies (x, y) into (ox, oy) so the next erase wipes
+\ the new spot.  actor-tick decrements the per-frame counter and, when
+\ it reaches zero, advances the frame index modulo count and reloads
+\ tick = rate.
 
 : actor-erase  ( actor -- )
-    \ Blit blank-shifted at (ox, oy). blit8x signature: ( shifted x y -- ).
     >r
     blank-shifted
     r@ actor-ox@
@@ -102,23 +114,20 @@ create sine-table
     r@ actor-y@  r@ actor-oy!
     r> drop ;
 
-\ Look up the address of the current frame: frames-table[frame-idx].
-\ Each entry is a 2-byte cell.
 : actor-current-frame  ( actor -- shifted-addr )
-    dup actor>frame + c@   ( actor i )
-    swap actor>frames + @  ( i table )
+    dup actor>frame + c@
+    swap actor>frames + @
     swap 2* + @ ;
 
 : actor-draw  ( actor -- )
-    dup actor-current-frame   ( actor shifted )
-    over actor-x@             ( actor shifted x )
-    rot  actor-y@             ( shifted x y )
+    dup actor-current-frame
+    over actor-x@
+    rot  actor-y@
     blit8x ;
 
-\ Decrement tick; when it reaches 0 advance frame index and reload tick = rate.
 : actor-tick  ( actor -- )
     >r
-    r@ actor>tick + c@ 1-     ( new-tick )
+    r@ actor>tick + c@ 1-
     dup 0= if
         drop
         r@ actor>frame + c@ 1+
@@ -129,19 +138,25 @@ create sine-table
     r@ actor>tick + c!
     r> drop ;
 
-\ -- Helpers used by trajectories --------------------------------------------
 
-\ Negate the word at addr in place.
+\ Bounds and small helpers
+\ ────────────────────────
+\ An 8x8 sprite drawn via blit8x can sit at x in [0, 240] and y in
+\ [0, 184] before clipping the right or bottom edges.  neg! flips the
+\ sign of a cell in place — used by the bouncing trajectories to flip
+\ velocity on contact with an edge.
+
 : neg!  ( addr -- )  dup @ negate swap ! ;
 
-\ Screen bounds for an 8x8 sprite drawn via BLIT8X.
-\ X may go up to 240 (right column = 31, last valid). Y up to 184.
 240 constant max-x
 184 constant max-y
 
-\ -- linear-bounce -----------------------------------------------------------
-\ State: s0 = dx (s16), s2 = dy (s16).
-\ Each step: x += dx, y += dy, bounce on edges.
+
+\ linear-bounce
+\ ─────────────
+\ State: s0 = dx, s2 = dy.  Each tick adds the velocity to position;
+\ when an edge is hit, position clamps to that edge and the matching
+\ velocity is negated so the next tick moves away.
 
 : linear-bounce  ( actor -- )
     >r
@@ -165,39 +180,39 @@ create sine-table
     then
     r> drop ;
 
-\ -- sine-flier --------------------------------------------------------------
-\ State: s0 = dx (s16), s2 = base-y (s16),
-\        s4 = phase (u8), s5 = phase-step (u8).
-\ x scrolls horizontally and wraps; y = base-y + sine-table[phase].
+
+\ sine-flier
+\ ──────────
+\ State: s0 = dx, s2 = base-y, s4 = phase byte, s5 = phase step.
+\ x scrolls horizontally and wraps at the screen edges; y is base-y
+\ plus sine-table[phase], with phase advancing by step every tick and
+\ wrapping into [0, 31].  dx stays positive — there's no bouncing,
+\ just an endless rightward (or leftward) scroll.
 
 : sine-flier  ( actor -- )
     >r
-    \ x += dx, then wrap to [0, max-x]
     r@ actor-s0@  r@ actor-x@ +
     dup 0< if drop max-x then
     dup max-x > if drop 0 then
     r@ actor-x!
-    \ phase = (phase + step) and 31
     r@ actor-s4c@  r@ actor-s5c@ +  31 and  r@ actor-s4c!
-    \ y = base-y + sine(phase)
     r@ actor-s4c@ sine@   r@ actor-s2@ +   r@ actor-y!
     r> drop ;
 
-\ -- gravity-bounce ----------------------------------------------------------
-\ State: s0 = dx (s16), s2 = dy (s16),
-\        s4 = gravity (s16), s6 = floor-y (s16).
-\ Each step: dy += gravity, x += dx, y += dy.
-\ Floor hit (y > floor): clamp y, negate dy. Wall hit on x: negate dx.
+
+\ gravity-bounce
+\ ──────────────
+\ State: s0 = dx, s2 = dy, s4 = gravity, s6 = floor-y.  Each tick adds
+\ gravity to dy, then dx and dy to position.  Hitting a wall negates
+\ dx; hitting the floor clamps y and negates dy, so the bounce loses
+\ no energy (and the ball will keep bouncing forever — by design, for
+\ a demo).
 
 : gravity-bounce  ( actor -- )
     >r
-    \ dy += gravity
     r@ actor-s4@  r@ actor>state 2 + + +!
-    \ x += dx
     r@ actor-s0@  r@ actor>x + +!
-    \ y += dy
     r@ actor-s2@  r@ actor>y + +!
-    \ wall bounces on x
     r@ actor-x@ 0< if
         0 r@ actor-x!
         r@ actor>state + neg!
@@ -206,21 +221,22 @@ create sine-table
         max-x r@ actor-x!
         r@ actor>state + neg!
     then
-    \ floor bounce on y
     r@ actor-y@  r@ actor-s6@  > if
         r@ actor-s6@  r@ actor-y!
         r@ actor>state 2 + + neg!
     then
     r> drop ;
 
-\ -- player-control ----------------------------------------------------------
-\ Keyboard-driven horizontal movement. State: s0 = speed (s16, pixels/tick).
-\ O = move left, P = move right. Releases stop motion. y is left untouched
-\ so callers can compose this with another vertical-motion trajectory if
-\ they like, or just leave the actor at a fixed altitude.
 
-79 constant key-O    \ ASCII 'O'
-80 constant key-P    \ ASCII 'P'
+\ player-control
+\ ──────────────
+\ Keyboard-driven horizontal movement.  State: s0 = speed.  O moves
+\ left, P moves right; releases stop motion.  y is left untouched so
+\ callers can compose this with another vertical-motion trajectory or
+\ leave the actor at a fixed altitude.
+
+79 constant key-O
+80 constant key-P
 
 : player-control  ( actor -- )
     >r
@@ -238,12 +254,12 @@ create sine-table
     then
     r> drop ;
 
-\ -- High-level step helpers -------------------------------------------------
-\ User typically writes:
-\     : step-foo
-\         my-actor dup actor-pre-step
-\         dup my-trajectory
-\         actor-post-step ;
+
+\ Step helpers
+\ ────────────
+\ The boilerplate around every trajectory is the same: erase before,
+\ tick + draw + save-pos after.  These two helpers wrap the pre/post
+\ pieces so a step word reduces to "erase, run trajectory, post-step".
 
 : actor-pre-step   ( actor -- )  actor-erase ;
 : actor-post-step  ( actor -- )

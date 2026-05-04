@@ -1,20 +1,20 @@
-\ Demo for asm-primitives.fs — exercises each ::: word with visible output.
+\ Visible-output demo for asm-primitives.fs — exercises each `:::` word
+\ with a printed result, plus a screen-fill at the end.  Build, run in
+\ any Spectrum emulator (Fuse, ZEsarUX), and the screen will show:
+\
+\     1002          \ 1000 cell+
+\     7 7           \ 7 ?dup
+\     0             \ 0 ?dup
+\     A             \ 64 1c+! emitted as a char
+\     1             \ 5 bit0?
+\     0             \ 4 bit0?
+\
+\ followed by the entire attribute area painted bright white — that's
+\ the fill-byte demo writing 768 copies of attribute 56 to $5800.
 \
 \ Build:
-\   uv run python -m zt.cli build examples/asm-primitives/main.fs \
-\                                 -o build/asm-primitives.sna \
-\                                 --map build/asm-primitives.map
-\
-\ Run the resulting .sna in any Spectrum emulator (Fuse, ZEsarUX, etc.).
-\
-\ Expected screen output:
-\   1002          \ 1000 cell+
-\   7 7           \ 7 ?dup
-\   0             \ 0 ?dup
-\   A             \ 64 1c+! emitted as char
-\   1             \ 5 bit0?
-\   0             \ 4 bit0?
-\ Plus the entire attribute area painted bright white (the fill-byte demo).
+\   uv run python -m zt.cli build examples/asm-primitives-demo.fs \
+\       -o build/asm-primitives.sna --map build/asm-primitives.map
 
 require asm-primitives.fs
 

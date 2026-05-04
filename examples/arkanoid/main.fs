@@ -1,8 +1,7 @@
-\ Arkanoid-like — paddle and ball with breakable bricks.
-\
-\ Controls (in an emulator):
-\   O — move paddle left
-\   P — move paddle right
+\ Arkanoid-like — paddle and ball with breakable bricks.  Controls are
+\ O to move the paddle left, P to move right; the ball loses a life
+\ when it falls below the paddle row, and clearing the brick wall
+\ refills it for another go.
 \
 \ Build:  zt build examples/arkanoid/main.fs -o build/arkanoid.sna
 \

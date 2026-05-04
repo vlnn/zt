@@ -1,9 +1,15 @@
-\ examples/zlm-tinychat/main.fs — z80ai's tinychat ported to zt.
+\ z80ai's tinychat, ported to zt.  A four-layer neural net runs
+\ entirely in Z80 integer arithmetic, taking a 256-cell input vector
+\ (128 query buckets + 128 context buckets) through hidden layers of
+\ 256 → 192 → 128 cells to a 40-way output.  Each layer is a dot
+\ product plus bias, wrapped to 16 bits, arithmetic-shift-right by
+\ two, then ReLU (skipped on the final layer).  Argmax over the 40
+\ logits picks an output character, which is emitted and appended to
+\ the rolling context window before the loop repeats.
 \
-\ Architecture: 256 (128 query + 128 context buckets) → 256 → 192 → 128 → 40.
-\ Weights live in 128K banks 0/1/3/4 (one layer each, $C000 in their bank).
-\ Per layer: dot → +bias → 16-bit wrap → arshift2 → ReLU (skip ReLU on final).
-\ Argmax over 40 logits → charset lookup → EMIT → append to context → repeat.
+\ Weights live in 128K RAM banks 0/1/3/4 — one layer per bank, each
+\ paged into $C000 when its layer runs.  This is what makes the
+\ whole model fit on a Spectrum 128 at all.
 \
 \ Build: zt build examples/zlm-tinychat/main.fs -o build/zlm-tinychat.sna --target 128k
 \ Open in any Spectrum 128 emulator and watch a chatbot from 1976 say HI.

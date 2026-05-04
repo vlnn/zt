@@ -1,11 +1,8 @@
-\ Multi-file plasma entry point.
-\
-\ Include graph:
-\    main.fs
-\      require app/plasma.fs
-\        require ../lib/math.fs     <- canonical path
-\        require ../lib/screen.fs
-\          require math.fs          <- same canonical path (dedup)
+\ Multi-file plasma entry point.  Doubles as a smoke test for require
+\ deduplication: `app/plasma.fs` requires `../lib/math.fs`, then
+\ `../lib/screen.fs`, which in turn requires `math.fs` from the same
+\ lib directory.  The resolver canonicalises both paths to the same
+\ file and loads it once.
 
 require app/plasma.fs
 

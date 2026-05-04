@@ -1,54 +1,60 @@
-\ Sprite dynamics demo: 3 actors, side by side, run forever.
+\ Three actors animated side by side, run forever.  The player is a
+\ keyboard-controlled animated smiley; the flier is a smiley sliding
+\ horizontally with a vertical sine wave; the gravity ball falls,
+\ accelerates, and bounces off an invisible floor.  Together they
+\ exercise every part of the actor framework in lib/animation.fs.
 \
-\   actor-player   — animated smiley, moved by O (left) and P (right)
-\   actor-flier    — single-frame smiley, sine-wave horizontal flight
-\   actor-gravity  — ball falling under gravity, bouncing on a "floor"
+\ Controls: O moves the player left, P moves it right.  No HALT —
+\ the loop is open-ended; an emulator just keeps running it.
 \
 \ Build:  zt build examples/sprite-demo/dynamic.fs -o build/sprite-dynamic.sna
-\
-\ Controls (in an emulator):
-\   O — move player left
-\   P — move player right
-\
-\ The frame loop runs forever — there is no halt.
 
 require lib/animation.fs
 
-\ -- Actor records (compile-time initialized) --------------------------------
-\ Layout matches /actor (24 bytes):
-\   x(2) y(2) ox(2) oy(2) frames(2) count(1) frame(1) tick(1) rate(1)
-\   state(8) spare(2)
 
-\ Player: animated 2-frame smiley. Keyboard-controlled, fixed y.
-\ state[0..1] = horizontal speed (pixels per tick). y stays at 24.
+\ Actor records
+\ ─────────────
+\ Each `create` reserves 24 bytes and initialises every field.  Layout
+\ comes from /actor in animation.fs: position cells, previous-position
+\ cells, the frames-table xt, count/frame/tick/rate bytes, then 8
+\ bytes of trajectory-private state.  The state slots mean different
+\ things to different trajectories — see the comments above each.
+
+\ Player: animated 2-frame smiley, fixed y = 24, state[0..1] = speed.
 create actor-player
-    32 , 24 ,                       \ x, y
-    32 , 24 ,                       \ ox, oy
+    32 , 24 ,
+    32 , 24 ,
     ' smiley-frames ,
-    2 c, 0 c, 4 c, 4 c,             \ count=2, frame=0, tick=4, rate=4
-    3 , 0 , 0 , 0 ,                 \ state: speed=3 (rest unused)
+    2 c, 0 c, 4 c, 4 c,
+    3 , 0 , 0 , 0 ,
     0 ,
 
-\ Flier: sine wave. dx=4, base-y=80, phase=0, phase-step=2.
+\ Flier: state[0..3] = dx + base-y; state[4..5] = phase + step.
 create actor-flier
     8 , 80 ,
     8 , 80 ,
     ' flier-frames ,
     1 c, 0 c, 1 c, 1 c,
-    4 , 80 ,                        \ state[0..3]: dx=4, base-y=80
-    0 c, 2 c, 0 c, 0 c,             \ state[4..7]: phase=0, step=2, _, _
+    4 , 80 ,
+    0 c, 2 c, 0 c, 0 c,
     0 ,
 
-\ Gravity ball: dx=2, dy=0, gravity=2, floor-y=176.
+\ Gravity ball: state = dx, dy, gravity, floor-y.
 create actor-gravity
     16 , 16 ,
     16 , 16 ,
     ' ball-frames ,
     1 c, 0 c, 1 c, 1 c,
-    2 , 0 , 2 , 176 ,               \ state: dx, dy, gravity, floor-y
+    2 , 0 , 2 , 176 ,
     0 ,
 
-\ -- Per-actor stepping ------------------------------------------------------
+
+\ Per-actor stepping
+\ ──────────────────
+\ Every step word follows the same shape: erase, run a trajectory,
+\ then tick + draw + save-position.  actor-pre-step / actor-post-step
+\ from animation.fs encapsulate the boilerplate; only the trajectory
+\ in the middle differs from actor to actor.
 
 : step-player
     actor-player dup actor-pre-step
@@ -70,10 +76,13 @@ create actor-gravity
     step-flier
     step-gravity ;
 
-\ -- main --------------------------------------------------------------------
-\ Forever loop. To bound execution (e.g. for tests), wrap the body in a
-\ counted DO/LOOP and HALT after; keeping interrupts disabled (no
-\ UNLOCK-SPRITES) lets HALT actually stop the simulator.
+
+\ Main loop
+\ ─────────
+\ Forever loop with no halt.  Interrupts stay disabled (lock-sprites
+\ is not paired with unlock-sprites), so the simulator can be stopped
+\ cleanly from the outside; for a real frame-rate program you'd want
+\ to unlock and synchronise to the ULA.
 
 : main
     7 0 cls

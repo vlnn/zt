@@ -1,20 +1,21 @@
-\ Brick grid for arkanoid.
-\
-\ A brick lives in a fixed 30x4 grid. Brick column 0..29 maps to screen
-\ char column 1..30 — char columns 0 and 31 are reserved for side walls.
-\ Brick row 0..3 maps to screen char row 2..5.
-\
-\ Two coordinate systems coexist:
-\   - brick coords (bcol, brow) — index into the 30x4 grid
-\   - cell coords (col, row)    — screen character cell
-\ Words with `cell->` prefix translate from screen cells to brick coords.
-\ brick-count caches the live-brick total so handle-cleared can detect
-\ a cleared level in O(1) instead of scanning the grid each frame.
+\ The 30×4 brick grid: layout, drawing, hit detection, and the
+\ coordinate translations that bridge brick-grid space, screen-cell
+\ space, and pixel space.
 
 require core.fs
 require grid.fs
 require screen.fs
 require sprites.fs
+
+
+\ Layout and state
+\ ────────────────
+\ Brick column 0..29 maps to screen char column 1..30; columns 0 and
+\ 31 are reserved for the side walls.  Brick row 0..3 maps to screen
+\ rows 2..5.  brick-grid is the live/dead bitmap (one byte per brick,
+\ via grid.fs); brick-count caches the live total so handle-cleared
+\ in game.fs can detect a clear in O(1) instead of scanning the grid.
+\ row-attrs gives each row its own colour.
 
 30 constant bricks-cols
 4  constant bricks-rows
@@ -23,7 +24,6 @@ require sprites.fs
 $07 constant background-attr
 
 create brick-grid 120 allot
-\ One paper/ink byte per brick row (0..3), giving each row a colour.
 create row-attrs   $42 c, $46 c, $44 c, $45 c,
 
 variable brick-count
@@ -37,6 +37,14 @@ variable brick-count
 : bricks-screen-col  ( bcol -- col )    bricks-col-base + ;
 : brick-alive?       ( bcol brow -- flag )   grid@ 0= 0= ;
 : brick-clear        ( bcol brow -- )   0 -rot grid! ;
+
+
+\ Drawing
+\ ───────
+\ One blit8c per brick, with the row's pre-set colour.  draw-bricks-row
+\ paints a whole row of 30; draw-all-bricks runs it for the four rows.
+\ erase-brick uses brick-blank with the background attribute, so an
+\ erased cell visually matches the gap above the bricks.
 
 : draw-brick         ( bcol brow -- )
     >r
@@ -62,8 +70,15 @@ variable brick-count
 : draw-all-bricks    ( -- )
     bricks-rows 0 do i draw-bricks-row loop ;
 
-\ Convert pixel coordinates to brick coordinates. `2/ 2/ 2/` is `/8`
-\ implemented as three signed shifts since zt has no native divide.
+
+\ Coordinate translations
+\ ───────────────────────
+\ Three coordinate systems coexist: pixels (0..255 horizontally),
+\ screen cells (0..31 / 0..23), and brick coordinates (0..29 / 0..3).
+\ The `pixel->b*` words divide by 8 — implemented as `2/ 2/ 2/`
+\ because zt has no native divide — and shift the origin into brick
+\ space.  ball-center-* finds the centre of an 8x8 sprite.
+
 : ball-center-x      ( bx -- cx )      4 + ;
 : ball-center-y      ( by -- cy )      4 + ;
 : pixel->bcol        ( px -- bcol )    2/ 2/ 2/ bricks-col-base - ;
@@ -81,8 +96,16 @@ variable brick-count
 : brick-in-range?    ( bcol brow -- flag )
     brow-in-range? swap bcol-in-range? and ;
 
-\ hit-cell: if a live brick exists at (bcol, brow), erase it, decrement
-\ brick-count, and return -1; otherwise return 0 without side effects.
+
+\ Hit detection
+\ ─────────────
+\ hit-cell is the all-or-nothing brick-collision primitive: if a live
+\ brick exists at (bcol, brow), erase it, decrement the live count,
+\ and return true; otherwise leave everything unchanged and return
+\ false.  ball-hits-brick? samples a single point — the ball's
+\ centre — against the grid; corner-clipping registers as a hit only
+\ when the centre crosses the brick boundary.
+
 : hit-cell           ( bcol brow -- hit? )
     2dup brick-in-range? 0= if 2drop 0 exit then
     2dup brick-alive?    0= if 2drop 0 exit then
@@ -92,9 +115,6 @@ variable brick-count
     2drop
     -1 ;
 
-\ Sample a single point — the ball's centre — against the brick grid.
-\ This is a small approximation: a ball clipping a brick corner only
-\ registers a hit when its centre crosses into the brick cell.
 : ball-hits-brick?   ( bx by -- hit? )
     ball-center-y pixel->brow
     swap ball-center-x pixel->bcol

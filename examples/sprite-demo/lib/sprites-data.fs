@@ -1,11 +1,24 @@
-\ Sprite data for the demo: smiley, smiley pre-shifted, and three ship pieces.
+\ Sprite data for the demos: the smiley in raw and pre-shifted form, a
+\ closed-eye variant for animation, a ball, a blank, and three ship
+\ pieces.  All sprites for the dynamic demo come pre-shifted because
+\ blit8x and friends require zero-runtime-shifting input — a one-time
+\ memory cost for free runtime speed.
 \
-\ Layouts:
-\   - smiley:         8 raw bytes, row 0 first         (for BLIT8 / BLIT8C)
-\   - smiley-shifted: 8 shifts x 16 bytes (left|right) (for BLIT8X / BLIT8XC)
-\   - ship-{nose,body,tail}: each a 128-byte pre-shifted block
+\ Pre-shifted layout: 8 shift positions × 16 bytes (8 rows × 2 bytes
+\ left|right) = 128 bytes per sprite.  For shift s and source byte b
+\ at row r:
+\     left  = b >> s
+\     right = (b << (8 - s)) & $FF
+\ blit8x indexes into the right shift block based on the low 3 bits
+\ of the destination x.
 
-\ -- 8x8 raw smiley ----------------------------------------------------------
+
+\ The basic smiley
+\ ────────────────
+\ smiley is the raw 8-byte form for char-aligned blits (blit8 / blit8c).
+\ smiley-shifted is the 128-byte pre-shifted form for arbitrary pixel
+\ positions (blit8x / blit8xc).
+
 create smiley
     $3C c, $42 c, $A5 c, $81 c, $A5 c, $99 c, $42 c, $3C c,
 
@@ -32,7 +45,14 @@ create smiley-shifted
     $00 c, $78 c, $00 c, $84 c, $01 c, $4A c, $01 c, $02 c,
     $01 c, $4A c, $01 c, $32 c, $00 c, $84 c, $00 c, $78 c,
 
-\ -- Ship pieces for MULTI-BLIT (each pre-shifted, 128 bytes) ----------------
+\ The spaceship
+\ ─────────────
+\ Three pre-shifted 8x8 pieces — nose, body, tail — that compose into
+\ a 24x8 spaceship.  ship-table is the multi-blit descriptor: a count
+\ byte followed by triples of (dx byte, dy byte, addr cell) describing
+\ where each piece sits relative to the multi-blit's origin.  `' word ,`
+\ pushes the word's address at compile time and embeds it as a cell.
+
 create ship-nose
     $07 c, $00 c, $1F c, $00 c, $7F c, $00 c, $FF c, $00 c,
     $FF c, $00 c, $7F c, $00 c, $1F c, $00 c, $07 c, $00 c,
@@ -95,8 +115,13 @@ create ship-table
     8  c, 0 c, ' ship-body ,
     16 c, 0 c, ' ship-tail ,
 
-\ -- Animation sprites: closed-eye smiley, ball, blank ----------------------
-\ Closed-eye smiley (rows 2 and 4 are eyelids = $BD)
+\ Animation sprites
+\ ─────────────────
+\ smiley-closed-shifted alternates with smiley-shifted to make the
+\ player blink.  ball-shifted is the gravity-bouncer.  blank-shifted
+\ is 128 bytes of zero — actor-erase blits it to wipe an actor's
+\ previous position before drawing the new one.
+
 create smiley-closed-shifted
     $3C c, $00 c, $42 c, $00 c, $BD c, $00 c, $81 c, $00 c,
     $BD c, $00 c, $99 c, $00 c, $42 c, $00 c, $3C c, $00 c,
@@ -152,6 +177,12 @@ create blank-shifted
     $00 c, $00 c, $00 c, $00 c, $00 c, $00 c, $00 c, $00 c,
     $00 c, $00 c, $00 c, $00 c, $00 c, $00 c, $00 c, $00 c,
     $00 c, $00 c, $00 c, $00 c, $00 c, $00 c, $00 c, $00 c,
+
+\ Frame tables
+\ ────────────
+\ Each frame table is an array of 16-bit pre-shifted-sprite addresses,
+\ one per frame.  An actor's `frames` slot points at one of these;
+\ actor-current-frame indexes into it by the actor's frame counter.
 
 \ Frame tables: array of 16-bit pre-shifted-sprite addresses, one per frame.
 create smiley-frames

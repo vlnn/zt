@@ -1,4 +1,5 @@
-\ app/mined.fs — aggregator for the mined-out example.
+\ Aggregator for the mined-out app modules.  Listed in dependency
+\ order so any forward reference resolves before its first use.
 
 require state.fs
 require sounds.fs

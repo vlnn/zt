@@ -1,5 +1,8 @@
-\ Spectrum attribute-memory helpers.
-\ Relative REQUIRE resolves against THIS file's directory.
+\ Spectrum attribute-memory helpers — addresses inside the 32×24
+\ attribute grid at $5800, plus the store primitive.  The relative
+\ require below resolves against this file's directory, so `math.fs`
+\ finds the sibling in lib/.  row-addr exploits the 32-column row
+\ stride: `row << 5` is the row offset from `attrs`.
 
 require math.fs
 

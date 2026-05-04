@@ -1,8 +1,8 @@
-\ app/title.fs — BASIC-faithful intro matching Ian Andrew's lines 7000-7390.
-\   Screen 1 (line 7000): QUICKSILVA PRESENTS, "strategy and skill", mine frame
-\   Screen 2 (line 7081): mission briefing + Bill running across text
-\   Screen 3 (line 7200+): tips, bug demo, mine-adjacency demo
-\ Colour: BORDER 1, PAPER 1 (blue), INK 7 (white) per BASIC line 7000.
+\ The intro sequence: a faithful port of Ian Andrew's three-screen
+\ BASIC opening (lines 7000-7390 in the 1983 source).  Three screens
+\ play in order — Quicksilva title with the mine-frame reveal, the
+\ mission briefing with Bill running across the screen, and a tips
+\ screen showing the controls and adjacency rules.
 
 require core.fs
 require screen.fs
@@ -13,56 +13,71 @@ require state.fs
 require board.fs
 require hud.fs
 
-\ flush pending input then block until any key is pressed
+
+\ Common helpers
+\ ──────────────
+\ The intro screens share a fixed colour scheme (white-on-blue for
+\ the title and mission, black-on-white for the instructions) and a
+\ "press any key" prompt that drains stale keystrokes before
+\ blocking.
+
 : press-any-key  ( -- )       drain-keys wait-key drop ;
-\ position the cursor at column 0 of the given row
 : at-row         ( row -- )   0 swap at-xy ;
-\ set border + colours for the title and mission screens (white-on-blue)
 : intro-colors   ( -- )       1 border  1 7 cls ;
-\ set border + colours for the instructions screen (black-on-white)
 : instr-colors   ( -- )       1 border  7 0 cls ;
 
-\ draw the "PRESS A KEY" prompt at the bottom of the screen
 : press-key-prompt  ( -- )    21 21 at-xy  ." PRESS A KEY" ;
 
-\ short five-note jingle played as the title appears
+
+\ Title sounds
+\ ────────────
+\ Two short jingles: a five-note chirp on the title appearance, and
+\ a downward sweep that plays as the mine frame builds around the
+\ logo.  Both are pure beep/timing — no data, just code.
+
 : intro-chirp    ( -- )
     2 30 beep  1 20 beep
     2 26 beep  3 26 beep  2 18 beep ;
 
-\ ascending sweep accompanying the mine-frame title reveal
 : title-beeps    ( -- )
     80 0 do  3 60 i 2 / - beep  loop ;
 
-\ draw a full-width row of mine glyphs at row
+
+\ The mine frame
+\ ──────────────
+\ Decorative rectangle of mine glyphs framing the "MINED OUT!" logo.
+\ Three components: top and bottom rows of mine glyphs, plus the two
+\ side columns drawn one cell at a time.
+
 : mine-bar       ( row -- )
     at-row  32 0 do  ch-mine emit  loop ;
 
-\ draw mine glyphs in columns 0 and 31 of row, forming the frame's vertical edges
 : frame-sides-row  ( row -- )
     dup  0 swap at-xy ch-mine emit
          31 swap at-xy ch-mine emit ;
 
-\ draw the vertical sides of the title's mine frame on rows 8..10
 : frame-sides    ( -- )
     11 8 do i frame-sides-row loop ;
 
-\ draw the rectangle of mine glyphs that surrounds the title
 : draw-mine-frame  ( -- )
     7 mine-bar
     frame-sides
     11 mine-bar ;
 
-\ render the "MINED OUT!" title inside the mine frame
 : title-in-frame  ( -- )
    11 9 at-xy  ." MINED OUT!" ;
 
-\ print the two-line tagline below the title
 : tagline        ( -- )
     14 at-row  ."  OR RESCUE BILL THE WORM FROM"
     15 at-row  ."        CERTAIN OLD AGE" ;
 
-\ Quicksilva-presents title screen — BASIC line 7000
+
+\ Screen 1: Quicksilva title
+\ ──────────────────────────
+\ Matches BASIC line 7000.  Prints the publisher line, plays the
+\ chirp, swaps to the strategy-and-skill subtitle, draws the mine
+\ frame, sweeps the audio, prints the tagline, waits for input.
+
 : quicksilva-screen  ( -- )
     intro-colors
     0 at-row  ."     QUICKSILVA PRESENTS ...."
@@ -76,12 +91,15 @@ require hud.fs
     press-key-prompt
     press-any-key ;
 
-\ ---------------------------------------------------------------------------
-\ Scrolling Bill: BASIC line 7130 has a string with the player glyph and the
-\ bug 8 cells apart.  A 32-char window scrolls across it at row 6.  The
-\ buffer is 85 bytes: 33 spaces, player glyph, 8 spaces, bug glyph, 42
-\ trailing spaces.  Populated once per call via fill.
-\ ---------------------------------------------------------------------------
+
+\ The Bill scroller
+\ ─────────────────
+\ BASIC line 7130 holds an 85-character string with the player glyph
+\ and the bug eight cells apart, surrounded by spaces.  A 32-char
+\ window scrolls across it at row 6, animated by writing successive
+\ slices and beeping on each step.  The buffer is built once per
+\ call by filling with spaces and dropping the two glyphs into
+\ fixed positions.
 
 85 constant bill-scroll-len
 52 constant bill-scroll-steps
@@ -90,20 +108,16 @@ require hud.fs
 
 create bill-scroll-buf   85 allot
 
-\ fill the scroll buffer with spaces and place the player and bug glyphs
 : init-bill-scroll  ( -- )
     bill-scroll-buf bill-scroll-len 32 fill
     ch-player bill-scroll-buf bill-player-offset + c!
     ch-bug    bill-scroll-buf bill-bug-offset    + c! ;
 
-\ render a 32-character window of the scroll buffer at the given row
 : bill-scroll-frame  ( offset row -- )
     at-row  bill-scroll-buf + 32 type ;
 
-\ short tick beep played each scroll step
 : bill-scroll-beep   ( -- )   1 60 beep ;
 
-\ animate Bill running across the given row, beep-throttled
 : scroll-bill-row  ( row -- )
     init-bill-scroll
     bill-scroll-steps 0 do
@@ -112,11 +126,13 @@ create bill-scroll-buf   85 allot
         2 throttle
     loop drop ;
 
-\ ---------------------------------------------------------------------------
-\ Screen 2: mission briefing, then Bill scrolls across row 6.
-\ ---------------------------------------------------------------------------
 
-\ mission briefing screen — BASIC line 7081
+\ Screen 2: mission briefing
+\ ──────────────────────────
+\ Matches BASIC line 7081.  The text block explains the goal of
+\ rescuing Bill on level 9, then runs the Bill scroller across row
+\ 6 to demonstrate the player and bug glyphs in motion.
+
 : mission-screen  ( -- )
     instr-colors
     0  at-row  ."   (c) MINED OUT!  by Ian Andrew"
@@ -132,11 +148,12 @@ create bill-scroll-buf   85 allot
     press-key-prompt
     press-any-key ;
 
-\ ---------------------------------------------------------------------------
-\ Screen 3: keys + adjacency + tips.
-\ ---------------------------------------------------------------------------
 
-\ controls and gameplay tips screen — BASIC line 7200+
+\ Screen 3: controls and tips
+\ ───────────────────────────
+\ Matches BASIC line 7200+.  Pure text, no animation: keys, the
+\ adjacency rule, and a tip about safe areas.
+
 : tips-screen    ( -- )
     instr-colors
     0  at-row  ."            CONTROLS"
@@ -153,7 +170,6 @@ create bill-scroll-buf   85 allot
     press-key-prompt
     press-any-key ;
 
-\ show all three intro screens in order
 : show-intro     ( -- )
     quicksilva-screen
     mission-screen

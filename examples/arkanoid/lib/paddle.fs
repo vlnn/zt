@@ -1,15 +1,19 @@
-\ Paddle: 3-cell-wide, char-aligned, horizontal motion driven by O / P keys.
-\
-\ Position is stored as the leftmost char column (0..29), at fixed row 22.
-\ Motion is throttled by paddle-rate: the paddle steps at most once every
-\ paddle-rate frames so it isn't unplayable on a 50 Hz loop.
-\
-\ paddle-vel records the per-frame column delta (-1, 0, or +1). bounce-paddle
-\ in ball.fs reads it to add some "english" to the ball when the player is
-\ actively moving the paddle into the contact.
+\ Paddle: 3-cell-wide, char-aligned, horizontal motion driven by O / P
+\ keys.  Position is stored as the leftmost char column, fixed at row
+\ 22.  Motion is throttled so the paddle isn't unplayable on a 50 Hz
+\ loop; paddle-vel records the per-frame column delta so ball.fs can
+\ add english to the bounce when the player is actively moving into
+\ the contact.
 
 require core.fs
 require sprites.fs
+
+
+\ State
+\ ─────
+\ paddle-col is the live column; paddle-old-col is the previous frame's
+\ column (used for trail erase).  paddle-tick counts up between motion
+\ steps; paddle-vel is the per-frame -1/0/+1 delta exposed to ball.fs.
 
 22 constant paddle-row
 3  constant paddle-w
@@ -31,6 +35,13 @@ variable paddle-vel
     paddle-start-col paddle-old-col !
     0 paddle-tick ! ;
 
+
+\ Drawing
+\ ───────
+\ Three blits per paddle: left cap, middle, right cap.  draw-paddle-at
+\ takes an explicit column so paddle-step can also use it for the
+\ erase phase via brick-blank.
+
 : draw-paddle-at     ( col -- )
     >r
     paddle-left  r@        paddle-row blit8
@@ -47,17 +58,20 @@ variable paddle-vel
 : erase-paddle       ( -- )    paddle-old-col @ erase-paddle-at ;
 : paddle-save-pos    ( -- )    paddle-col @ paddle-old-col ! ;
 
-\ Throttle: only return -1 (true) every paddle-rate-th call. Each call
-\ increments the tick; on overflow it resets and signals "step now". This
-\ keeps the paddle from gliding 50 cells per second when O or P is held.
+
+\ Throttling and motion
+\ ─────────────────────
+\ paddle-can-step? returns true once every paddle-rate calls — the
+\ rest tick the counter and signal "wait".  Both clamping moves test
+\ against the screen edge before mutating, so the column never briefly
+\ holds an out-of-range value.
+
 : paddle-can-step?   ( -- flag )
     paddle-tick @ 1+ paddle-tick !
     paddle-tick @ paddle-rate < if 0 exit then
     0 paddle-tick !
     -1 ;
 
-\ Both clamp at the screen edge before mutating, not after, so we never
-\ briefly write a column outside the legal range.
 : move-left          ( -- )
     paddle-col @ paddle-min-col > if -1 paddle-col +! then ;
 : move-right         ( -- )
@@ -72,10 +86,16 @@ variable paddle-vel
 : paddle-right-px    ( -- px )    paddle-col @ paddle-w + 8 * 1- ;
 : paddle-top-px      ( -- py )    paddle-row 8 * ;
 
-\ When the paddle moves one column, two of the three new cells overlap two
-\ of the three old cells. Only the cell that was paddle and is no longer
-\ paddle needs explicit blanking — the new draw-paddle will REPLACE-blit
-\ the rest. paddle-trail-col returns that one trailing cell.
+
+\ Per-frame integration
+\ ─────────────────────
+\ When the paddle moves one column, two of three new cells overlap two
+\ of three old cells; only the cell that was paddle and is no longer
+\ paddle needs explicit blanking, since the new draw will overwrite
+\ the rest.  paddle-trail-col is that one trailing cell.  paddle-step
+\ is the entry point: zero the velocity so a stationary frame reads
+\ zero, run input, and only erase-redraw when the column changed.
+
 : paddle-trail-col   ( -- col )
     paddle-col @ paddle-old-col @ > if
         paddle-old-col @
@@ -89,9 +109,6 @@ variable paddle-vel
 : paddle-changed?    ( -- flag )
     paddle-col @ paddle-old-col @ <> ;
 
-\ paddle-step is the one-frame entry point called by game-step. It always
-\ resets paddle-vel first (so a stationary frame reads as zero velocity),
-\ runs input, and only erases-and-redraws when the column actually changed.
 : paddle-step        ( -- )
     0 paddle-vel !
     paddle-input
