@@ -1092,10 +1092,13 @@ class TestTStatesED:
         _step(z80, 0xED, 0x52)
         assert z80._t_states == 15, "sbc hl,de should cost 15 T-states"
 
-    def test_ldir_zero_count_costs_nothing(self, z80):
+    def test_ldir_zero_count_wraps_to_65536(self, z80):
         z80.bc = 0
         _step(z80, 0xED, 0xB0)
-        assert z80._t_states == 0, "ldir with BC=0 should cost no T-states (current behavior)"
+        assert z80._t_states == 65535 * 21 + 16, (
+            "ldir with BC=0 wraps to 65536 iterations: "
+            "65535 non-final at 21 T-states + 1 final at 16 T-states"
+        )
 
     def test_ldir_single_byte_costs_16(self, z80):
         z80.hl = 0xC000

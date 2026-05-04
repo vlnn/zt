@@ -16,8 +16,14 @@ require core.fs
 \ number of bytes needed to hold n bits
 : bit-bytes   ( n-bits -- n-bytes )    7 + 3 rshift ;
 
+\ zero n bytes at addr, respecting fill's n>1 contract
+: zero-bytes  ( addr n -- )
+    dup 1 > if  0 fill  exit then
+    0= if  drop  exit then
+    0 swap c! ;
+
 \ zero the first n bits of the array at addr
-: bit-erase   ( n-bits addr -- )       swap bit-bytes 0 fill ;
+: bit-erase   ( n-bits addr -- )       swap bit-bytes zero-bytes ;
 
 \ byte offset within the array holding bit n
 : bit-byte    ( n -- offset )          3 rshift ;

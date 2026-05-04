@@ -990,12 +990,15 @@ class Z80:
             self.hl = r & 0xFFFF
             self._t_states += 15
         elif op == 0xB0:
-            while self.bc:
+            while True:
                 self._wb(self.de, self._rb(self.hl))
                 self.hl = (self.hl + 1) & 0xFFFF
                 self.de = (self.de + 1) & 0xFFFF
                 self.bc = (self.bc - 1) & 0xFFFF
-                self._t_states += 16 if self.bc == 0 else 21
+                if self.bc == 0:
+                    self._t_states += 16
+                    break
+                self._t_states += 21
             self.f &= ~(FLAG_H | FLAG_PV | FLAG_N)
         elif op == 0x79:
             self._outputs.append((self.bc, self.a))

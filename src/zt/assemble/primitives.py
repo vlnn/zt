@@ -1060,7 +1060,7 @@ def create_cmove(a: Asm) -> None:
 
 @primitive
 def create_fill(a: Asm) -> None:
-    """`FILL ( addr n c -- )` — write byte c to n consecutive addresses starting at addr."""
+    """`FILL ( addr n c -- )` — write byte c to n consecutive addresses starting at addr. Defined for n > 1; smaller counts are the caller's responsibility (LDIR with BC=0 wraps to 65536 on Z80)."""
     a.label("FILL")
     a.alias("fill", "FILL")
     a.ld_a_l()
@@ -1071,11 +1071,7 @@ def create_fill(a: Asm) -> None:
     a.ld_e_l()
     a.inc_de()
     a.dec_bc()
-    a.ld_a_b()
-    a.or_c()
-    a.jr_z_to("_fill_skip")
     a.ldir()
-    a.label("_fill_skip")
     a.pop_hl()
     a.dispatch()
 
