@@ -4,13 +4,17 @@ Compilation check plus expected words plus behavioural checks of the
 pure words.
 
 Big-text rendering (READY..., the digit, GREAT! / WRONG!) is verified
-via Forth-side `attr@` queries that bounce attribute bytes back out
-through `u.` so we can read them in the captured output.
+via Forth-side queries that bounce values out through `u.` so we can
+read them in the captured output:
+
+- attr@ for the per-cell colour byte (now ink + paper + bright);
+- c@ for the pixel-layer byte the renderer wrote, picked from the
+  4-entry half-row table ($00, $0F, $F0, $FF).
 
 The simulator's TEST_FONT replicates each char's code 8 times as its
 glyph, so the bit pattern of c is also the bit pattern of every row
-of c's glyph. That makes the lit / unlit cells under the 8x8
-attribute block predictable from c alone.
+of c's glyph.  That makes both pixel layers and attribute bytes
+predictable from c alone.
 """
 from __future__ import annotations
 
@@ -29,11 +33,14 @@ LIB_TIMING = EXAMPLE_DIR / "lib" / "timing.fs"
 LIB_BIG_TEXT = EXAMPLE_DIR / "lib" / "big-text.fs"
 
 
-BRIGHT_YELLOW_PAPER = (6 << 3) | 64
-BRIGHT_CYAN_PAPER = (5 << 3) | 64
-BRIGHT_GREEN_PAPER = (4 << 3) | 64
-BRIGHT_RED_PAPER = (2 << 3) | 64
-WHITE_PAPER = (7 << 3) | 0
+def attr_byte(ink: int, paper: int, bright: bool = True) -> int:
+    return ink | (paper << 3) | (64 if bright else 0)
+
+
+YELLOW_ON_WHITE = attr_byte(6, 7)
+CYAN_ON_WHITE = attr_byte(5, 7)
+GREEN_ON_WHITE = attr_byte(4, 7)
+RED_ON_WHITE = attr_byte(2, 7)
 
 
 @pytest.fixture(scope="module")
@@ -71,7 +78,9 @@ class TestCompiles:
     @pytest.mark.parametrize("word", [
         "rnd", "rnd-seed", "seed!", "random",
         "ms-per-frame", "frames>ms",
-        "glyph-addr", "bit-on?", "big-colours", "big-emit", "big-type",
+        "glyph-addr", "bit-on?", "leading-blanks",
+        "half-row-byte", "cell-bits", "cell-pix-addr", "paint-cell",
+        "big-colours", "big-emit", "big-type",
         "digit>char", "pick-digit", "random-delay",
         "pause", "wait-for-key",
         "show-ready", "show-digit", "show-great", "show-wrong",
@@ -180,103 +189,100 @@ class TestBehaviour:
             "reset-stats should clear both total-ms and round-count"
         )
 
-    @pytest.mark.parametrize("digit,col_in_glyph", [
-        # '5' = 0b00110101 → lit at glyph cols 2, 3, 5, 7
-        (5, 2),
-        (5, 3),
-        (5, 5),
-        (5, 7),
-        # '0' = 0b00110000 → lit at glyph cols 2, 3
-        (0, 2),
-        (0, 3),
-        # '9' = 0b00111001 → lit at glyph cols 2, 3, 4, 7
-        (9, 2),
-        (9, 4),
+    @pytest.mark.parametrize("digit,addr,expected", [
+        # '5' = 0b00110101, leading=2 → shifted = 0b11010100 = $D4
+        # cell-col 0: bits 7,6 = (1,1) → idx 3 → $FF
+        # cell-col 1: bits 5,4 = (0,1) → idx 1 → $0F
+        # cell-col 2: bits 3,2 = (0,1) → idx 1 → $0F
+        # cell-col 3: bits 1,0 = (0,0) → idx 0 → $00
+        (5, 0x4000, 0xFF),
+        (5, 0x4001, 0x0F),
+        (5, 0x4002, 0x0F),
+        (5, 0x4003, 0x00),
+        # '0' = 0b00110000, leading=2 → shifted = 0b11000000 = $C0
+        # cell-col 0 only is lit (idx 3 → $FF); the rest are $00.
+        (0, 0x4000, 0xFF),
+        (0, 0x4001, 0x00),
     ])
-    def test_show_digit_paints_lit_cells_bright_cyan(self, digit, col_in_glyph):
-        col = 12 + col_in_glyph
-        out = self._run(f"{digit} show-digit {col} 4 attr@ u.")
-        assert out == f"{BRIGHT_CYAN_PAPER} ".encode(), (
-            f"show-digit {digit}: lit glyph col {col_in_glyph} "
-            f"(screen col {col}, row 4) should be bright-cyan paper"
+    def test_show_digit_pixel_layer(self, digit, addr, expected):
+        out = self._run(f"{digit} show-digit {addr} c@ u.")
+        assert out == f"{expected} ".encode(), (
+            f"show-digit {digit}: pixel byte at {addr:#06x} should be "
+            f"{expected:#04x}"
         )
 
-    @pytest.mark.parametrize("digit,col_in_glyph", [
-        # '5' = 0b00110101 → unlit at glyph cols 0, 1, 4, 6
-        (5, 0),
-        (5, 1),
-        (5, 4),
-        (5, 6),
-        # '0' = 0b00110000 → unlit at most cols
-        (0, 0),
-        (0, 7),
-    ])
-    def test_show_digit_unlit_cells_blend_with_paper(self, digit, col_in_glyph):
-        col = 12 + col_in_glyph
-        out = self._run(f"{digit} show-digit {col} 4 attr@ u.")
-        assert out == f"{WHITE_PAPER} ".encode(), (
-            f"show-digit {digit}: unlit glyph col {col_in_glyph} "
-            f"should blend with the white cls paper"
+    def test_show_digit_attribute_is_cyan_on_white(self):
+        out = self._run("5 show-digit 0 0 attr@ u.")
+        assert out == f"{CYAN_ON_WHITE} ".encode(), (
+            "show-digit: every cell of the digit's 4x4 block carries the "
+            "ink-cyan / paper-white / bright attribute byte"
+        )
+
+    def test_show_digit_attribute_at_far_corner_of_block(self):
+        # cell (3, 3) is the bottom-right of the digit's 4x4 block.
+        out = self._run("5 show-digit 3 3 attr@ u.")
+        assert out == f"{CYAN_ON_WHITE} ".encode(), (
+            "show-digit's attribute byte should fill all 16 cells of the "
+            "char block, including the bottom-right corner"
         )
 
     def test_show_digit_does_not_paint_outside_its_block(self):
-        out = self._run("5 show-digit 11 4 attr@ u.")
+        # Cell (4, 0) is one cell to the right of the digit's block;
+        # untouched memory after fill-attrs(0) stays 0.
+        out = self._run("0 fill-attrs 5 show-digit 4 0 attr@ u.")
         assert out == b"0 ", (
-            "show-digit at base col 12 should leave column 11 untouched (zero)"
+            "show-digit at base col 0 should leave column 4 untouched"
         )
 
-    def test_show_ready_paints_R_lit_cell_yellow(self):
-        # 'R' = 82 = 0b01010010 → lit at glyph cols 1, 3, 6
-        # show-ready places "READ" at (0, 0): 'R' occupies cols 0-7
-        out = self._run("show-ready 1 0 attr@ u.")
-        assert out == f"{BRIGHT_YELLOW_PAPER} ".encode(), (
-            "show-ready: 'R' at col 0 has a lit pixel at glyph col 1, "
-            "which should be bright-yellow paper"
+    def test_show_ready_paints_first_char_pixels(self):
+        # 'R' = 82 = 0b01010010, leading=1 → shifted = 0b10100100 = $A4
+        # cell-col 0: bits 7,6 = (1,0) → idx 2 → $F0
+        out = self._run("show-ready $4000 c@ u.")
+        assert out == b"240 ", (
+            "show-ready: first cell of 'R' should write $F0 (= 240) to the "
+            "pixel layer at $4000"
         )
 
-    def test_show_ready_paints_second_line_at_row_8(self):
-        # 'Y' = 89 = 0b01011001 → lit at glyph cols 1, 3, 4, 7
-        # "Y..." starts at (0, 8): 'Y' occupies cols 0-7
-        out = self._run("show-ready 1 8 attr@ u.")
-        assert out == f"{BRIGHT_YELLOW_PAPER} ".encode(), (
-            "show-ready: 'Y' at row 8 has a lit pixel at glyph col 1, "
-            "which should be bright-yellow paper"
+    def test_show_ready_attribute_is_yellow_on_white(self):
+        out = self._run("show-ready 0 0 attr@ u.")
+        assert out == f"{YELLOW_ON_WHITE} ".encode(), (
+            "show-ready: each cell carries ink-yellow / paper-white / bright"
         )
 
-    @pytest.mark.parametrize("correct,expected_paper,letter,col_in_block", [
-        # 'G' = 71 = 0b01000111 → lit at cols 1, 5, 6, 7
-        (-1, BRIGHT_GREEN_PAPER, "G", 5),
-        # 'W' = 87 = 0b01010111 → lit at cols 1, 3, 5, 6, 7
-        (0,  BRIGHT_RED_PAPER,   "W", 5),
+    def test_show_ready_fits_on_one_row(self):
+        # 'READY...' is 8 chars * 4 cells = 32 cells = full width;
+        # the cell at the rightmost column (31) of row 0 should still
+        # carry the attribute, and row 4 (just below the block) shouldn't.
+        out = self._run("show-ready 31 0 attr@ u.  0 4 attr@ u.")
+        assert out == f"{YELLOW_ON_WHITE} 0 ".encode(), (
+            "show-ready should occupy cells (0..31, 0..3) and leave row 4 "
+            "untouched"
+        )
+
+    @pytest.mark.parametrize("correct,expected_attr,name", [
+        (-1, GREEN_ON_WHITE, "GREAT! (correct)"),
+        (0,  RED_ON_WHITE,   "WRONG! (wrong)"),
     ])
-    def test_show_verdict_uses_correct_colour(
-        self, correct, expected_paper, letter, col_in_block
-    ):
-        # Top line starts at (4, 0).  `correct` is the flag passed to
-        # show-verdict — non-zero → GRE..., zero → WRO...
-        col = 4 + col_in_block
-        out = self._run(f"{correct} show-verdict {col} 0 attr@ u.")
-        assert out == f"{expected_paper} ".encode(), (
-            f"show-verdict {correct}: lit pixel of '{letter}' at "
-            f"col {col} should be paper byte {expected_paper}"
+    def test_show_verdict_attribute(self, correct, expected_attr, name):
+        out = self._run(f"{correct} show-verdict 0 0 attr@ u.")
+        assert out == f"{expected_attr} ".encode(), (
+            f"show-verdict {name}: attribute byte should be {expected_attr}"
         )
 
-    def test_show_verdict_correct_paints_second_line(self):
-        # 'A' = 65 = 0b01000001 → lit at glyph cols 1, 7
-        # "AT!" starts at (4, 8): 'A' occupies cols 4..11, lit at col 5
-        out = self._run("-1 show-verdict 5 8 attr@ u.")
-        assert out == f"{BRIGHT_GREEN_PAPER} ".encode(), (
-            "show-verdict correct: second line 'AT!' at row 8 — 'A' lit "
-            "pixel should be bright-green paper"
+    def test_show_verdict_correct_first_char_pixels(self):
+        # 'G' = 71 = 0b01000111, leading=1 → shifted = 0b10001110 = $8E
+        # cell-col 0: bits 7,6 = (1,0) → idx 2 → $F0
+        out = self._run("-1 show-verdict $4000 c@ u.")
+        assert out == b"240 ", (
+            "show-verdict correct: 'G' lights cell-col 0 with $F0 at $4000"
         )
 
-    def test_show_verdict_wrong_paints_second_line(self):
-        # 'N' = 78 = 0b01001110 → lit at glyph cols 1, 4, 5, 6
-        # "NG!" starts at (4, 8): 'N' lit at col 4+1 = 5
-        out = self._run("0 show-verdict 5 8 attr@ u.")
-        assert out == f"{BRIGHT_RED_PAPER} ".encode(), (
-            "show-verdict wrong: second line 'NG!' at row 8 — 'N' lit "
-            "pixel should be bright-red paper"
+    def test_show_verdict_wrong_first_char_pixels(self):
+        # 'W' = 87 = 0b01010111, leading=1 → shifted = 0b10101110 = $AE
+        # cell-col 0: bits 7,6 = (1,0) → idx 2 → $F0
+        out = self._run("0 show-verdict $4000 c@ u.")
+        assert out == b"240 ", (
+            "show-verdict wrong: 'W' lights cell-col 0 with $F0 at $4000"
         )
 
     @pytest.mark.parametrize("digit,key,expected", [

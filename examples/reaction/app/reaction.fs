@@ -4,10 +4,11 @@
 \ average across rounds; the loop runs forever.
 \
 \ READY..., the digit, and the verdict (GREAT! / WRONG!) are rendered
-\ as 8x8 attribute-cell blocks via lib/big-text.fs — each font pixel
-\ becomes one whole 8x8 attribute square, so a single character
-\ occupies a 64x64-pixel patch of solid colour with no glyph pixels
-\ underneath.  Reaction stats stay in normal-sized text below.
+\ as 4x4 attribute-cell blocks via lib/big-text.fs — each glyph pixel
+\ becomes a 4x4 patch of actual pixels, so a single character is 32x32
+\ pixels.  Each cell carries its own ink-and-paper attribute, with the
+\ pixel layer drawn so that cell-quadrants light up to form the glyph.
+\ Reaction stats sit in normal-sized text below.
 
 require ../lib/rng.fs
 require ../lib/timing.fs
@@ -23,7 +24,7 @@ require ../lib/big-text.fs
 4   constant paper-green
 2   constant paper-red
 
-16  constant stats-row
+5   constant stats-row
 
 variable total-ms
 variable round-count
@@ -40,42 +41,34 @@ variable round-count
 
 \ Painting big colour text
 \ ────────────────────────
-\ Off-cells use the same paper as the cls background, so they blend
-\ in and only the lit cells stand out as a coloured glyph.
+\ Each cell carries one attribute byte (ink + paper, bright on); the
+\ pixel layer drawn by big-emit decides which 4x4 quadrants show the
+\ ink colour and which show the paper.  Paper stays white so the cell
+\ blends with the cls background where there's no glyph.
 
-: bright-paper  ( paper -- attr )    0 swap colour bright ;
-: blend-attr    ( -- attr )          0 paper-white colour ;
-: paint-with    ( paper -- )         bright-paper blend-attr big-colours ;
+: paint-with    ( ink -- )           paper-white colour big-colours ;
 
 : show-ready    ( -- )
     paper-yellow paint-with
-    s" READ" 0 0 big-type
-    s" Y..." 0 8 big-type ;
+    s" READY..." 0 0 big-type ;
 
 : show-digit    ( n -- )
     paper-cyan paint-with
-    digit>char 12 4 big-emit ;
+    digit>char 0 0 big-emit ;
 
 : show-great    ( -- )
     paper-green paint-with
-    s" GRE" 4 0 big-type
-    s" AT!" 4 8 big-type ;
+    s" GREAT!" 0 0 big-type ;
 
 : show-wrong    ( -- )
     paper-red paint-with
-    s" WRO" 4 0 big-type
-    s" NG!" 4 8 big-type ;
+    s" WRONG!" 0 0 big-type ;
 
 : show-verdict  ( correct? -- )      if show-great else show-wrong then ;
 
 
 \ Waiting for the player
 \ ──────────────────────
-\ pause blocks for a known number of frames — used for the pre-prompt
-\ delay.  wait-for-key counts frames *while* polling, so the caller
-\ gets both the key and the elapsed time in one call.  wait-for-release
-\ is the cleanup: without it the next round's wait-for-key would see
-\ the same key still held and return instantly with zero elapsed time.
 
 : pause         ( frames -- )        0 do wait-frame loop ;
 
@@ -96,11 +89,6 @@ variable round-count
 
 \ Statistics and reporting
 \ ────────────────────────
-\ total-ms accumulates milliseconds across every round of the session;
-\ round-count is the divisor for the running average.  finish-round is
-\ the after-round pipeline: position the cursor below the big verdict,
-\ record this round's time, print it, print the running average, and
-\ prompt for the next round.
 
 : reset-stats   ( -- )               0 total-ms !  0 round-count ! ;
 : record-round  ( ms -- )            total-ms +!  1 round-count +! ;
@@ -117,10 +105,6 @@ variable round-count
 
 \ Playing rounds
 \ ──────────────
-\ A round: clear, show big READY..., pause unpredictably, clear, show
-\ the big digit, time the response, judge it, clear, show the big
-\ verdict, then print stats below.  game-loop runs play-round forever
-\ — there's no win condition, just an unbounded session.
 
 : play-round    ( -- )
     7 0 cls  show-ready
