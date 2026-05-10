@@ -27,14 +27,14 @@ speed, demo for effects.
 
 ### `WAIT-FRAME ( -- )` — deep  *(shipped)*
 
-Shipped. `create_wait_frame` in `assemble/primitives.py` issues `HALT`
-and resumes on the next 50 Hz frame interrupt. After it returns, the
-program has ~19,968 T-states (about 4,000 dispatches) before the next
-interrupt.
+Shipped. `create_wait_frame` in `assemble/primitives.py` issues `EI; HALT; DI`
+and resumes on the next 50 Hz frame interrupt. After it returns, the program
+has ~19,968 T-states (about 4,000 dispatches) before the next interrupt.
 
-The current handler is the ROM's IM 1; replacing it with a user-installed
-IM 2 vector (so AY music can be driven from the interrupt) is a future
-extension — see §8.1 below.
+Works unchanged with either the ROM's IM 1 (default) or a user-installed IM 2
+handler — see §8.1, also shipped. Programs that need to drive AY music or
+synchronise effects from the interrupt install an `IM2-HANDLER!` and keep
+calling `wait-frame` exactly as before.
 
 *Genres:* all.
 
@@ -58,7 +58,9 @@ Set the counter. Mostly useful for resetting before a benchmark or checkpointing
 : pause  ( frames -- )  0 do wait-frame loop ;
 ```
 
-Pure Forth; no new primitive needed once `WAIT-FRAME` exists.
+Pure Forth; no new primitive needed once `WAIT-FRAME` exists. Used in
+`examples/reaction/app/reaction.fs` and `examples/mined-out/app/hud.fs`
+under the local name `throttle` / `pause`.
 
 *Genres:* all.
 
@@ -69,9 +71,18 @@ Pure Forth; no new primitive needed once `WAIT-FRAME` exists.
 Every genre wants randomness: dungeon layout (adventure), shuffling (puzzle),
 enemy AI (arcade), dithering/noise (demo).
 
-### `RND ( -- n )` — deep
+### `rnd ( -- n )` — *(stdlib shipped, native primitive still open)*
 
-16-bit linear-congruential generator. Returns a pseudo-random cell.
+Shipped at the Forth level in `src/zt/stdlib/rand.fs` as a 16-bit linear
+congruential generator: `seed' = seed * 25173 + 13849`. Adequate for game
+randomness; ~80 T-states per call dominated by the `*` primitive.
+
+```forth
+: rnd     ( -- n )         rnd-seed @ 25173 * 13849 + dup rnd-seed ! ;
+```
+
+The faster Xorshift-style native primitive originally proposed below is
+still open. Useful where the LCG cost shows up in a profile.
 
 ```
 RND:    push hl
@@ -93,23 +104,26 @@ RND:    push hl
         jp   NEXT
 ```
 
-(This is a standard Z80 Xorshift-like PRNG — ~40 T-states per call. Much
-faster than a full LCG.)
+(This is a standard Z80 Xorshift-like PRNG — ~40 T-states per call. Half
+the cost of the LCG.)
 
 *Genres:* all.
 
-### `SEED ( n -- )` — spec
+### `seed! ( n -- )` — *(stdlib shipped)*
 
-Write to `_rnd_seed`. Needed for reproducible puzzle layouts and replay
-debugging.
+Shipped. `: seed!  ( n -- )  rnd-seed ! ;` in `src/zt/stdlib/rand.fs`. Idiomatic
+Forth setter naming (bang on the end). Needed for reproducible puzzle
+layouts and replay debugging.
 
-### `RANDOM ( n -- 0..n-1 )` — spec
+### `random ( n -- 0..n-1 )` — *(stdlib shipped)*
 
-```forth
-: random  ( n -- 0..n-1 )  rnd swap u/mod drop ;
-```
+Shipped. `: random  ( n -- 0..n-1 )  rnd swap u/mod drop ;` in
+`src/zt/stdlib/rand.fs`. Not quite uniform for non-power-of-two `n` (the
+modulo bias on a 16-bit input is small enough that no game cares), but
+good enough for everything in the bundled examples.
 
-Not quite uniform for non-power-of-two `n`, but good enough for games.
+`stdlib/rand.fs` also ships `between ( lo hi -- n )` for picking a random
+value in a closed interval.
 
 *Genres:* puzzle, arcade, demo.
 
@@ -129,13 +143,20 @@ Shipped. `create_key_state` in `assemble/primitives.py` looks up the
 ASCII code in the `_key_table` and tests the corresponding bit on
 port `$FE`. Returns `-1` if held, `0` otherwise.
 
+The companion stdlib (`src/zt/stdlib/input.fs`) provides a higher-level
+binding API:
+
 ```forth
+\ Bind direction keys (each as an ASCII code), then test:
+54 55 56 57 set-keys!     \ ASCII '6' '7' '8' '9' = L R U D
 : tick
   wait-frame
-  'a' key-state if player-left then
-  's' key-state if player-right then
-  'm' key-state if fire then ;
+  key-left?  if player-left  then
+  key-right? if player-right then ;
 ```
+
+`pressed? ( keycode -- 0|1 )` is the underlying single-key test if you
+prefer to call `key-state` directly without binding.
 
 *Genres:* arcade (essential), demo (user controls), puzzle (keyboard nav).
 
@@ -299,19 +320,39 @@ should be native.
 
 *Genres:* demo, puzzle (UI).
 
-### 4.5 `INK ( n -- )`, `PAPER ( n -- )`, `BRIGHT`, `FLASH` — spec
+### 4.5 Attribute composition — *(stdlib shipped)*
 
-Set the "current" attribute; subsequent `EMIT` uses it. Each is a shallow
-primitive that reads/writes a byte at `_current_attr`. `CLS` already mixes
-ink and paper — these generalize.
+zt's chosen model is **attribute combinators**, not stateful "current
+attribute" setters. Build an attribute byte by composing pieces, then
+write it explicitly via `attr!` or `fill-attrs`. State stays out of the
+graphics path, which makes scroll/restore patterns straightforward.
 
-### 4.6 `ATTR! ( attr col row -- )` — spec
+Shipped in `src/zt/stdlib/screen.fs`:
 
-Already effectively implemented in the plasma example as user-level code
-(`attr!` in `examples/plasma/lib/screen.fs`). Promote it to the primitive
-set so it's available without a library.
+```forth
+: colour      ( ink paper -- byte ) 3 lshift or ;       \ pack ink + paper
+: bright      ( byte -- byte' )     64 or ;             \ set bright bit
+: flashing    ( byte -- byte' )     128 or ;            \ set flash bit
+: attr!       ( byte col row -- )   attr-addr c! ;
+: attr@       ( col row -- byte )   attr-addr c@ ;
+: fill-attrs  ( byte -- )           attrs 768 rot fill ;
+: row-attrs!  ( byte row -- )       scr-cols * attrs +  scr-cols  rot fill ;
+```
 
-### 4.7 `AT-XY ( col row -- )` — spec  *(shipped)*
+Idiomatic usage:
+
+```forth
+: red-on-black-bright  2 0 colour bright ;
+: paint-cell  ( col row -- )  red-on-black-bright -rot attr! ;
+```
+
+The attribute base address (`$5800`), screen dimensions (`scr-cols`,
+`scr-rows`), and the `attr-addr` cell-address helper are all exposed
+as constants/words from the same file.
+
+*Genres:* all that use graphics.
+
+### 4.6 `AT-XY ( col row -- )` — spec  *(shipped)*
 
 Shipped. `create_at_xy` moves the `EMIT` cursor to any text-cell
 position (0–31 columns, 0–23 rows on a 48K screen). Pairs with the
@@ -328,8 +369,8 @@ The seven SP-stream sprite primitives shipped in
 cover much of the original wishlist below: `BLIT8`, `BLIT8C`, `BLIT8X`,
 `BLIT8XC`, `MULTI-BLIT`, plus the `LOCK-SPRITES`/`UNLOCK-SPRITES` DI
 wrappers. See `docs/primitives.md` and `examples/sprite-demo/`. The
-remaining items — pixel-aligned shifting helpers, scroll, tile-map —
-are still open and described below for context.
+remaining items — XOR-blit, pre-shift table generator, full-screen
+pixel scroll — are still open and described below.
 
 ### 5.1 `XOR-SPRITE ( addr col row -- )` — *(partially shipped — copy variants only)*
 
@@ -400,7 +441,7 @@ on `x AND 7`.
 
 ### 5.3 `SCROLL-LEFT ( -- )`, `SCROLL-UP ( -- )` — medium
 
-Full-screen 8-pixel scroll. Roughly 200 lines of `LDIR` or unrolled
+Full-screen 8-pixel pixel scroll. Roughly 200 lines of `LDIR` or unrolled
 sequences. Expensive but sometimes essential (scrolling platformer, demo
 effects).
 
@@ -411,26 +452,35 @@ effects).
 Graceful degradation: on 48K, full-screen scroll is too slow for 50fps. Ship
 `PARTIAL-SCROLL ( top-row rows -- )` that scrolls only a band of the screen.
 
+Note the *attribute*-level scroll is already shipped: `SCROLL-ATTR ( dx dy -- )`
+shifts the 32×24 attribute page by `(dx, dy)` with row/column wrap. Used by
+the plasma demo (`examples/plasma4/`) to pan a precomputed colour buffer
+under keyboard control. Different operation than the pixel scroll above,
+but covers many demo use cases on its own.
+
 *Genres:* arcade, demo.
 
-### 5.4 `TILE@ ( x y -- tile )`, `TILE! ( tile x y -- )` — medium
+### 5.4 `grid@ ( col row -- v )`, `grid! ( v col row -- )` — *(stdlib shipped)*
 
-Tile-map read/write. Assumes the app has registered a tile map base address
-with dimensions. Useful for platformer-style collision detection and
-puzzle-grid logic.
-
-Simpler formulation as a Forth word over `C@` and `C!`:
+Shipped under different names than the original `TILE@`/`TILE!` proposal.
+`src/zt/stdlib/grid.fs` provides a bind-once tile-map abstraction:
 
 ```forth
-variable tile-map
-variable map-width
-: tile-addr   ( x y -- addr )  map-width @ * + tile-map @ + ;
-: tile@       tile-addr c@ ;
-: tile!       tile-addr c! ;
+require grid.fs
+
+create board  704 allot               \ 32 * 22 bytes
+board 32 22 grid-set!                 \ bind addr + dimensions
+0 grid-clear                          \ wipe to byte 0
+1 5 3 grid!                           \ store 1 at (col=5, row=3)
+4 2 grid@ .                           \ fetch byte at (4, 2)
 ```
 
-Keep it in the stdlib rather than making it a primitive, unless profiling
-shows it's hot.
+Plus `grid-area`, `grid-row-addr`, `fill-row`, `fill-col`, `in-bounds?`,
+and 4-/8-connected neighbour counts (`neighbours4`, `neighbours8`).
+Exercised by the bundled Tetris, Mined Out, and Arkanoid examples.
+
+The bind-once shape is more compact at call sites than passing the map
+address every time; the cost is one global "current grid" register.
 
 *Genres:* puzzle, arcade.
 
@@ -469,29 +519,43 @@ effects (short blips). For music, see §6.3 (AY) below.
 
 *Genres:* arcade, puzzle (feedback clicks), demo.
 
-### 6.2 `CLICK ( -- )` — spec
+### 6.2 `click ( -- )` — *(stdlib shipped)*
 
-Single border toggle, ~2 ms. The shortest audio feedback. Used for "button
-pressed," "key accepted," "score tick."
-
-```forth
-: click  16 border 7 border ;
-```
-
-(Cheap; beeper is wired to the border port.)
+Shipped via BEEP, not via the border port. `: click  1 100 beep ;` in
+`src/zt/stdlib/sound.fs`. The original proposal was a raw border-toggle
+two-write idiom (`16 border 7 border`), but going through BEEP gives a
+cycle-counted half-wave — audible on real hardware and trivially
+extensible to `chirp`, `low-beep`, `high-beep`, `tone`, all of which
+also ship in the same file.
 
 *Genres:* all.
 
-### 6.3 `AY!`, `AY@` — deep (128K only)  *(equivalent shipped)*
+### 6.3 AY register access — *(stdlib shipped)*
 
 Equivalent shipped. Rather than the originally proposed `AY!` /
 `AY@` primitives, the same surface lives at the stdlib layer in
-`src/zt/stdlib/ay.fs`: an `ay-set ( val reg -- )` `:::` macro emits
-the canonical `OUT ($FFFD), reg / OUT ($BFFD), val` write pair, and
-named wrappers (`ay-mixer!`, `ay-tone-a!`, `ay-vol-a!`, …) cover the
-common register groups. 48K graceful-degradation: writes to ports
-`$FFFD`/`$BFFD` are floating-bus on 48K — silent but harmless, no
-detection ceremony required.
+`src/zt/stdlib/ay.fs`:
+
+```forth
+::: ay-set  ( val reg -- )         \ low-level register write
+$FFFD/$BFFD canonical out pair
+                                   \ wrappers
+: ay-mixer!   ( bits   -- )        \ R7
+: ay-noise!   ( period -- )        \ R6 (5-bit)
+: ay-tone-a!  ( period -- )        \ R0/R1 (12-bit)
+: ay-tone-b!  ( period -- )        \ R2/R3
+: ay-tone-c!  ( period -- )        \ R4/R5
+: ay-vol-a!   ( level  -- )        \ R8 (4-bit)
+: ay-vol-b!   ( level  -- )        \ R9
+: ay-vol-c!   ( level  -- )        \ R10
+                                   \ constants
+ay-mixer-tones-only                \ $38 — tones on, noise/IO off
+ay-volume-max                      \ $0F
+ay-volume-mute                     \ 0
+```
+
+48K graceful-degradation: writes to ports `$FFFD`/`$BFFD` are floating-bus
+on 48K — silent but harmless, no detection ceremony required.
 
 Working music examples: `examples/im2-music/` (frame-locked C-major
 arpeggio) and `examples/im2-bach/` (Bach Invention 4 transcribed
@@ -502,7 +566,14 @@ from LilyPond).
 A 128K AY driver runs from the interrupt handler, reads a tune format each
 frame, updates AY registers. Out of scope for "primitives" but worth
 mentioning because its existence determines what data format the primitives
-should expose. See `02-improvements.md` §4.2.
+should expose.
+
+`examples/im2-bach/` is a working two-voice reference shape: the score is
+a flat array of 16-bit period pairs (one per 16th note), the IM 2 ISR
+walks one step every eight frames, `play-or-mute-{a,b}` writes period and
+volume on each tick. Promoting this into a stdlib-factored driver with a
+documented score format is the open work; the example shows what the
+shape can look like.
 
 ---
 
@@ -602,6 +673,11 @@ create sine-table  256 allot   \ pre-computed at build time
 Build-time generation: a directive `BUILD-SIN-TABLE` that fills the table at
 compile time. Zero runtime cost.
 
+A 64-entry sine implementation already ships at the example level —
+see `examples/voxel-letter/lib/sin64.fs` and the sibling
+`tests/gen_sine.py` host-side table generator. Promoting the pattern
+to a stdlib helper plus a build-time directive is the open work.
+
 *Genres:* demo.
 
 ---
@@ -636,19 +712,19 @@ custom allocators.
 
 If you're building one game today, here's the minimum viable primitive
 set per genre. Items already shipped (✅ `KEY`, `KEY?`, `KEY-STATE`,
-`WAIT-FRAME`, `BEEP`, `AT-XY`) are listed for completeness but don't
-need new work.
+`WAIT-FRAME`, `BEEP`, `AT-XY`, plus stdlib `rnd`/`random`/`seed!`,
+`attr!`, `grid@`/`grid!`, the AY surface, and `IM2-HANDLER!`) are
+listed for completeness but don't need new work.
 
-| Genre | Must-have additions beyond current `PRIMITIVES` |
-|-------|-------------------------------------------------|
+| Genre | Must-have additions beyond current `PRIMITIVES` + stdlib |
+|-------|----------------------------------------------------------|
 | **Text adventure** | `ACCEPT`, `COMPARE`, `>UPPER`. Optional: `WORD`, `SAVE-SLOT`. |
-| **Puzzle / board** | `RND`, `RANDOM`. Optional: `ATTR!` as primitive, `TILE@`/`TILE!`. |
-| **Action / arcade** | `KEMPSTON`, `XOR-SPRITE`, `RND`. |
-| **Demo / effects** | `IM2-HANDLER!`, `PLOT`, `LINE`, `LUT-SIN`. |
+| **Puzzle / board** | Native fast `RND` (Xorshift). `attr!`/`grid@`/`grid!` already shipped. |
+| **Action / arcade** | `KEMPSTON`, `XOR-SPRITE`. Native fast `RND` if profile pins LCG. |
+| **Demo / effects** | `PLOT`, `LINE`, `LUT-SIN`. `IM2-HANDLER!`, `SCROLL-ATTR` already shipped. |
 
-The shared spine — `RND` and a frame-paced input idiom — costs maybe a
-day of work now that the keyboard and timing primitives are done.
-Everything else layers on top.
+The shared spine — frame-paced input — is done. Each genre's residual
+list above is one to three primitives, not a year of work.
 
 ---
 
@@ -660,9 +736,9 @@ behaviour rather than refusing to compile.
 
 Practical rules:
 
-- **AY primitives are no-ops on 48K.** A game using `AY!` produces silent
-  output on 48K but still runs. No conditional compilation required in
-  user code.
+- **AY primitives are no-ops on 48K.** A game using `ay-tone-a!` produces
+  silent output on 48K but still runs. No conditional compilation
+  required in user code.
 - **`128k?` returns `0` on 48K.** User code can `128k? if ... then` to
   gate 128K-only features. The banking primitives (`bank@`, `bank!`,
   `raw-bank!`) themselves are unsafe on 48K — gate calls behind the
