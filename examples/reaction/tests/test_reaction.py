@@ -33,7 +33,7 @@ LIB_TIMING = EXAMPLE_DIR / "lib" / "timing.fs"
 LIB_BIG_TEXT = EXAMPLE_DIR / "lib" / "big-text.fs"
 
 
-def attr_byte(ink: int, paper: int, bright: bool = True) -> int:
+def attr_byte(ink: int, paper: int, bright: bool = False) -> int:
     return ink | (paper << 3) | (64 if bright else 0)
 
 
