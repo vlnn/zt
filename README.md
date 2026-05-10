@@ -1,5 +1,7 @@
 [![Stand With Ukraine](https://raw.githubusercontent.com/vshymanskyy/StandWithUkraine/main/banner-direct-single.svg)](https://stand-with-ukraine.pp.ua)
 
+[![tests](https://github.com/vlnn/zt/actions/workflows/test.yml/badge.svg)](https://github.com/vlnn/zt/actions/workflows/test.yml)
+
 # zt — Z80 Forth cross-compiler for the ZX Spectrum
 
 A Python-hosted toolchain that takes a `.fs` Forth source file and emits a Spectrum
