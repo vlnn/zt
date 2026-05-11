@@ -33,7 +33,7 @@ variable round-count
 \ Picking a challenge
 \ ──────────────────
 
-: digit>char    ( n -- c )           48 + ;
+:: digit>char    ( n -- c )           48 + ;
 
 : pick-digit    ( -- 0..9 )          digit-count random ;
 : random-delay  ( -- frames )        max-delay min-delay - random min-delay + ;

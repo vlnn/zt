@@ -1,10 +1,9 @@
 require app/reaction.fs
 
-: bench-render
+
+: main
     7 0 cls  show-ready
     7 0 cls  5 show-digit
     7 0 cls  show-great
     7 0 cls  show-wrong
     halt ;
-
-: main  1 seed!  reset-stats  game-loop ;

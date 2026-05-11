@@ -30,10 +30,10 @@ variable big-type-col
 variable big-type-row
 
 
-: glyph-addr     ( c -- addr )       32 - glyph-rows * rom-font + ;
+: glyph-addr     ( c -- addr )       32 - 2* 2* 2* rom-font + ;
 : glyph-line@    ( c r -- byte )     swap glyph-addr + c@ ;
 
-: bit-on?        ( byte i -- flag )  7 swap - 1 swap lshift and ;
+:: bit-on?        ( byte i -- flag )  7 swap - 1 swap lshift and ;
 
 : merge-glyph    ( c -- byte )
     0 glyph-rows 0 do  over i glyph-line@ or  loop  nip ;
@@ -49,36 +49,42 @@ variable big-type-row
 : big-colours    ( attr -- )         big-attr ! ;
 
 : cell-pix-addr  ( col row -- addr )
-    dup 8 /  11 lshift                    ( col row band<<11 )
-    swap 7 and  5 lshift  or              ( col combined )
+    dup 3 rshift  11 lshift                ( col row band<<11 )
+    swap 7 and  5 lshift  or               ( col combined )
     swap or  pix-base or ;
 
 : cell-bits      ( byte cc -- bits )
-    2 *  6 swap -  rshift  3 and ;
+    2*  6 swap -  rshift  3 and ;
 
-: half-byte      ( bits -- byte )    half-row-byte + c@ ;
+::: half-byte   ( bits -- byte )
+    ' half-row-byte  ld_de_nn
+    add_hl_de
+    ld_a_ind_hl
+    ld_l_a
+    0 ld_h_n ;
 
 : trimmed-row    ( c r -- byte )
     glyph-line@  big-shift @ lshift  $FF and ;
 
+: fill-4-rows    ( byte addr -- )
+    2dup c!  256 +
+    2dup c!  256 +
+    2dup c!  256 +
+    c! ;
 
-: fill-pixel-rows ( byte addr count -- )
-    0 do  2dup c!  256 +  loop
-    2drop ;
-
-: paint-cell      ( col row -- )
-    2dup big-attr @ -rot attr!            ( col row )
-    cell-pix-addr                         ( base )
-    dup cell-top @ swap 4 fill-pixel-rows
+: paint-cell     ( col row -- )
+    2dup big-attr @ -rot attr!
+    cell-pix-addr
+    dup cell-top @ swap fill-4-rows
     1024 +
-    cell-bot @ swap 4 fill-pixel-rows ;
+    cell-bot @ swap fill-4-rows ;
 
-: prep-halves     ( c cc cr -- )
-    >r                                        ( c cc,         R: cr )
-    over r@ 2 *  trimmed-row                  ( c cc top,     R: cr )
-    over cell-bits half-byte cell-top !       ( c cc,         R: cr )
-    over r> 2 * 1+  trimmed-row               ( c cc bot )
-    swap cell-bits half-byte cell-bot !       ( c )
+: prep-halves    ( c cc cr -- )
+    >r
+    over r@ 2*  trimmed-row
+    over cell-bits half-byte cell-top !
+    over r> 2* 1+  trimmed-row
+    swap cell-bits half-byte cell-bot !
     drop ;
 
 : render-char     ( c -- )
@@ -98,7 +104,7 @@ variable big-type-row
     render-char ;
 
 
-: char-cell-col   ( i -- col )       big-cell-size *  big-type-col @ + ;
+: char-cell-col   ( i -- col )   2* 2*  big-type-col @ + ;
 
 : big-type        ( addr len col row -- )
     big-type-row !  big-type-col !

@@ -9,7 +9,7 @@ $5800 constant attrs
 24    constant scr-rows
 
 \ address of the attribute byte at column col, row row
-: attr-addr   ( col row -- addr )   scr-cols * + attrs + ;
+: attr-addr   ( col row -- addr )   2* 2* 2* 2* 2* + attrs + ;
 \ store byte as the attribute at column col, row row
 : attr!       ( byte col row -- )   attr-addr c! ;
 \ fetch the attribute byte at column col, row row
