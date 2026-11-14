@@ -19,6 +19,7 @@ class PrimitiveBlob:
     fixups: tuple[tuple[int, str], ...]
     rel_fixups: tuple[tuple[int, str], ...]
     external_deps: frozenset[str]
+    dispatch_tail: int = 0
 
 
 def harvest_primitive(creator: Creator, *, inline_next: bool = True) -> PrimitiveBlob:

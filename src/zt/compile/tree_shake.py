@@ -108,8 +108,8 @@ def _reject_banked_colons(compiler: Compiler) -> None:
 
 def _reject_banked_tick_owners(compiler: Compiler) -> None:
     for ref in getattr(compiler, "_word_address_refs", ()):
-        owner_word = compiler.words.get(ref.owner)
-        if owner_word is not None and owner_word.bank is not None:
+        owner_word = compiler.words.definition(ref.owner)
+        if owner_word.bank is not None:
             raise NotImplementedError(
                 f"banked owner '{ref.owner}' has tick-comma reference to "
                 f"'{ref.target}'; cross-bank tick refs are not yet supported"
@@ -199,7 +199,7 @@ def _patch_data_word_refs(
     for owner, refs in refs_by_owner.items():
         if owner not in liveness.words:
             continue
-        old_data_addr = compiler.words[owner].data_address
+        old_data_addr = compiler.words.definition(owner).data_address
         new_data_addr = new_data_addrs[owner]
         for ref in refs:
             offset_in_data = ref.asm_addr - old_data_addr
@@ -213,7 +213,7 @@ def _resolved_ref_target(
     compiler: Compiler, target: str,
     word_addrs: dict[str, int], new_data_addrs: dict[str, int],
 ) -> int:
-    target_word = compiler.words[target]
+    target_word = compiler.words.definition(target)
     if target_word.data_address is not None:
         return new_data_addrs[target]
     return word_addrs[target]
@@ -306,7 +306,7 @@ def _relocate_native_addresses(
 
 def _emit_start(new_asm: Asm, compiler: Compiler, word_addrs: dict[str, int]) -> int:
     main_body_addr = new_asm.here
-    new_asm.word(word_addrs["main"])
+    new_asm.word(word_addrs[compiler.words["main"].name])
     new_asm.word(word_addrs["halt"])
     start_addr = new_asm.here
     new_asm.label("_start")

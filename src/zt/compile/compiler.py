@@ -291,9 +291,7 @@ class Compiler:
         rule = find_match(elements, self._peephole_rules)
         if rule is None:
             return False
-        replacement = self.words.get(rule.replacement)
-        if replacement is None:
-            return False
+        replacement = self.words.definition(rule.replacement)
         self._tokens.advance_by(len(rule.pattern) - 1)
         self._emit_word_ref(replacement, tok)
         return True
@@ -509,9 +507,13 @@ class Compiler:
             return None
         if tok.kind == "number":
             return parse_number(tok.value)
-        if tok.kind == "word":
+        if tok.kind == "word" and self._names_builtin_primitive(tok):
             return tok.value.lower()
         return None
+
+    def _names_builtin_primitive(self, tok: Token) -> bool:
+        word = self.words.get(tok.value)
+        return word is None or (word.kind == "prim" and word.name == tok.value.lower())
 
     def _is_structural_token(self, tok: Token) -> bool:
         return tok.kind == "word" and tok.value in (";", ":", "::")
@@ -540,12 +542,12 @@ class Compiler:
         addr = self.asm.here
         if not self.native_control_flow:
             self.asm.call("DOCOL")
-        self.words[name] = Word(
+        self.words.define(Word(
             name=name, address=addr, kind="colon",
             force_inline=force_inline,
             source_file=tok.source, source_line=tok.line,
             bank=self._active_bank,
-        )
+        ))
 
     def _warn_if_redefining(
         self, name: str, tok: Token, *, force_inline: bool = False,
@@ -852,35 +854,35 @@ class Compiler:
         name_tok = self._next_token(tok)
         code_addr, data_addr = self._emit_variable_shim()
         self.asm.word(0)
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
 
     @directive("constant")
     def _directive_constant(self, _compiler: Compiler, tok: Token) -> None:
         value = self._host_pop(tok)
         name_tok = self._next_token(tok)
         code_addr = self._emit_pusher(value)
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=code_addr, kind="constant",
             value=value,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
 
     @directive("create")
     def _directive_create(self, _compiler: Compiler, tok: Token) -> None:
         name_tok = self._next_token(tok)
         code_addr, data_addr = self._emit_variable_shim()
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
 
     @directive("--")
     def _directive_field(self, _compiler: Compiler, tok: Token) -> None:
@@ -902,12 +904,12 @@ class Compiler:
         name_tok = self._next_token(tok)
         code_addr, data_addr = self._emit_variable_shim()
         self.asm.code.extend(b"\x00" * size)
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
 
     def _define_literal_word(
         self, name_tok: Token, value: int, *, kind: str,
@@ -918,13 +920,13 @@ class Compiler:
             else:
                 self._compile_literal(value, action_tok)
 
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=0, kind=kind,
             value=value,
             immediate=True, compile_action=action,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
 
     @directive(":::")
     def _directive_asm_word(self, _compiler: Compiler, tok: Token) -> None:
@@ -945,11 +947,11 @@ class Compiler:
             self._asm_word_name = None
             self._inside_asm_body = False
             self._pending_tick = None
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=code_addr, kind="prim",
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
         self._asm_word_blobs.append(self._snapshot_asm_blob(
             name_tok.value, code_addr, body_start,
             fixup_count, rel_fixup_count,
@@ -987,6 +989,7 @@ class Compiler:
             fixups=body_fixups,
             rel_fixups=body_rel_fixups,
             external_deps=deps,
+            dispatch_tail=len(self.asm.code) - self._asm_body_end,
         )
 
     def _scoped_label(self, local: str) -> str:
@@ -1084,6 +1087,7 @@ class Compiler:
         while True:
             tok = self._next_token(opener)
             if tok.kind == "word" and tok.value == ";":
+                self._asm_body_end = len(self.asm.code)
                 self.asm.dispatch()
                 return
             if tok.kind == "word" and tok.value == ":::":
@@ -1113,7 +1117,7 @@ class Compiler:
         word = self.words.get(name_tok.value)
         if word is None:
             raise CompileError(f"unknown word '{name_tok.value}' after '", name_tok)
-        label = self._asm_body_tick_label(name_tok.value, word)
+        label = self._asm_body_tick_label(word.name, word)
         self._host_stack.append(label)
 
     def _asm_body_tick_label(self, name: str, word: Word) -> str:
@@ -1160,9 +1164,10 @@ class Compiler:
         if scoped in self.asm.labels:
             return scoped
         if name in self.words:
-            synth = f"__word__{name}"
+            word = self.words[name]
+            synth = f"__word__{word.name}"
             if synth not in self.asm.labels:
-                self.asm.labels[synth] = self.words[name].address
+                self.asm.labels[synth] = word.address
             return synth
         return scoped
 
@@ -1214,7 +1219,7 @@ class Compiler:
             return
         if self._pending_tick is not None:
             self._tick_unsafe = True
-        self._pending_tick = (name_tok.value, addr)
+        self._pending_tick = (word.name, addr)
 
     @directive("c,")
     def _directive_c_comma(self, _compiler: Compiler, tok: Token) -> None:
@@ -1246,12 +1251,12 @@ class Compiler:
             raise CompileError("nested array literal not supported", tok)
         name_tok = self._next_token(tok)
         code_addr, data_addr = self._emit_variable_shim()
-        self.words[name_tok.value] = Word(
+        self.words.define(Word(
             name=name_tok.value, address=code_addr, kind="variable",
             data_address=data_addr,
             source_file=name_tok.source, source_line=name_tok.line,
             bank=self._active_bank,
-        )
+        ))
         count_slot = self.asm.here
         self._emit_cell(0, tok)
         self._open_array_lit = {
@@ -1337,7 +1342,7 @@ class Compiler:
                 if owner is not None:
                     self._word_address_refs.append(
                         WordAddressRef(
-                            asm_addr=emit_at, target=name_tok.value, owner=owner,
+                            asm_addr=emit_at, target=target.name, owner=owner,
                         )
                     )
                 else:
@@ -1793,6 +1798,10 @@ class Compiler:
         from zt.compile.tree_shake import build_tree_shaken_image
         return build_tree_shaken_image(self)
 
+    def build_native(self) -> tuple[bytes, int]:
+        from zt.compile.native.image import build_native_image
+        return build_native_image(self)
+
     def compute_liveness(self):
         from zt.compile.liveness import compute_liveness
         return compute_liveness(
@@ -1831,7 +1840,7 @@ class Compiler:
         return name
 
     def _liveness_roots(self) -> list[str]:
-        return ["main", "halt", "next", "docol"]
+        return [self.words["main"].name, "halt", "next", "docol"]
 
     def _liveness_bodies(self) -> dict[str, list]:
         return {
