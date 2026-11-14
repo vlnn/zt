@@ -520,6 +520,7 @@ class Z80:
         reg(0xC2, self._op_jp_nz, 10)
         reg(0xF2, self._op_jp_p, 10)
         reg(0xFA, self._op_jp_m, 10)
+        reg(0xE9, self._op_jp_hl, 4)
 
         reg(0x18, self._op_jr, 7)
         reg(0x20, self._op_jr_nz, 7)
@@ -780,6 +781,9 @@ class Z80:
     def _op_jp_nn(self, op: int) -> None:
         self.pc = self._fetch_word()
 
+    def _op_jp_hl(self, op: int) -> None:
+        self.pc = self.hl
+
     def _op_jp_z(self, op: int) -> None:
         addr = self._fetch_word()
         if self.f & FLAG_Z:
@@ -938,7 +942,7 @@ class Z80:
         0x21: 14, 0x23: 10, 0x2B: 10, 0xE5: 15, 0xE1: 14,
         0x5E: 19, 0x56: 19, 0x6E: 19, 0x66: 19,
         0x75: 19, 0x74: 19, 0x73: 19, 0x72: 19,
-        0xE3: 23,
+        0xE3: 23, 0xE9: 8,
     }
 
     def _exec_ix_iy(self, reg_get, reg_set) -> None:
@@ -950,6 +954,7 @@ class Z80:
         elif op == 0x2B: reg_set((r - 1) & 0xFFFF)
         elif op == 0xE5: self._push(r)
         elif op == 0xE1: reg_set(self._pop())
+        elif op == 0xE9: self.pc = r
         elif op == 0x5E: d = self._fetch(); self.e = self._rb(r + _signed(d))
         elif op == 0x56: d = self._fetch(); self.d = self._rb(r + _signed(d))
         elif op == 0x6E: d = self._fetch(); self.l = self._rb(r + _signed(d))

@@ -18,6 +18,8 @@ class Asm:
     rel_fixups: list[tuple[int, str]] = field(default_factory=list)
     inline_next: bool = True
     native: bool = False
+    linked: bool = False
+    dispatch_count: int = 0
 
     @property
     def here(self) -> int:
@@ -126,7 +128,12 @@ class Asm:
 
     def dispatch(self) -> None:
         """Tail-call NEXT: either inlined directly or via `JP NEXT`, depending on `inline_next`.
-        In native mode, emit `RET` so the primitive body is a callable subroutine."""
+        In native mode, emit `RET` so the primitive body is a callable subroutine.
+        In linked mode, return through the IX link register with `JP (IX)`."""
+        self.dispatch_count += 1
+        if self.linked:
+            self.jp_ix()
+            return
         if self.native:
             self.ret()
             return
