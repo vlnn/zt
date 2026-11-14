@@ -31,7 +31,7 @@ def _trace_lines(compiler: Compiler) -> list[str]:
 
 
 def _label_lines(compiler: Compiler) -> list[str]:
-    labelled = [w for w in compiler.words.values() if _has_location(w)]
+    labelled = [w for w in compiler.words.values() if _has_location(w) and w.address != 0]
     labelled.sort(key=lambda w: w.address)
     return [_pipe_line(w.source_file, w.source_line, 1, w.address, "L", w.name)
             for w in labelled]

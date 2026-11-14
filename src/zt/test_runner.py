@@ -54,13 +54,14 @@ def run_tests(
     stop_on_first_failure: bool = False,
     on_result: Callable[[TestEvent], None] | None = None,
     max_ticks: int = 1_000_000,
+    native: bool = False,
 ) -> TestSummary:
     passed = 0
     failures: list[TestEvent] = []
     for path, word in discover_tests(specs):
         if keyword is not None and keyword not in word:
             continue
-        result = _run_one(path, word, max_ticks)
+        result = _run_one(path, word, max_ticks, native)
         event = TestEvent(path=path, word=word, result=result)
         if on_result is not None:
             on_result(event)
@@ -73,12 +74,13 @@ def run_tests(
     return TestSummary(passed=passed, failures=failures)
 
 
-def _run_one(path: Path, word: str, max_ticks: int) -> ForthTestResult:
+def _run_one(path: Path, word: str, max_ticks: int, native: bool) -> ForthTestResult:
     source = path.read_text()
     return compile_and_run_word(
         source, word,
         extra_include_dirs=[path.parent],
         max_ticks=max_ticks,
+        native=native,
     )
 
 
@@ -137,8 +139,9 @@ def compile_and_run_word(
     *,
     max_ticks: int = 1_000_000,
     extra_include_dirs: Iterable[Path] = (),
+    native: bool = False,
 ) -> ForthTestResult:
-    compiler, image = _compile(source, test_word, extra_include_dirs)
+    compiler, image = _compile(source, test_word, extra_include_dirs, native)
     machine = _run(compiler, image, max_ticks, test_word)
     if _read_var(machine, compiler, "_result") == 0:
         return ForthTestResult(failed=False)
@@ -150,13 +153,20 @@ def compile_and_run_word(
 
 
 def _compile(
-    source: str, test_word: str, extra_include_dirs: Iterable[Path],
+    source: str, test_word: str, extra_include_dirs: Iterable[Path], native: bool,
 ) -> tuple[Compiler, bytes]:
     full_source = f"{source}\n: main {test_word} halt ;\n"
     compiler = Compiler(include_dirs=[STDLIB_DIR, *extra_include_dirs])
     compiler.compile_source(full_source)
     compiler.compile_main_call()
-    return compiler, compiler.build()
+    return compiler, _build(compiler, native)
+
+
+def _build(compiler: Compiler, native: bool) -> bytes:
+    if not native:
+        return compiler.build()
+    image, _ = compiler.build_native()
+    return image
 
 
 def _run(compiler: Compiler, image: bytes, max_ticks: int, test_word: str):

@@ -108,6 +108,10 @@ def _register_build(sub: argparse._SubParsersAction) -> None:
                                        "produces the byte-compatible legacy image, "
                                        "useful when downstream tooling depends on a "
                                        "specific address layout")
+    build.add_argument("--native", dest="native", action="store_true", default=False,
+                       help="experimental: generate native Z80 from the IR instead of "
+                            "threaded code (several times faster; always tree-shaken; "
+                            "no --fsym)")
     build.add_argument("--profile", dest="profile", action="store_true", default=False,
                        help="run the built image in the simulator and write a profile report")
     build.add_argument("--profile-output", type=Path, default=None, dest="profile_output",
@@ -173,6 +177,22 @@ def _validate_128k_config(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+NATIVE_CONFLICTS = (
+    ("tree_shake_explicit", "--tree-shake"),
+    ("no_tree_shake", "--no-tree-shake"),
+    ("fsym_path", "--fsym"),
+)
+
+
+def _validate_native_config(args: argparse.Namespace) -> None:
+    if not args.native:
+        return
+    for attribute, flag in NATIVE_CONFLICTS:
+        if getattr(args, attribute):
+            print(f"error: {flag} cannot be combined with --native", file=sys.stderr)
+            sys.exit(1)
+
+
 def _validate_48k_config(args: argparse.Namespace) -> None:
     if args.paged_bank is not None:
         print(
@@ -197,6 +217,7 @@ def _do_build(args: argparse.Namespace) -> None:
         _validate_128k_config(args)
     else:
         _validate_48k_config(args)
+    _validate_native_config(args)
 
     try:
         compiler = _build_compiler(args)
@@ -205,7 +226,8 @@ def _do_build(args: argparse.Namespace) -> None:
         print(f"error: {e}", file=sys.stderr)
         sys.exit(1)
     except NotImplementedError as e:
-        print(f"error: --tree-shake does not yet support this program: {e}",
+        flag = "--native" if args.native else "--tree-shake"
+        print(f"error: {flag} does not yet support this program: {e}",
               file=sys.stderr)
         sys.exit(1)
 
@@ -238,6 +260,9 @@ def _build_image(compiler: Compiler, args: argparse.Namespace) -> bytes:
     * default (auto): try tree-shake; on NotImplementedError fall back to
       eager with a single-line warning to stderr
     """
+    if args.native:
+        image, _ = compiler.build_native()
+        return image
     if args.tree_shake_explicit:
         image, _ = compiler.build_tree_shaken()
         return image
@@ -439,6 +464,8 @@ def _register_test(sub: argparse._SubParsersAction) -> None:
                    default=False, help="stop after the first failure")
     t.add_argument("--max-ticks", type=int, default=1_000_000, dest="max_ticks",
                    metavar="N", help="per-test tick budget (default: 1_000_000)")
+    t.add_argument("--native", dest="native", action="store_true", default=False,
+                   help="experimental: run the tests against the native backend")
 
 
 def _do_test(args: argparse.Namespace) -> None:
@@ -457,6 +484,7 @@ def _do_test(args: argparse.Namespace) -> None:
             stop_on_first_failure=args.exitfirst,
             on_result=on_result,
             max_ticks=args.max_ticks,
+            native=args.native,
         )
     except TestDiscoveryError as e:
         print(f"error: {e}", file=sys.stderr)
