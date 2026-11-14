@@ -447,6 +447,14 @@ falls back to the eager build with a stderr warning when it can't.
 opts out entirely. Typical savings: 4–77 % per program; the bundled suite
 of 16 examples shrinks from ~134 KB to ~82 KB combined (40 % reduction).
 
+**Native backend (experimental).** `zt build --native` regenerates the image
+from the same IR as plain Z80: primitives are inlined or called through IX,
+colon words are reached by `CALL`, and the threaded interpreter disappears.
+Forth-heavy code runs 2.6–5x faster with identical output; see
+[`docs/NATIVE-BACKEND.md`](docs/NATIVE-BACKEND.md) for the model, the
+measurements and what is not supported yet. `zt test --native` runs Forth
+tests against it.
+
 ### Debug surface
 
 The real payoff of a clean IR is that every cell has a known source

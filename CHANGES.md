@@ -1,5 +1,32 @@
 # Changes
 
+## Experimental native backend (`--native`)
+
+`zt build --native` and `zt test --native` generate plain Z80 from the IR instead of
+threaded cells: primitives are inlined or called through IX, colon words are reached by
+`CALL`, and NEXT/DOCOL/EXIT disappear. Measured 2.6–5x faster on the benchmarks and
+Forth-heavy examples with byte-identical stack, screen and port output; image size
+ranges from 37% to 108% of the tree-shaken threaded build. Opt-in; the threaded build is
+unchanged and remains the default. See [`docs/NATIVE-BACKEND.md`](docs/NATIVE-BACKEND.md)
+for the model, the numbers and what is not supported yet.
+
+Every `test-*` word in `test_*.fs` files is now also collected as `<word>[native]`.
+
+## Redefining a name no longer rebinds earlier references
+
+IR cells refer to words by name, so the tree-shaken build (the default for `zt build`)
+bound every reference to the *latest* definition of a name. `examples/mined-out`
+redefines stdlib's `variable trail-buf` with `create trail-buf 2048 allot`, which made
+stdlib's `trail-cell` read the buffer's first cell as its address in tree-shaken images.
+
+Each definition now keeps its own identity: a redefinition is stored as `name@N`,
+source lookups see the latest definition, and IR-driven builds resolve the identity the
+cell was compiled against. Two related fixes: a peephole pattern only matches a token
+that still names the built-in primitive, and its replacement is always that primitive —
+so `: one 1 ;` no longer compiles into a call to itself.
+
+**Visible change.** A redefined word appears in map/SLD output as `name@1`.
+
 ## IM 2 handlers can now be plain `:` colon words
 
 `IM2-HANDLER!` previously took a raw Z80 entry-point address; the user had to
