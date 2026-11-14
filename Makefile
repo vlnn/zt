@@ -2,6 +2,7 @@ PYTHON  := uv run python
 ZT      := $(PYTHON) -m zt.cli
 EXAMPLES_DIR := examples
 BUILD_DIR    := build
+ZTFLAGS      ?=
 
 
 SINGLE_SOURCES := $(wildcard $(EXAMPLES_DIR)/*.fs)
@@ -29,13 +30,13 @@ help:
 examples: $(SINGLE_SNAS) $(MULTIFILE_SNAS)
 
 $(BUILD_DIR)/%.sna: $(EXAMPLES_DIR)/%.fs | $(BUILD_DIR)
-	$(ZT) build $< -o $@ --map $(@:.sna=.map)
+	$(ZT) build $< -o $@ --map $(@:.sna=.map) $(ZTFLAGS)
 
 define MULTIFILE_RULE
 $$(BUILD_DIR)/$(1).sna: $$(EXAMPLES_DIR)/$(1)/main.fs \
     $$(shell find $$(EXAMPLES_DIR)/$(1) -name '*.fs' -not -path '*/tests/*') \
     | $$(BUILD_DIR)
-	$$(ZT) build $$< -o $$@ --map $$(@:.sna=.map) $$(BUILD_FLAGS_$(1))
+	$$(ZT) build $$< -o $$@ --map $$(@:.sna=.map) $$(BUILD_FLAGS_$(1)) $$(ZTFLAGS)
 endef
 
 $(foreach d,$(MULTIFILE_DIRS),$(eval $(call MULTIFILE_RULE,$(d))))
